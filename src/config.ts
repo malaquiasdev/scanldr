@@ -2,6 +2,8 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { ConfigError } from "./errors.ts";
+import { check, isPlainObject } from "./guards.ts";
 import type { Config, LoadConfigOptions, LoadConfigResult } from "./types.ts";
 
 export const DEFAULT_CONFIG: Config = {
@@ -12,16 +14,6 @@ export const DEFAULT_CONFIG: Config = {
   image_concurrency: 4,
   chapter_delay_ms: 1000,
 };
-
-export class ConfigError extends Error {
-  override readonly name = "ConfigError";
-  constructor(
-    message: string,
-    public readonly path?: string,
-  ) {
-    super(message);
-  }
-}
 
 const BCP47 = /^[a-z]{2,3}(?:-[A-Z]{2})?(?:-[a-zA-Z0-9]{1,8})*$/;
 
@@ -55,19 +47,13 @@ async function resolveConfigPath(opts: LoadConfigOptions): Promise<string | null
   return null;
 }
 
-function check(cond: boolean, msg: string, source?: string): asserts cond {
-  if (!cond) throw new ConfigError(msg, source);
-}
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
 export function validateAndMerge(parsed: unknown, source?: string): Config {
   check(
     isPlainObject(parsed),
-    `config root must be a JSON object, got ${parsed === null ? "null" : typeof parsed}`,
-    source,
+    new ConfigError(
+      `config root must be a JSON object, got ${parsed === null ? "null" : typeof parsed}`,
+      source,
+    ),
   );
 
   const merged: Config = { ...DEFAULT_CONFIG };
@@ -77,8 +63,7 @@ export function validateAndMerge(parsed: unknown, source?: string): Config {
     const v = p.preferred_languages;
     check(
       Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string" && BCP47.test(x)),
-      "preferred_languages must be a non-empty array of BCP 47 codes",
-      source,
+      new ConfigError("preferred_languages must be a non-empty array of BCP 47 codes", source),
     );
     merged.preferred_languages = v as string[];
   }
@@ -87,21 +72,26 @@ export function validateAndMerge(parsed: unknown, source?: string): Config {
     const v = p.download_quality;
     check(
       v === "data" || v === "data-saver",
-      "download_quality must be 'data' or 'data-saver'",
-      source,
+      new ConfigError("download_quality must be 'data' or 'data-saver'", source),
     );
     merged.download_quality = v;
   }
 
   if ("default_format" in p) {
     const v = p.default_format;
-    check(v === "cbz" || v === "zip", "default_format must be 'cbz' or 'zip'", source);
+    check(
+      v === "cbz" || v === "zip",
+      new ConfigError("default_format must be 'cbz' or 'zip'", source),
+    );
     merged.default_format = v;
   }
 
   if ("default_out" in p) {
     const v = p.default_out;
-    check(typeof v === "string" && v.length > 0, "default_out must be a non-empty string", source);
+    check(
+      typeof v === "string" && v.length > 0,
+      new ConfigError("default_out must be a non-empty string", source),
+    );
     merged.default_out = v;
   }
 
@@ -109,8 +99,7 @@ export function validateAndMerge(parsed: unknown, source?: string): Config {
     const v = p.image_concurrency;
     check(
       typeof v === "number" && Number.isInteger(v) && v >= 1,
-      "image_concurrency must be an integer >= 1",
-      source,
+      new ConfigError("image_concurrency must be an integer >= 1", source),
     );
     merged.image_concurrency = v;
   }
@@ -119,8 +108,7 @@ export function validateAndMerge(parsed: unknown, source?: string): Config {
     const v = p.chapter_delay_ms;
     check(
       typeof v === "number" && Number.isFinite(v) && v >= 0,
-      "chapter_delay_ms must be a number >= 0",
-      source,
+      new ConfigError("chapter_delay_ms must be a number >= 0", source),
     );
     merged.chapter_delay_ms = v;
   }
