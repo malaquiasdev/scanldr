@@ -1,0 +1,126 @@
+name: PR Lint
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  conventional-title:
+    name: Conventional Commit Title
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        id: lint_title
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+
+      - if: failure()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: conventional-title
+          message: |
+            **FALHOU: Título da PR não segue Conventional Commits**
+
+            O título deve seguir o formato: `type(scope): descrição`
+
+            Tipos permitidos: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
+
+            Exemplos:
+            - `feat(downloader): adiciona suporte a fallback site`
+            - `fix(history): corrige unique constraint em chapter_id`
+
+      - if: success()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: conventional-title
+          delete: true
+
+  pr-description:
+    name: PR Has Description
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR body is not empty
+        id: check_body
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          BODY_LENGTH=$(printf '%s' "$PR_BODY" | tr -d '[:space:]' | wc -c)
+          if [ "$BODY_LENGTH" -lt 10 ]; then
+            echo "failed=true" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - if: failure()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: pr-description
+          message: |
+            **FALHOU: PR sem descrição**
+
+            Adicione uma descrição com contexto sobre as mudanças. Formato sugerido:
+
+            ```
+            ## Summary
+            - O que mudou e por quê
+
+            ## Test plan
+            - Como validar as mudanças
+            ```
+
+      - if: success()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: pr-description
+          delete: true
+
+  no-direct-push:
+    name: Branch Protection
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check branch is not main
+        run: |
+          HEAD_REF="${{ github.event.pull_request.head.ref }}"
+          if [ "$HEAD_REF" = "main" ] || [ "$HEAD_REF" = "master" ]; then
+            echo "::error::Direct pushes to main are not allowed. Create a feature branch."
+            exit 1
+          fi
+
+      - if: failure()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: branch-protection
+          message: |
+            **FALHOU: Push direto na main não é permitido**
+
+            Crie uma branch a partir da main e abra uma PR:
+            ```bash
+            git checkout -b feat/issue-XX-descricao
+            ```
+
+      - if: success()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: branch-protection
+          delete: true

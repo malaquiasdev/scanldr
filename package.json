@@ -1,0 +1,6 @@
+{
+  "name": "scanldr",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Offline downloader for manga, HQ, manhwa, and webtoon — packages volumes as .cbz/.zip"
+}
