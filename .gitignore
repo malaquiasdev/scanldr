@@ -5,5 +5,15 @@ scanldr.db-wal
 scanldr.db-shm
 .scanldr-auth.json
 
+# Build / deps
+node_modules/
+dist/
+coverage/
+*.log
+
+# Environment
+.env
+.env.local
+
 # OS
 .DS_Store

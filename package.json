@@ -2,5 +2,23 @@
   "name": "scanldr",
   "version": "0.0.0",
   "private": true,
-  "description": "Offline downloader for manga, HQ, manhwa, and webtoon — packages volumes as .cbz/.zip"
+  "description": "Offline downloader for manga, HQ, manhwa, and webtoon — packages volumes as .cbz/.zip",
+  "type": "module",
+  "module": "src/index.ts",
+  "bin": {
+    "scanldr": "src/index.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch run src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "biome check .",
+    "format": "biome format --write .",
+    "lint": "biome lint ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  }
 }
