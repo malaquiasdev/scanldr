@@ -1,0 +1,9 @@
+# Runtime artifacts (see docs/models/auth_model.md, docs/adr/003-sqlite-download-history.md)
+scanldr.db
+scanldr.db-journal
+scanldr.db-wal
+scanldr.db-shm
+.scanldr-auth.json
+
+# OS
+.DS_Store

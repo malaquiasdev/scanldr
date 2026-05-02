@@ -1,0 +1,114 @@
+# Flow — Download
+
+Covers the `download` command. The CLI always resolves metadata via MangaDex first. If the title or an acceptable language is not available, the user is prompted to choose a fallback site.
+
+The download history (SQLite) is checked before any network request — already-downloaded volumes are skipped regardless of whether the output files still exist on disk.
+
+## Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant CLI as scanldr CLI
+    participant History as history.ts (SQLite)
+    participant MDX as MangaDex API
+    participant Fallback as Fallback Site
+    participant Out as ./download/ (output)
+
+    User->>CLI: scanldr download "witch hat atelier" --volume 3
+
+    CLI->>History: is volume 3 already downloaded?
+    History-->>CLI: no
+
+    CLI->>MDX: search title → GET /manga?title=...
+    MDX-->>CLI: manga candidates
+
+    CLI->>MDX: GET /manga/:id/aggregate (volume → chapter mapping)
+    MDX-->>CLI: { volume: "3", chapters: ["18","19","20","21"] }
+
+    CLI->>MDX: GET /manga/:id/feed?volume=3 (available translations)
+    MDX-->>CLI: available languages + scanlation groups
+
+    CLI-->>User: "Volume 3 available in:\n  [1] en — Group Alfa\n  [2] pt-BR — Group Beta\nPick one:"
+    User->>CLI: 1
+
+    loop for each chapter in volume 3
+        CLI->>MDX: GET /at-home/server/:chapterId (image URLs)
+        MDX-->>CLI: image server + page list
+        loop images in parallel (--concurrency, default 4)
+            CLI->>MDX: GET image
+            MDX-->>CLI: image bytes
+        end
+    end
+
+    CLI->>Out: write "witch-hat-atelier-volume-003.cbz" (rename .temp → final)
+    CLI->>History: BEGIN TRANSACTION
+    loop for each chapter packaged into the volume
+        CLI->>History: INSERT { mangaId, volume, chapterId, chapterNum, source, language, downloadedAt }
+    end
+    CLI->>History: COMMIT
+    CLI-->>User: done
+
+    Note over CLI,Fallback: === FALLBACK PATH (MangaDex unavailable or language rejected) ===
+
+    alt title not found on MangaDex OR user rejects all languages
+        CLI-->>User: "Not available on MangaDex with an acceptable language.\nFallback sites:\n  [1] mangakakalot.gg\nPick one or cancel:"
+        User->>CLI: 1
+        CLI->>Fallback: fetch manga page → parse chapter list
+        Fallback-->>CLI: ChapterRef[]
+        Note over CLI: volume range from MangaDex used if available,<br/>otherwise user must pass --chapter manually
+        loop for each chapter in volume range
+            CLI->>Fallback: download chapter images
+            Fallback-->>CLI: image bytes
+        end
+        CLI->>Out: write "witch-hat-atelier-volume-003.cbz" (rename .temp → final)
+        CLI->>History: BEGIN TRANSACTION
+        loop for each chapter packaged into the volume
+            CLI->>History: INSERT { mangaId, volume, chapterId, chapterNum, source, language, downloadedAt }
+        end
+        CLI->>History: COMMIT
+        CLI-->>User: done
+    end
+```
+
+## Volume Output Structure
+
+```
+./download/
+└── witch-hat-atelier/
+    ├── witch-hat-atelier-volume-001.cbz
+    ├── witch-hat-atelier-volume-002.cbz
+    └── witch-hat-atelier-volume-003.cbz
+```
+
+All chapters belonging to a volume are merged into a single `.cbz` archive, sorted by chapter and page number.
+
+## Decisions
+
+1. **History check before any network call** — avoids unnecessary requests for already-downloaded volumes. A volume counts as "already downloaded" only when **all** its chapters (for the chosen language) are present in `downloads`.
+2. **History writes are atomic per volume** — chapters are accumulated in memory while downloading; once the `.cbz` is renamed from `.temp` to its final path, all chapter rows are inserted in a single SQLite transaction. Either every chapter of the volume lands in history or none does — no orphan rows pointing at a volume archive that was never produced.
+3. **Preferred languages from config** — CLI only prompts for language selection when none of the user's `preferred_languages` (from `scanldr.json`) are available. If a preferred language is found, it is used silently.
+4. **User always picks fallback** — CLI never silently falls back to another site. Always warns and prompts.
+5. **Volume metadata from MangaDex is reused on fallback** — if MangaDex knows volume 3 = chapters 18-21, that range is used even when downloading from mangakakalot.
+6. **`--chapter` as escape hatch** — when volume metadata is unavailable, the user can pass `--chapter 18-21` manually.
+7. **One `.cbz` per volume** — all chapters in the volume are merged into a single archive.
+8. **Zero-padded image filenames** — pages saved as `0001.png`, `0002.png`, etc. to guarantee correct sort order in all CBZ readers.
+9. **Retry with re-fetch** — up to 5 attempts per failed image. On each failure, re-fetches `/at-home/server/:chapterId` to get a fresh CDN URL before retrying. Retrying a stale URL is not sufficient.
+10. **MangaDex rate limiting** — maximum ~5 requests/second. A configurable delay between chapter requests (`chapter_delay_ms`) keeps the client within limits. On HTTP `429`, the client honors the server's hint (see "Rate-limit response handling" below) before resuming.
+11. **At-home server reporting** — per MangaDex terms of use, the client must report download success/failure back to the API after each chapter (includes `x-cache` header value and download duration). This is mandatory.
+12. **Temporary files** — each image and the final CBZ are written to a `.temp` file first, renamed to the final path only on success. Prevents partial/corrupted files if the process is killed mid-download.
+13. **`--no-track` flag** — disables history recording for a single run. Useful for one-off downloads the user does not want persisted.
+
+## Rate-limit response handling
+
+Any MangaDex request (manga search, aggregate, feed, `/at-home/server/:chapterId`, or image fetch) may return `HTTP 429 Too Many Requests`. The client behavior is:
+
+1. Read the wait hint from the response, in priority order:
+    - `x-ratelimit-retry-after` (MangaDex-specific, seconds)
+    - `Retry-After` (RFC 7231: seconds, or HTTP-date)
+    - If neither is present: fall back to an exponential backoff starting at `2 * chapter_delay_ms`, capped at 60 s.
+2. Sleep for the hinted duration plus 200 ms jitter.
+3. Retry the **same** request, up to 5 attempts. On the 5th attempt failing, propagate the error.
+4. While waiting, log at `warn`: `"rate limited by mangadex; sleeping <n>s"`.
+
+A 429 on `/at-home/server/:chapterId` does **not** count as a stale CDN URL — the per-image retry policy (decision #9) only re-fetches `/at-home/server/...` on image-level failures (5xx, network errors), not on rate-limit responses.
