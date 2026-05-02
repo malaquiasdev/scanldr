@@ -124,3 +124,67 @@ jobs:
         with:
           header: branch-protection
           delete: true
+
+  typecheck:
+    name: TypeScript Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - id: typecheck
+        run: |
+          set -o pipefail
+          bun run typecheck 2>&1 | tee /tmp/typecheck-output.txt
+      - if: failure()
+        run: echo "TYPECHECK_OUTPUT<<EOF" >> "$GITHUB_ENV" && cat /tmp/typecheck-output.txt >> "$GITHUB_ENV" && echo "EOF" >> "$GITHUB_ENV"
+      - if: failure()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: typecheck
+          message: |
+            **FALHOU: TypeScript type-check falhou**
+
+            ```
+            ${{ env.TYPECHECK_OUTPUT }}
+            ```
+
+            Rode `bun run typecheck` localmente para corrigir.
+
+      - if: success()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: typecheck
+          delete: true
+
+  biome:
+    name: Biome Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - id: biome
+        run: |
+          set -o pipefail
+          bun run check 2>&1 | tee /tmp/biome-output.txt
+      - if: failure()
+        run: echo "BIOME_OUTPUT<<EOF" >> "$GITHUB_ENV" && cat /tmp/biome-output.txt >> "$GITHUB_ENV" && echo "EOF" >> "$GITHUB_ENV"
+      - if: failure()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: biome
+          message: |
+            **FALHOU: Biome check falhou**
+
+            ```
+            ${{ env.BIOME_OUTPUT }}
+            ```
+
+            Rode `bun run check` localmente para corrigir.
+
+      - if: success()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: biome
+          delete: true
