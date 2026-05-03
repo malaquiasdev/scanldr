@@ -28,7 +28,10 @@ export function createMangaDexHttp(opts: MangaDexHttpOptions): MangaDexHttpClien
       } catch (err) {
         lastError = err;
         const waitMs = backoffMs(attempt, baseMs);
-        logger.debug("network error, retrying", { attempt: attempt + 1, waitMs });
+        logger.debug(
+          { event: "mangadex.network_error", context: "http", attempt: attempt + 1, waitMs },
+          "network error, retrying",
+        );
         await sleep(waitMs);
         continue;
       }
@@ -39,7 +42,10 @@ export function createMangaDexHttp(opts: MangaDexHttpOptions): MangaDexHttpClien
         const header =
           response.headers.get("x-ratelimit-retry-after") ?? response.headers.get("retry-after");
         const waitMs = retryAfterMs(header, attempt, baseMs);
-        logger.warn("429 rate-limited, backing off", { attempt: attempt + 1, waitMs });
+        logger.warn(
+          { event: "mangadex.rate_limited", context: "http", attempt: attempt + 1, waitMs },
+          "429 rate-limited, backing off",
+        );
         await sleep(waitMs);
         lastError = new Error(`HTTP 429 after ${attempt + 1} attempt(s)`);
         continue;
@@ -47,11 +53,16 @@ export function createMangaDexHttp(opts: MangaDexHttpOptions): MangaDexHttpClien
 
       if (response.status >= 500) {
         const waitMs = backoffMs(attempt, baseMs);
-        logger.debug("5xx error, retrying", {
-          attempt: attempt + 1,
-          status: response.status,
-          waitMs,
-        });
+        logger.debug(
+          {
+            event: "mangadex.server_error",
+            context: "http",
+            attempt: attempt + 1,
+            status: response.status,
+            waitMs,
+          },
+          "5xx error, retrying",
+        );
         await sleep(waitMs);
         lastError = new Error(`HTTP ${response.status} after ${attempt + 1} attempt(s)`);
         continue;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type LogLevel, createLogger } from "../src/plugins/logger/index.ts";
+import { type LogLevel, createLogger } from "./index.ts";
 
 const FIXED_TS = "2025-01-01T00:00:00.000Z";
 
@@ -27,10 +27,10 @@ function makeLogger(level: LogLevel, format: "human" | "json" = "human") {
 describe("createLogger — thresholds", () => {
   test("default info: shows error/warn/info, hides debug", () => {
     const { logger, sink } = makeLogger("info");
-    logger.error("e");
-    logger.warn("w");
-    logger.info("i");
-    logger.debug("d");
+    logger.error({}, "e");
+    logger.warn({}, "w");
+    logger.info({}, "i");
+    logger.debug({}, "d");
     expect(sink.lines).toEqual([
       `${FIXED_TS} error e\n`,
       `${FIXED_TS} warn w\n`,
@@ -40,28 +40,28 @@ describe("createLogger — thresholds", () => {
 
   test("error threshold: only error", () => {
     const { logger, sink } = makeLogger("error");
-    logger.error("e");
-    logger.warn("w");
-    logger.info("i");
-    logger.debug("d");
+    logger.error({}, "e");
+    logger.warn({}, "w");
+    logger.info({}, "i");
+    logger.debug({}, "d");
     expect(sink.lines).toEqual([`${FIXED_TS} error e\n`]);
   });
 
   test("warn threshold (--quiet): error + warn only", () => {
     const { logger, sink } = makeLogger("warn");
-    logger.error("e");
-    logger.warn("w");
-    logger.info("i");
-    logger.debug("d");
+    logger.error({}, "e");
+    logger.warn({}, "w");
+    logger.info({}, "i");
+    logger.debug({}, "d");
     expect(sink.lines).toEqual([`${FIXED_TS} error e\n`, `${FIXED_TS} warn w\n`]);
   });
 
   test("debug threshold (--verbose): all four", () => {
     const { logger, sink } = makeLogger("debug");
-    logger.error("e");
-    logger.warn("w");
-    logger.info("i");
-    logger.debug("d");
+    logger.error({}, "e");
+    logger.warn({}, "w");
+    logger.info({}, "i");
+    logger.debug({}, "d");
     expect(sink.lines).toHaveLength(4);
     expect(sink.lines[3]).toBe(`${FIXED_TS} debug d\n`);
   });
@@ -70,13 +70,13 @@ describe("createLogger — thresholds", () => {
 describe("createLogger — human format", () => {
   test("emits `<ts> <level> <message>`", () => {
     const { logger, sink } = makeLogger("info", "human");
-    logger.info("hello world");
+    logger.info({}, "hello world");
     expect(sink.lines).toEqual([`${FIXED_TS} info hello world\n`]);
   });
 
   test("ignores fields in human format (no parsing of free-form)", () => {
     const { logger, sink } = makeLogger("info", "human");
-    logger.info("msg", { foo: "bar", cookies: "secret" });
+    logger.info({ foo: "bar", cookies: "secret" }, "msg");
     expect(sink.lines).toEqual([`${FIXED_TS} info msg\n`]);
   });
 });
@@ -84,7 +84,7 @@ describe("createLogger — human format", () => {
 describe("createLogger — json format", () => {
   test("emits NDJSON with ts/level/msg/...fields", () => {
     const { logger, sink } = makeLogger("info", "json");
-    logger.info("ready", { port: 3000 });
+    logger.info({ port: 3000 }, "ready");
     expect(sink.lines).toHaveLength(1);
     expect(sink.lines[0]?.endsWith("\n")).toBe(true);
     const obj = JSON.parse(sink.lines[0] as string);
@@ -93,8 +93,8 @@ describe("createLogger — json format", () => {
 
   test("each call produces exactly one newline-delimited line", () => {
     const { logger, sink } = makeLogger("debug", "json");
-    logger.error("a");
-    logger.debug("b");
+    logger.error({}, "a");
+    logger.debug({}, "b");
     expect(sink.lines).toHaveLength(2);
     for (const line of sink.lines) {
       expect(line.endsWith("\n")).toBe(true);
@@ -106,12 +106,15 @@ describe("createLogger — json format", () => {
 describe("createLogger — redaction", () => {
   test("redacts top-level cookies / Authorization / userAgent / cf_clearance", () => {
     const { logger, sink } = makeLogger("debug", "json");
-    logger.debug("req", {
-      cookies: { cf_clearance: "abc", session: "xyz" },
-      Authorization: "Bearer token",
-      userAgent: "Mozilla/5.0",
-      url: "https://example.com",
-    });
+    logger.debug(
+      {
+        cookies: { cf_clearance: "abc", session: "xyz" },
+        Authorization: "Bearer token",
+        userAgent: "Mozilla/5.0",
+        url: "https://example.com",
+      },
+      "req",
+    );
     const obj = JSON.parse(sink.lines[0] as string);
     expect(obj.cookies).toBe("[REDACTED]");
     expect(obj.Authorization).toBe("[REDACTED]");
@@ -121,17 +124,20 @@ describe("createLogger — redaction", () => {
 
   test("redacts denylisted keys recursively in nested objects", () => {
     const { logger, sink } = makeLogger("debug", "json");
-    logger.debug("nested", {
-      request: {
-        headers: {
-          Authorization: "Bearer token",
-          "X-Custom": "ok",
-        },
-        meta: {
-          cf_clearance: "raw-cookie",
+    logger.debug(
+      {
+        request: {
+          headers: {
+            Authorization: "Bearer token",
+            "X-Custom": "ok",
+          },
+          meta: {
+            cf_clearance: "raw-cookie",
+          },
         },
       },
-    });
+      "nested",
+    );
     const obj = JSON.parse(sink.lines[0] as string);
     expect(obj.request.headers.Authorization).toBe("[REDACTED]");
     expect(obj.request.headers["X-Custom"]).toBe("ok");
@@ -140,12 +146,15 @@ describe("createLogger — redaction", () => {
 
   test("redacts inside arrays of objects", () => {
     const { logger, sink } = makeLogger("debug", "json");
-    logger.debug("arr", {
-      requests: [
-        { url: "/a", Authorization: "t1" },
-        { url: "/b", cookies: { cf_clearance: "c" } },
-      ],
-    });
+    logger.debug(
+      {
+        requests: [
+          { url: "/a", Authorization: "t1" },
+          { url: "/b", cookies: { cf_clearance: "c" } },
+        ],
+      },
+      "arr",
+    );
     const obj = JSON.parse(sink.lines[0] as string);
     expect(obj.requests[0].Authorization).toBe("[REDACTED]");
     expect(obj.requests[0].url).toBe("/a");
@@ -154,12 +163,15 @@ describe("createLogger — redaction", () => {
 
   test("denylist match is case-insensitive on key name", () => {
     const { logger, sink } = makeLogger("debug", "json");
-    logger.debug("ci", {
-      AUTHORIZATION: "x",
-      Cookies: "y",
-      UserAgent: "z",
-      CF_CLEARANCE: "w",
-    });
+    logger.debug(
+      {
+        AUTHORIZATION: "x",
+        Cookies: "y",
+        UserAgent: "z",
+        CF_CLEARANCE: "w",
+      },
+      "ci",
+    );
     const obj = JSON.parse(sink.lines[0] as string);
     expect(obj.AUTHORIZATION).toBe("[REDACTED]");
     expect(obj.Cookies).toBe("[REDACTED]");

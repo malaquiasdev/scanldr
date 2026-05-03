@@ -6,7 +6,7 @@ import type { Logger } from "@plugins/logger/index.ts";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-const noop = () => {};
+const noop = (_f: Record<string, unknown>, _m: string) => {};
 const noopLogger: Logger = {
   error: noop,
   warn: noop,
