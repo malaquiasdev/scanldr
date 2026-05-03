@@ -7,10 +7,10 @@ import type {
   MdxMangaListResponse,
 } from "./types.ts";
 
-import aggregateFixture from "./fixtures/aggregate.json";
-import chapterFeedFixture from "./fixtures/chapter-feed.json";
-import searchMulti from "./fixtures/manga-search-multi.json";
-import searchSingle from "./fixtures/manga-search-single.json";
+import aggregateFixture from "./mocks/aggregate.json";
+import chapterFeedFixture from "./mocks/chapter-feed.json";
+import searchMulti from "./mocks/manga-search-multi.json";
+import searchSingle from "./mocks/manga-search-single.json";
 
 describe("normalizeLang", () => {
   it("uppercases region subtag", () => {
