@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   formatCandidateList,
   formatChapterDetail,
+  formatExternalTag,
   formatMangaList,
   formatVolumeList,
 } from "./formatter.ts";
@@ -37,6 +38,7 @@ const chapters: ChapterRef[] = [
     translatedLanguage: "en",
     scanlationGroup: "TCB Scans",
     readableAt: "1997-07-22T00:00:00+00:00",
+    externalUrl: null,
   },
   {
     id: "ch-002",
@@ -46,6 +48,7 @@ const chapters: ChapterRef[] = [
     translatedLanguage: "en",
     scanlationGroup: "TCB Scans",
     readableAt: "1997-07-29T00:00:00+00:00",
+    externalUrl: null,
   },
   {
     id: "ch-003",
@@ -55,6 +58,7 @@ const chapters: ChapterRef[] = [
     translatedLanguage: "en",
     scanlationGroup: "TCB Scans",
     readableAt: "1997-08-05T00:00:00+00:00",
+    externalUrl: "https://mangaplus.shueisha.co.jp/viewer/1000001",
   },
   {
     id: "ch-009",
@@ -64,6 +68,7 @@ const chapters: ChapterRef[] = [
     translatedLanguage: "en",
     scanlationGroup: "Manga Plus",
     readableAt: "1997-10-14T00:00:00+00:00",
+    externalUrl: null,
   },
   {
     id: "ch-010",
@@ -73,6 +78,7 @@ const chapters: ChapterRef[] = [
     translatedLanguage: "en",
     scanlationGroup: "Manga Plus",
     readableAt: "1997-10-21T00:00:00+00:00",
+    externalUrl: "https://comikey.com/read/example/1",
   },
 ];
 
@@ -138,6 +144,7 @@ const ch0 = chapters[0] ?? {
   translatedLanguage: "en",
   scanlationGroup: null,
   readableAt: "",
+  externalUrl: null,
 };
 
 describe("formatChapterDetail", () => {
@@ -262,5 +269,66 @@ describe("runList", () => {
     await expect(
       runList({ manga: "One Piece", chapter: "999", nonTty: true }, ctx, makeClient()),
     ).rejects.toThrow("Chapter 999 not found");
+  });
+});
+
+// --- formatExternalTag tests ---
+
+describe("formatExternalTag", () => {
+  it("returns 'mangaplus' for mangaplus.shueisha.co.jp", () => {
+    expect(formatExternalTag("https://mangaplus.shueisha.co.jp/viewer/1010633")).toBe("mangaplus");
+  });
+
+  it("returns 'comikey' for comikey.com", () => {
+    expect(formatExternalTag("https://comikey.com/read/example/1")).toBe("comikey");
+  });
+
+  it("returns first subdomain segment for arbitrary URLs", () => {
+    expect(formatExternalTag("https://cubari.moe/read/imgur/xyz")).toBe("cubari");
+  });
+});
+
+// --- external chapter annotation tests ---
+
+describe("formatMangaList — external annotation", () => {
+  it("appends [external: mangaplus] for external chapters", () => {
+    const out = formatMangaList(candidate, volumes, chapters);
+    expect(out).toContain("[external: mangaplus]");
+  });
+
+  it("does NOT append external tag for CDN chapters", () => {
+    const out = formatMangaList(candidate, volumes, chapters);
+    // ch-001 (Romance Dawn) is CDN — must not have external tag
+    expect(out).toContain("Chapter 1 — Romance Dawn\n");
+  });
+});
+
+describe("formatVolumeList — external annotation", () => {
+  it("appends [external: mangaplus] for external chapters", () => {
+    const vol1Chapters = chapters.filter((c) => c.volume === "1");
+    const out = formatVolumeList(candidate, "1", vol1Chapters);
+    expect(out).toContain("[external: mangaplus]");
+  });
+
+  it("does NOT append tag for CDN chapters", () => {
+    const vol1Chapters = chapters.filter((c) => c.volume === "1");
+    const out = formatVolumeList(candidate, "1", vol1Chapters);
+    expect(out).toContain("Chapter 1 — Romance Dawn\n");
+  });
+});
+
+describe("formatChapterDetail — external annotation", () => {
+  it("includes External: line when externalUrl is set", () => {
+    const externalChapter = chapters[2]; // ch-003 with mangaplus URL
+    if (!externalChapter) throw new Error("fixture missing");
+    const out = formatChapterDetail(candidate, externalChapter);
+    expect(out).toContain("External:  https://mangaplus.shueisha.co.jp/viewer/1000001");
+  });
+
+  it("does NOT include External: line when externalUrl is null", () => {
+    const cdnChapter = chapters[0]; // ch-001 with null externalUrl
+    if (!cdnChapter) throw new Error("fixture missing");
+    const out = formatChapterDetail(candidate, cdnChapter);
+    expect(out).not.toContain("External:");
   });
 });

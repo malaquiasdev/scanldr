@@ -2,6 +2,16 @@
 
 import type { ChapterRef, MangaCandidate, VolumeRef } from "./types.ts";
 
+/**
+ * Returns a short human-readable label for an external chapter URL.
+ * e.g. "https://mangaplus.shueisha.co.jp/..." → "mangaplus"
+ *      "https://comikey.com/..." → "comikey"
+ */
+export function formatExternalTag(url: string): string {
+  const host = new URL(url).hostname;
+  return host.split(".")[0] ?? host;
+}
+
 /** Format full manga listing (all volumes). */
 export function formatMangaList(
   candidate: MangaCandidate,
@@ -50,7 +60,9 @@ export function formatMangaList(
     for (const ch of volChapters) {
       const num = ch.chapter ?? "?";
       const title = ch.title ? ` — ${ch.title}` : "";
-      lines.push(`  Chapter ${num}${title}`);
+      const ext =
+        ch.externalUrl !== null ? ` [external: ${formatExternalTag(ch.externalUrl)}]` : "";
+      lines.push(`  Chapter ${num}${title}${ext}`);
     }
 
     lines.push("");
@@ -90,7 +102,8 @@ export function formatVolumeList(
   for (const ch of sorted) {
     const num = ch.chapter ?? "?";
     const title = ch.title ? ` — ${ch.title}` : "";
-    lines.push(`  Chapter ${num}${title}`);
+    const ext = ch.externalUrl !== null ? ` [external: ${formatExternalTag(ch.externalUrl)}]` : "";
+    lines.push(`  Chapter ${num}${title}${ext}`);
   }
 
   return lines.join("\n");
@@ -112,6 +125,9 @@ export function formatChapterDetail(
   }
   lines.push(`Language:  ${chapter.translatedLanguage}`);
   lines.push(`Group:     ${chapter.scanlationGroup ?? "—"}`);
+  if (chapter.externalUrl !== null) {
+    lines.push(`External:  ${chapter.externalUrl}`);
+  }
   lines.push(`Published: ${chapter.readableAt.slice(0, 10)}`);
   return lines.join("\n");
 }

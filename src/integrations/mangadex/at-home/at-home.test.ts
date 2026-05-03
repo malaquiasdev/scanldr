@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
-import { getAtHomeServer, mangadexImageFetcher } from "./index.ts";
+import { AtHomeError, getAtHomeServer, mangadexImageFetcher } from "./index.ts";
 import type { AtHomeOptions } from "./types.ts";
 
 const noopLogger: Logger = {
@@ -58,6 +58,43 @@ describe("getAtHomeServer", () => {
     const client = makeHttpClient();
     const result = await getAtHomeServer(client, "ch-001", "data-saver");
     expect(result.pages).toEqual(["page1-saver.jpg", "page2-saver.jpg"]);
+  });
+
+  it("throws AtHomeError with status 404 and external hint when http layer returns 404", async () => {
+    const client = makeHttpClient({
+      get: async () => {
+        throw new Error("MangaDex HTTP 404: https://api.mangadex.org/at-home/server/ch-ext");
+      },
+    });
+    const err = await getAtHomeServer(client, "ch-ext", "data").catch((e) => e);
+    expect(err).toBeInstanceOf(AtHomeError);
+    expect((err as AtHomeError).status).toBe(404);
+    expect((err as AtHomeError).chapterId).toBe("ch-ext");
+    expect((err as AtHomeError).message).toContain("externally-hosted");
+  });
+
+  it("throws AtHomeError with correct status for non-404 HTTP errors", async () => {
+    const client = makeHttpClient({
+      get: async () => {
+        throw new Error("MangaDex HTTP 403: https://api.mangadex.org/at-home/server/ch-403");
+      },
+    });
+    const err = await getAtHomeServer(client, "ch-403", "data").catch((e) => e);
+    expect(err).toBeInstanceOf(AtHomeError);
+    expect((err as AtHomeError).status).toBe(403);
+    expect((err as AtHomeError).message).toContain("403");
+  });
+
+  it("re-throws non-HTTP errors as-is", async () => {
+    const client = makeHttpClient({
+      get: async () => {
+        throw new Error("network failure");
+      },
+    });
+    const err = await getAtHomeServer(client, "ch-net", "data").catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(AtHomeError);
+    expect((err as Error).message).toBe("network failure");
   });
 });
 

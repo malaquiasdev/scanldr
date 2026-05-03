@@ -10,7 +10,8 @@
         "chapter": "1",
         "title": "Prologue",
         "translatedLanguage": "en",
-        "readableAt": "2021-01-01T00:00:00+00:00"
+        "readableAt": "2021-01-01T00:00:00+00:00",
+        "externalUrl": null
       },
       "relationships": [
         {
@@ -30,12 +31,26 @@
         "chapter": null,
         "title": "Oneshot",
         "translatedLanguage": "pt-br",
-        "readableAt": "2021-02-01T00:00:00+00:00"
+        "readableAt": "2021-02-01T00:00:00+00:00",
+        "externalUrl": null
+      },
+      "relationships": []
+    },
+    {
+      "id": "ch-003",
+      "type": "chapter",
+      "attributes": {
+        "volume": "1",
+        "chapter": "2",
+        "title": "Into the Fray",
+        "translatedLanguage": "en",
+        "readableAt": "2021-01-08T00:00:00+00:00",
+        "externalUrl": "https://mangaplus.shueisha.co.jp/viewer/1010633"
       },
       "relationships": []
     }
   ],
   "limit": 500,
   "offset": 0,
-  "total": 2
+  "total": 3
 }

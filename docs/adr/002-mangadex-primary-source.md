@@ -62,3 +62,18 @@ When MangaDex has the volume metadata but the user prefers to download from a fa
 - Two-source architecture adds complexity (MangaDex client + fallback clients).
 - For titles not on MangaDex, the user must pass `--chapter` manually if volume metadata is also unavailable from the fallback site.
 - MangaDex API rate limits apply (~5 req/s). The downloader must respect them.
+
+## Partner-Hosted vs. CDN-Hosted Chapters
+
+MangaDex distinguishes two categories of chapters:
+
+- **CDN-hosted** — images served via MangaDex's own at-home CDN network. `attributes.externalUrl` is `null`. These chapters are fully downloadable through `/at-home/server/:chapterId`.
+- **Partner-hosted** — images live on a publisher's platform (MangaPlus, Comikey, Cubari, etc.). `attributes.externalUrl` is set to the partner URL. The `/at-home/server/:chapterId` endpoint returns HTTP 404 for these chapters.
+
+Most ongoing weekly Shueisha titles (One Piece, Jujutsu Kaisen, Kagurabachi, etc.) are partner-hosted via MangaPlus.
+
+**scanldr behaviour per command:**
+- `list` — annotates external chapters with `[external: <host>]` so the user knows at a glance.
+- `download` — refuses early with a typed `ExternalChapterError` carrying the URL (implemented in #14/#15).
+- `sync` / `update` — skips external chapters with an `info` log (implemented in #16/#17).
+- `getAtHomeServer` — throws a typed `AtHomeError` with a 404-specific message hinting at external hosting, even if the caller forgets the upstream check.

@@ -3,6 +3,17 @@ import type { Logger } from "@plugins/logger/index.ts";
 
 export type ImageQuality = "data" | "data-saver";
 
+export class AtHomeError extends Error {
+  constructor(
+    public chapterId: string,
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "AtHomeError";
+  }
+}
+
 export interface AtHomeServer {
   baseUrl: string;
   hash: string;
