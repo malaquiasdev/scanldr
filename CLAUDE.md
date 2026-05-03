@@ -56,3 +56,11 @@ export type { Logger, LoggerOptions } from "./types.ts";
 
 ### No flat files in `src/`
 Every new feature lives in its own folder. The only flat files allowed at `src/` root are `index.ts` and `types.ts` (shared domain types).
+
+### Import aliases
+Use aliases for cross-boundary imports:
+- `@plugins/*` → `src/plugins/*`
+- `@modules/*` → `src/modules/*`
+- `@integrations/*` → `src/integrations/*`
+
+Relative imports (`./types.ts`, `./service.ts`) are only allowed within the same plugin/module/integration folder.
