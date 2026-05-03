@@ -20,7 +20,7 @@ export function createMangaDexHttp(opts: MangaDexHttpOptions): MangaDexHttpClien
     let lastError: unknown;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      await acquire(bucket, logger.warn, sleep);
+      await acquire(bucket, logger, sleep);
 
       let response: Response;
       try {
