@@ -11,7 +11,7 @@ src/
 └── integrations/    # External clients: mangadex/, mangakakalot/
 ```
 
-Each folder has `index.ts` (public API / logic), `types.ts` (interfaces), and `service.ts` or `repository.ts` as needed.
+Each folder has `index.ts` (public API / logic), `types.ts` (interfaces), `service.ts` or `repository.ts` as needed, and `<name>.test.ts` colocated — never in a top-level `__tests__/` directory.
 
 ## Hard Rules
 
