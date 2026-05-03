@@ -3,20 +3,14 @@ import { parseAggregate, parseChapterFeed, parseMangaList } from "./parser.ts";
 import type {
   ChapterRef,
   MangaCandidate,
+  MangaDexClient,
   MdxAggregateResponse,
   MdxChapterListResponse,
   MdxMangaListResponse,
   VolumeRef,
 } from "./types.ts";
 
-export type { ChapterRef, MangaCandidate, VolumeRef } from "./types.ts";
-
-export interface MangaDexClient {
-  searchManga: (title: string, lang?: string) => Promise<MangaCandidate[]>;
-  aggregateVolumes: (mangaId: string, languages: string[]) => Promise<VolumeRef[]>;
-  feedChapters: (mangaId: string, languages: string[], offset?: number) => Promise<ChapterRef[]>;
-  resolveTitleToId: (title: string) => Promise<MangaCandidate[]>;
-}
+export type { ChapterRef, MangaCandidate, MangaDexClient, VolumeRef } from "./types.ts";
 
 export function createMangaDexClient(http: MangaDexHttpClient): MangaDexClient {
   async function searchManga(title: string, lang?: string): Promise<MangaCandidate[]> {

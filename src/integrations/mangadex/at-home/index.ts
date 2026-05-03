@@ -58,11 +58,10 @@ export function mangadexImageFetcher(
 
   return async function fetchImage(ref: ImageRef): Promise<Uint8Array> {
     let lastErr: unknown;
+    // Cache the server result; only re-fetch after a failure to get a fresh CDN URL.
+    let server = await getAtHomeServer(httpClient, chapterId, quality);
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      // Re-fetch the at-home server on every attempt to get a fresh CDN URL.
-      // Stale URLs keep failing — this is by design (ADR-002, decision #9).
-      const server = await getAtHomeServer(httpClient, chapterId, quality);
       const filename = server.pages[ref.page - 1] ?? ref.url;
       const imageUrl = `${server.baseUrl}/${quality}/${server.hash}/${filename}`;
 
@@ -93,6 +92,7 @@ export function mangadexImageFetcher(
           logger,
         );
         await sleep(waitMs);
+        server = await getAtHomeServer(httpClient, chapterId, quality);
         continue;
       }
 
@@ -119,6 +119,7 @@ export function mangadexImageFetcher(
           logger,
         );
         await sleep(waitMs);
+        server = await getAtHomeServer(httpClient, chapterId, quality);
         continue;
       }
 

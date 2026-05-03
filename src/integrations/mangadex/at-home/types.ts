@@ -19,14 +19,6 @@ export interface AtHomeServerResponse {
   };
 }
 
-export interface PageReport {
-  url: string;
-  success: boolean;
-  bytes: number;
-  duration: number;
-  cached: boolean;
-}
-
 /** POST body sent to https://api.mangadex.network/report */
 export interface ReportPayload {
   url: string;

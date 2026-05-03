@@ -95,7 +95,7 @@ describe("createMangaDexClient", () => {
       get: async <T>(_path: string, _q?: unknown) => ({ result: "ok", data: [] }) as unknown as T,
     };
     const client = createMangaDexClient(http);
-    expect(client.resolveTitleToId("nonexistent")).rejects.toThrow("No manga found");
+    await expect(client.resolveTitleToId("nonexistent")).rejects.toThrow("No manga found");
   });
 
   it("resolveTitleToId returns candidates when found", async () => {

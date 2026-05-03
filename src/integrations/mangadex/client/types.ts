@@ -93,3 +93,10 @@ export interface MdxChapterListResponse {
   result: string;
   data: MdxChapterData[];
 }
+
+export interface MangaDexClient {
+  searchManga: (title: string, lang?: string) => Promise<MangaCandidate[]>;
+  aggregateVolumes: (mangaId: string, languages: string[]) => Promise<VolumeRef[]>;
+  feedChapters: (mangaId: string, languages: string[], offset?: number) => Promise<ChapterRef[]>;
+  resolveTitleToId: (title: string) => Promise<MangaCandidate[]>;
+}
