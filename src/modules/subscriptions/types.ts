@@ -9,14 +9,35 @@ export interface Subscription {
   lastSyncedAt: number | null;
 }
 
-export interface SubscriptionRow {
+export interface AddSubscriptionInput {
   source: string;
   mangaId: string;
   mangaTitle: string;
+}
+
+export interface RemoveSubscriptionInput {
+  source: string;
+  mangaId: string;
+}
+
+export interface SetPausedInput {
+  source: string;
+  mangaId: string;
   paused: boolean;
-  addedAt: number;
+}
+
+export interface MarkSyncedInput {
+  source: string;
+  mangaId: string;
+  at: number;
+}
+
+export interface RefreshTitleInput {
+  source: string;
+  mangaId: string;
+  title: string;
 }
 
 export interface ListSubscriptionsFilter {
-  paused?: boolean | undefined;
+  includePaused?: boolean;
 }

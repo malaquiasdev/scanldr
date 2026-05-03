@@ -1,7 +1,7 @@
 // Subscriptions repository — raw SQL queries, no business logic.
 
 import type { Db } from "@plugins/db/index.ts";
-import type { ListSubscriptionsFilter, Subscription, SubscriptionRow } from "./types.ts";
+import type { AddSubscriptionInput, ListSubscriptionsFilter, Subscription } from "./types.ts";
 
 function toSubscription(raw: {
   source: string;
@@ -21,23 +21,25 @@ function toSubscription(raw: {
   };
 }
 
-export function insertSubscription(db: Db, row: SubscriptionRow): void {
+export function insertSubscription(db: Db, input: AddSubscriptionInput, addedAt: number): void {
   db.prepare(
     `INSERT OR IGNORE INTO subscriptions (source, manga_id, manga_title, paused, added_at)
-     VALUES (?, ?, ?, ?, ?)`,
-  ).run(row.source, row.mangaId, row.mangaTitle, row.paused ? 1 : 0, row.addedAt);
+     VALUES (?, ?, ?, 0, ?)`,
+  ).run(input.source, input.mangaId, input.mangaTitle, addedAt);
 }
 
-export function deleteSubscription(db: Db, source: string, mangaId: string): void {
-  db.prepare("DELETE FROM subscriptions WHERE source = ? AND manga_id = ?").run(source, mangaId);
+export function deleteSubscription(db: Db, source: string, mangaId: string): boolean {
+  const info = db
+    .prepare("DELETE FROM subscriptions WHERE source = ? AND manga_id = ?")
+    .run(source, mangaId);
+  return info.changes > 0;
 }
 
-export function updatePaused(db: Db, source: string, mangaId: string, paused: boolean): void {
-  db.prepare("UPDATE subscriptions SET paused = ? WHERE source = ? AND manga_id = ?").run(
-    paused ? 1 : 0,
-    source,
-    mangaId,
-  );
+export function updatePaused(db: Db, source: string, mangaId: string, paused: boolean): boolean {
+  const info = db
+    .prepare("UPDATE subscriptions SET paused = ? WHERE source = ? AND manga_id = ?")
+    .run(paused ? 1 : 0, source, mangaId);
+  return info.changes > 0;
 }
 
 export function updateLastSyncedAt(
@@ -53,13 +55,21 @@ export function updateLastSyncedAt(
   );
 }
 
+export function updateMangaTitle(db: Db, source: string, mangaId: string, title: string): void {
+  db.prepare("UPDATE subscriptions SET manga_title = ? WHERE source = ? AND manga_id = ?").run(
+    title,
+    source,
+    mangaId,
+  );
+}
+
 export function querySubscriptions(db: Db, filter?: ListSubscriptionsFilter): Subscription[] {
   const conditions: string[] = [];
   const params: (string | number)[] = [];
 
-  if (filter?.paused !== undefined) {
-    conditions.push("paused = ?");
-    params.push(filter.paused ? 1 : 0);
+  // default: active only unless includePaused is explicitly true
+  if (!filter?.includePaused) {
+    conditions.push("paused = 0");
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
