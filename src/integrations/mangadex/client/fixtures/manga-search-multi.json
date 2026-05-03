@@ -1,0 +1,31 @@
+{
+  "result": "ok",
+  "response": "collection",
+  "data": [
+    {
+      "id": "a1c7c817-4e59-43b7-9365-09675a149a6f",
+      "type": "manga",
+      "attributes": {
+        "title": {
+          "en": "One Piece"
+        },
+        "originalLanguage": "ja",
+        "year": 1997
+      }
+    },
+    {
+      "id": "b9b4a0b9-0f3a-4b6e-9a2e-3f8e5b1e6c0f",
+      "type": "manga",
+      "attributes": {
+        "title": {
+          "en": "One Piece: Romance Dawn"
+        },
+        "originalLanguage": "ja",
+        "year": 1996
+      }
+    }
+  ],
+  "limit": 10,
+  "offset": 0,
+  "total": 2
+}
