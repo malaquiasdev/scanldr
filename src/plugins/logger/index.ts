@@ -1,28 +1,12 @@
 // Structured logger — see docs/overviewer.md §9.
 // Emits to stderr only. User-facing output (tables, prompts, exports) goes to stdout.
 
-export type LogLevel = "error" | "warn" | "info" | "debug";
-export type LogFormat = "human" | "json";
+import type { LogLevel, Logger, LoggerOptions } from "./types.ts";
 
-export interface LoggerOptions {
-  level: LogLevel;
-  format: LogFormat;
-  /** Optional sink — defaults to process.stderr. Used for tests. */
-  write?: (line: string) => void;
-  /** Optional clock — defaults to () => new Date().toISOString(). Used for tests. */
-  now?: () => string;
-}
-
-export interface Logger {
-  error: (msg: string, fields?: Record<string, unknown>) => void;
-  warn: (msg: string, fields?: Record<string, unknown>) => void;
-  info: (msg: string, fields?: Record<string, unknown>) => void;
-  debug: (msg: string, fields?: Record<string, unknown>) => void;
-}
+export type { Logger, LogFormat, LogLevel, LoggerOptions } from "./types.ts";
 
 const LEVELS: Record<LogLevel, number> = { error: 0, warn: 1, info: 2, debug: 3 };
 
-// Lower-cased denylist — see docs/overviewer.md §9.
 const DENYLIST = new Set(["cookies", "cf_clearance", "useragent", "authorization"]);
 const REDACTED = "[REDACTED]";
 
