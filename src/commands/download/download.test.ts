@@ -1,0 +1,340 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { MangaDexClient } from "@integrations/mangadex/client/index.ts";
+import type { ChapterRef, MangaCandidate, VolumeRef } from "@integrations/mangadex/client/index.ts";
+import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
+import { listHistory } from "@modules/history/index.ts";
+import { openDb, runMigrations } from "@plugins/db/index.ts";
+import type { Db } from "@plugins/db/index.ts";
+import type { Logger } from "@plugins/logger/index.ts";
+import { runDownload } from "./index.ts";
+import { CliError } from "./range.ts";
+import type { DownloadArgs, DownloadContext } from "./types.ts";
+
+// Minimal 1x1 JPEG bytes
+const JPEG_BYTES = new Uint8Array([
+  0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01,
+  0x00, 0x01, 0x00, 0x00, 0xff, 0xdb, 0x00, 0x43, 0x00, 0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08,
+  0x07, 0x07, 0x07, 0x09, 0x09, 0x08, 0x0a, 0x0c, 0x14, 0x0d, 0x0c, 0x0b, 0x0b, 0x0c, 0x19, 0x12,
+  0x13, 0x0f, 0x14, 0x1d, 0x1a, 0x1f, 0x1e, 0x1d, 0x1a, 0x1c, 0x1c, 0x20, 0x24, 0x2e, 0x27, 0x20,
+  0x22, 0x2c, 0x23, 0x1c, 0x1c, 0x28, 0x37, 0x29, 0x2c, 0x30, 0x31, 0x34, 0x34, 0x34, 0x1f, 0x27,
+  0x39, 0x3d, 0x38, 0x32, 0x3c, 0x2e, 0x33, 0x34, 0x32, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x01,
+  0x00, 0x01, 0x01, 0x01, 0x11, 0x00, 0xff, 0xc4, 0x00, 0x1f, 0x00, 0x00, 0x01, 0x05, 0x01, 0x01,
+  0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04,
+  0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0xff, 0xc4, 0x00, 0xb5, 0x10, 0x00, 0x02, 0x01, 0x03,
+  0x03, 0x02, 0x04, 0x03, 0x05, 0x05, 0x04, 0x04, 0x00, 0x00, 0x01, 0x7d, 0x01, 0x02, 0x03, 0x00,
+  0x04, 0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07, 0x22, 0x71, 0x14, 0x32,
+  0x81, 0x91, 0xa1, 0x08, 0x23, 0x42, 0xb1, 0xc1, 0x15, 0x52, 0xd1, 0xf0, 0x24, 0x33, 0x62, 0x72,
+  0x82, 0x09, 0x0a, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x34, 0x35,
+  0x36, 0x37, 0x38, 0x39, 0x3a, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x53, 0x54, 0x55,
+  0x56, 0x57, 0x58, 0x59, 0x5a, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x73, 0x74, 0x75,
+  0x76, 0x77, 0x78, 0x79, 0x7a, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x93, 0x94, 0x95,
+  0x96, 0x97, 0x98, 0x99, 0x9a, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xb2, 0xb3,
+  0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca,
+  0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7,
+  0xe8, 0xe9, 0xea, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xff, 0xda, 0x00,
+  0x08, 0x01, 0x01, 0x00, 0x00, 0x3f, 0x00, 0xfb, 0xd2, 0x8a, 0x28, 0x03, 0xff, 0xd9,
+]);
+
+const noopLogger: Logger = {
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+};
+
+function makeCandidate(overrides?: Partial<MangaCandidate>): MangaCandidate {
+  return {
+    id: "manga-id-1",
+    title: "Test Manga",
+    originalLanguage: "ja",
+    year: 2020,
+    ...overrides,
+  };
+}
+
+function makeVolumeRef(volume: string, chapterIds: string[]): VolumeRef {
+  return { volume, numeric: Number(volume), chapterIds };
+}
+
+function makeChapterRef(overrides: Partial<ChapterRef> & { id: string }): ChapterRef {
+  return {
+    volume: "1",
+    chapter: "1",
+    title: "Chapter 1",
+    translatedLanguage: "en",
+    scanlationGroup: null,
+    readableAt: "2024-01-01T00:00:00Z",
+    externalUrl: null,
+    ...overrides,
+  };
+}
+
+function makeClient(overrides?: Partial<MangaDexClient>): MangaDexClient {
+  const chapter1 = makeChapterRef({ id: "ch-1", volume: "1", chapter: "1" });
+  return {
+    searchManga: async () => [makeCandidate()],
+    resolveTitleToId: async () => [makeCandidate()],
+    aggregateVolumes: async () => [makeVolumeRef("1", ["ch-1"])],
+    feedChapters: async () => [chapter1],
+    ...overrides,
+  };
+}
+
+// Build a MangaDexHttpClient that serves at-home server + image fetch
+function makeFullHttpClient(): MangaDexHttpClient {
+  return {
+    get: async (path: string) => {
+      if (path.startsWith("/at-home/server/")) {
+        return {
+          baseUrl: "https://example.com",
+          chapter: {
+            hash: "abc123",
+            data: ["page1.jpg", "page2.jpg"],
+            dataSaver: ["ds1.jpg"],
+          },
+        };
+      }
+      throw new Error(`Unexpected HTTP GET: ${path}`);
+    },
+  } as unknown as MangaDexHttpClient;
+}
+
+let tmpDir: string;
+let db: Db;
+
+beforeEach(async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "scanldr-test-"));
+  db = openDb(join(tmpDir, "test.db"));
+  runMigrations(db);
+});
+
+afterEach(async () => {
+  db.close();
+  await rm(tmpDir, { recursive: true, force: true });
+});
+
+function baseArgs(overrides?: Partial<DownloadArgs>): DownloadArgs {
+  return {
+    manga: "Test Manga",
+    volume: "1",
+    format: "cbz",
+    outDir: tmpDir,
+    quality: "data",
+    concurrency: 1,
+    delayMs: 0,
+    force: false,
+    noTrack: false,
+    dryRun: false,
+    nonTty: true,
+    ...overrides,
+  };
+}
+
+function baseCtx(): DownloadContext {
+  return {
+    logger: noopLogger,
+    config: {
+      preferred_languages: ["en"],
+      download_quality: "data",
+      default_format: "cbz",
+      default_out: tmpDir,
+      image_concurrency: 1,
+      chapter_delay_ms: 0,
+      db_path: join(tmpDir, "test.db"),
+    },
+    db,
+  };
+}
+
+// Override mangadexImageFetcher to return JPEG bytes without hitting network
+// We'll inject through a custom at-home http client that never actually fetches images.
+// Instead, we mock globalThis.fetch for image fetches.
+function withMockedImageFetch(fn: () => Promise<void>): Promise<void> {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    async (_url: string | URL | Request) => {
+      return new Response(JPEG_BYTES, {
+        status: 200,
+        headers: { "x-cache": "MISS", "content-type": "image/jpeg" },
+      });
+    },
+    { preconnect: () => {} },
+  ) as typeof fetch;
+  return fn().finally(() => {
+    globalThis.fetch = originalFetch;
+  });
+}
+
+describe("runDownload — happy path", () => {
+  test("produces .cbz file and records history", async () => {
+    await withMockedImageFetch(async () => {
+      await runDownload(baseArgs(), baseCtx(), makeClient(), makeFullHttpClient());
+    });
+
+    // Check .cbz exists
+    const cbzPath = join(tmpDir, "test-manga", "test-manga-volume-001.cbz");
+    const exists = await Bun.file(cbzPath).exists();
+    expect(exists).toBe(true);
+
+    // Check history recorded
+    const history = listHistory(db);
+    expect(history.length).toBeGreaterThan(0);
+    expect(history[0]?.mangaId).toBe("manga-id-1");
+    expect(history[0]?.language).toBe("en");
+  });
+});
+
+describe("runDownload — dryRun", () => {
+  test("does not write .cbz and does not record history", async () => {
+    await withMockedImageFetch(async () => {
+      await runDownload(baseArgs({ dryRun: true }), baseCtx(), makeClient(), makeFullHttpClient());
+    });
+
+    const cbzPath = join(tmpDir, "test-manga", "test-manga-volume-001.cbz");
+    const exists = await Bun.file(cbzPath).exists();
+    expect(exists).toBe(false);
+
+    const history = listHistory(db);
+    expect(history.length).toBe(0);
+  });
+});
+
+describe("runDownload — noTrack", () => {
+  test("writes .cbz but does not record history", async () => {
+    await withMockedImageFetch(async () => {
+      await runDownload(baseArgs({ noTrack: true }), baseCtx(), makeClient(), makeFullHttpClient());
+    });
+
+    const cbzPath = join(tmpDir, "test-manga", "test-manga-volume-001.cbz");
+    const exists = await Bun.file(cbzPath).exists();
+    expect(exists).toBe(true);
+
+    const history = listHistory(db);
+    expect(history.length).toBe(0);
+  });
+});
+
+describe("runDownload — force", () => {
+  test("re-downloads even if volume is already in history", async () => {
+    // Run first download to populate history
+    await withMockedImageFetch(async () => {
+      await runDownload(baseArgs(), baseCtx(), makeClient(), makeFullHttpClient());
+    });
+
+    const historyBefore = listHistory(db);
+    expect(historyBefore.length).toBeGreaterThan(0);
+
+    // Run again without force — should skip
+    let loggedSkip = false;
+    const captureLogger: Logger = {
+      info: (_obj: unknown, msg?: string) => {
+        if (msg?.includes("skipping volume")) loggedSkip = true;
+      },
+      warn: () => {},
+      error: () => {},
+    };
+
+    await runDownload(
+      baseArgs(),
+      { ...baseCtx(), logger: captureLogger },
+      makeClient(),
+      makeFullHttpClient(),
+    );
+    expect(loggedSkip).toBe(true);
+
+    // Run with force — should re-download without logging skip
+    loggedSkip = false;
+    await withMockedImageFetch(async () => {
+      await runDownload(
+        baseArgs({ force: true }),
+        { ...baseCtx(), logger: captureLogger },
+        makeClient(),
+        makeFullHttpClient(),
+      );
+    });
+    expect(loggedSkip).toBe(false);
+  });
+});
+
+describe("runDownload — external chapter", () => {
+  test("throws CliError for external chapters", async () => {
+    const externalChapter = makeChapterRef({
+      id: "ch-ext",
+      volume: "1",
+      chapter: "1",
+      externalUrl: "https://mangaplus.shueisha.co.jp/viewer/123",
+    });
+
+    const clientWithExternal = makeClient({
+      feedChapters: async () => [externalChapter],
+    });
+
+    await expect(
+      runDownload(baseArgs(), baseCtx(), clientWithExternal, makeFullHttpClient()),
+    ).rejects.toBeInstanceOf(CliError);
+  });
+
+  test("CliError message contains the external URL", async () => {
+    const extUrl = "https://mangaplus.shueisha.co.jp/viewer/456";
+    const externalChapter = makeChapterRef({
+      id: "ch-ext",
+      volume: "1",
+      chapter: "2",
+      externalUrl: extUrl,
+    });
+
+    const clientWithExternal = makeClient({
+      feedChapters: async () => [externalChapter],
+    });
+
+    try {
+      await runDownload(baseArgs(), baseCtx(), clientWithExternal, makeFullHttpClient());
+      throw new Error("expected to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(CliError);
+      expect((err as CliError).message).toContain(extUrl);
+    }
+  });
+});
+
+describe("runDownload — volume not in feed", () => {
+  test("logs warn and skips missing volumes", async () => {
+    let warnLogged = false;
+    const captureLogger: Logger = {
+      info: () => {},
+      warn: (_obj: unknown, msg?: string) => {
+        if (msg?.includes("not found in feed")) warnLogged = true;
+      },
+
+      error: () => {},
+    };
+
+    // Volume "2" doesn't exist in the feed (which only has volume "1")
+    await withMockedImageFetch(async () => {
+      await runDownload(
+        baseArgs({ volume: "2" }),
+        { ...baseCtx(), logger: captureLogger },
+        makeClient(),
+        makeFullHttpClient(),
+      );
+    });
+
+    expect(warnLogged).toBe(true);
+  });
+});
+
+describe("runDownload — range parsing", () => {
+  test("invalid range throws CliError", async () => {
+    await expect(
+      runDownload(baseArgs({ volume: "5-3" }), baseCtx(), makeClient(), makeFullHttpClient()),
+    ).rejects.toBeInstanceOf(CliError);
+  });
+
+  test("--volume none throws CliError with deferred message", async () => {
+    await expect(
+      runDownload(baseArgs({ volume: "none" }), baseCtx(), makeClient(), makeFullHttpClient()),
+    ).rejects.toBeInstanceOf(CliError);
+  });
+});

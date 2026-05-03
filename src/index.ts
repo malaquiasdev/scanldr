@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
+import { runDownload } from "@commands/download/index.ts";
 import { runList } from "@commands/list/index.ts";
 import { createMangaDexClient } from "@integrations/mangadex/client/index.ts";
 import { createMangaDexHttp } from "@integrations/mangadex/http/index.ts";
@@ -100,8 +101,88 @@ const handlers: Record<string, Handler> = {
       client,
     );
   },
-  download: () => {
-    throw new NotImplementedError("download");
+  download: async (rest, ctx) => {
+    const { values: dlValues, positionals: dlPos } = parseArgs({
+      args: rest,
+      allowPositionals: true,
+      strict: false,
+      options: {
+        volume: { type: "string" },
+        chapter: { type: "string" },
+        format: { type: "string" },
+        out: { type: "string" },
+        quality: { type: "string" },
+        concurrency: { type: "string" },
+        "delay-ms": { type: "string" },
+        force: { type: "boolean" },
+        "no-track": { type: "boolean" },
+        "dry-run": { type: "boolean" },
+        "non-tty": { type: "boolean" },
+      },
+    });
+
+    const manga = dlPos[0];
+    if (!manga) {
+      throw new CliError("Usage: scanldr download <manga> --volume <range> [flags]", 2);
+    }
+
+    if (dlValues.volume !== undefined && dlValues.chapter !== undefined) {
+      throw new CliError("--volume and --chapter are mutually exclusive", 2);
+    }
+
+    if (dlValues.chapter !== undefined) {
+      throw new NotImplementedError("download --chapter");
+    }
+
+    if (dlValues.volume === undefined) {
+      throw new CliError("--volume <range> is required (--chapter support coming in #15)", 2);
+    }
+
+    const rawFormat = dlValues.format;
+    const format =
+      rawFormat === "zip" ? "zip" : rawFormat === "cbz" ? "cbz" : ctx.config.default_format;
+
+    const rawQuality = dlValues.quality;
+    const quality =
+      rawQuality === "data-saver"
+        ? "data-saver"
+        : rawQuality === "data"
+          ? "data"
+          : ctx.config.download_quality;
+
+    const rawConcurrency = dlValues.concurrency;
+    const concurrency =
+      typeof rawConcurrency === "string" && /^\d+$/.test(rawConcurrency)
+        ? Number(rawConcurrency)
+        : ctx.config.image_concurrency;
+
+    const rawDelay = dlValues["delay-ms"];
+    const delayMs =
+      typeof rawDelay === "string" && /^\d+$/.test(rawDelay)
+        ? Number(rawDelay)
+        : ctx.config.chapter_delay_ms;
+
+    const http = createMangaDexHttp({ logger: ctx.logger, config: ctx.config });
+    const client = createMangaDexClient(http);
+
+    await runDownload(
+      {
+        manga,
+        volume: dlValues.volume as string,
+        format,
+        outDir: typeof dlValues.out === "string" ? dlValues.out : ctx.config.default_out,
+        quality,
+        concurrency,
+        delayMs,
+        force: dlValues.force === true,
+        noTrack: dlValues["no-track"] === true,
+        dryRun: dlValues["dry-run"] === true,
+        nonTty: dlValues["non-tty"] === true || !process.stdout.isTTY,
+      },
+      { logger: ctx.logger, config: ctx.config, db: ctx.db },
+      client,
+      http,
+    );
   },
   update: () => {
     throw new NotImplementedError("update");
