@@ -2,12 +2,26 @@
 // Schema mirrors docs/models/auth_model.md.
 
 export interface AuthSession {
-  /** All cookies captured for the target host. Must include cf_clearance. */
+  /** All cookies captured for the target host. May include cf_clearance when a challenge was shown. */
   cookies: Record<string, string>;
   /** User-Agent string used when the cookies were generated. */
   userAgent: string;
   /** Unix timestamp (ms) of when the session was saved. */
   savedAt: number;
+}
+
+export interface CookieLike {
+  name: string;
+  value: string;
+}
+
+export interface PollForClearanceOptions {
+  /** Returns the current cookie jar — called on every poll tick. May throw AuthError. */
+  getCookies: () => Promise<CookieLike[]>;
+  /** Maximum time to wait before giving up, in milliseconds. */
+  timeoutMs: number;
+  /** Time between polls, in milliseconds. */
+  intervalMs: number;
 }
 
 export interface RunAuthOptions {
