@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type LogLevel, createLogger } from "../src/logger.ts";
+import { type LogLevel, createLogger } from "../src/plugins/logger/index.ts";
 
 const FIXED_TS = "2025-01-01T00:00:00.000Z";
 

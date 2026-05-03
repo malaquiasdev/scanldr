@@ -1,6 +1,11 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
-import { type LogFormat, type LogLevel, type Logger, createLogger } from "./logger.ts";
+import {
+  type LogFormat,
+  type LogLevel,
+  type Logger,
+  createLogger,
+} from "./plugins/logger/index.ts";
 
 const VERSION = "0.0.0";
 
