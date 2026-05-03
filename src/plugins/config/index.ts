@@ -4,27 +4,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { ConfigError } from "../errors/index.ts";
 import { check, isPlainObject } from "../guards/index.ts";
+import type { Config, LoadConfigOptions, LoadConfigResult } from "./types.ts";
 
-export interface Config {
-  preferred_languages: string[];
-  download_quality: "data" | "data-saver";
-  default_format: "cbz" | "zip";
-  default_out: string;
-  image_concurrency: number;
-  chapter_delay_ms: number;
-}
-
-export interface LoadConfigOptions {
-  configPath?: string | undefined;
-  env?: NodeJS.ProcessEnv;
-  cwd?: string;
-  home?: string;
-}
-
-export interface LoadConfigResult {
-  config: Config;
-  source: string | null;
-}
+export type { Config, LoadConfigOptions, LoadConfigResult } from "./types.ts";
 
 export const DEFAULT_CONFIG: Config = {
   preferred_languages: ["en", "pt-BR"],
