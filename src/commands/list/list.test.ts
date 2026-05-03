@@ -286,6 +286,18 @@ describe("formatExternalTag", () => {
   it("returns first subdomain segment for arbitrary URLs", () => {
     expect(formatExternalTag("https://cubari.moe/read/imgur/xyz")).toBe("cubari");
   });
+
+  it("returns empty string for URL without scheme (e.g. 'mangaplus')", () => {
+    expect(formatExternalTag("mangaplus")).toBe("");
+  });
+
+  it("returns empty string for empty string", () => {
+    expect(formatExternalTag("")).toBe("");
+  });
+
+  it("returns empty string for non-URL string", () => {
+    expect(formatExternalTag("not a url at all")).toBe("");
+  });
 });
 
 // --- external chapter annotation tests ---
@@ -314,6 +326,28 @@ describe("formatVolumeList — external annotation", () => {
     const vol1Chapters = chapters.filter((c) => c.volume === "1");
     const out = formatVolumeList(candidate, "1", vol1Chapters);
     expect(out).toContain("Chapter 1 — Romance Dawn\n");
+  });
+});
+
+describe("formatMangaList — malformed externalUrl", () => {
+  it("renders [external] (no host) and does not crash when externalUrl has no scheme", () => {
+    const malformedChapter: ChapterRef = {
+      id: "ch-bad",
+      volume: "1",
+      chapter: "5",
+      title: null,
+      translatedLanguage: "en",
+      scanlationGroup: null,
+      readableAt: "2020-01-01T00:00:00+00:00",
+      externalUrl: "mangaplus",
+    };
+    const out = formatMangaList(
+      candidate,
+      [{ volume: "1", numeric: 1, chapterIds: ["ch-bad"] }],
+      [malformedChapter],
+    );
+    expect(out).toContain("[external]");
+    expect(out).not.toContain("[external: ]");
   });
 });
 

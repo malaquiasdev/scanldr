@@ -210,6 +210,80 @@ describe("mangadexImageFetcher — all attempts fail", () => {
   });
 });
 
+// ---------- at-home refresh fails during retry ----------
+
+describe("mangadexImageFetcher — refresh failure during retry", () => {
+  it("throws AtHomeError immediately when refresh call throws AtHomeError(404)", async () => {
+    let atHomeCallCount = 0;
+    const httpClient = makeHttpClient({
+      get: async <T>(_path: string) => {
+        atHomeCallCount++;
+        if (atHomeCallCount === 1) {
+          // first call (initial server fetch) succeeds
+          return {
+            baseUrl: "https://cdn.example.com",
+            chapter: { hash: "abc123", data: ["page1.jpg"], dataSaver: [] },
+          } as T;
+        }
+        // refresh after first failure: simulate chapter deleted → 404
+        throw new Error("MangaDex HTTP 404: https://api.mangadex.org/at-home/server/ch-del");
+      },
+    });
+
+    const mockFetch = mock(async (url: string) => {
+      if (url === "https://api.mangadex.network/report") return new Response(null, { status: 200 });
+      // image fetch always fails to trigger the refresh path
+      return makeImageResponse({ ok: false, status: 503 });
+    });
+
+    const opts: AtHomeOptions = {
+      httpClient,
+      logger: noopLogger,
+      fetch: mockFetch as unknown as AtHomeOptions["fetch"],
+      sleep: async () => {},
+    };
+
+    const fetcher = mangadexImageFetcher("ch-del", opts);
+    const err = await fetcher({ url: "", page: 1 }).catch((e) => e);
+    expect(err).toBeInstanceOf(AtHomeError);
+    expect((err as AtHomeError).status).toBe(404);
+  });
+
+  it("throws lastErr (not generic retry message) when refresh throws a generic Error", async () => {
+    let atHomeCallCount = 0;
+    const httpClient = makeHttpClient({
+      get: async <T>(_path: string) => {
+        atHomeCallCount++;
+        if (atHomeCallCount === 1) {
+          return {
+            baseUrl: "https://cdn.example.com",
+            chapter: { hash: "abc123", data: ["page1.jpg"], dataSaver: [] },
+          } as T;
+        }
+        throw new Error("network timeout on refresh");
+      },
+    });
+
+    const mockFetch = mock(async (url: string) => {
+      if (url === "https://api.mangadex.network/report") return new Response(null, { status: 200 });
+      return makeImageResponse({ ok: false, status: 503 });
+    });
+
+    const opts: AtHomeOptions = {
+      httpClient,
+      logger: noopLogger,
+      fetch: mockFetch as unknown as AtHomeOptions["fetch"],
+      sleep: async () => {},
+    };
+
+    const fetcher = mangadexImageFetcher("ch-net", opts);
+    const err = await fetcher({ url: "", page: 1 }).catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    // Must surface the refresh error, not "Failed to fetch image page X after 5 attempts"
+    expect((err as Error).message).toBe("network timeout on refresh");
+  });
+});
+
 // ---------- report HTTP failure tolerated ----------
 
 describe("mangadexImageFetcher — report failure tolerated", () => {

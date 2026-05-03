@@ -113,7 +113,15 @@ export function mangadexImageFetcher(
           logger,
         );
         await sleep(waitMs);
-        server = await getAtHomeServer(httpClient, chapterId, quality);
+        try {
+          server = await getAtHomeServer(httpClient, chapterId, quality);
+        } catch (refreshErr) {
+          // AtHomeError already has a clear message (e.g. 404 = externally-hosted chapter).
+          // Propagate it directly so the user sees the real cause, not a generic retry message.
+          if (refreshErr instanceof AtHomeError) throw refreshErr;
+          lastErr = refreshErr;
+          break;
+        }
         continue;
       }
 
@@ -140,7 +148,13 @@ export function mangadexImageFetcher(
           logger,
         );
         await sleep(waitMs);
-        server = await getAtHomeServer(httpClient, chapterId, quality);
+        try {
+          server = await getAtHomeServer(httpClient, chapterId, quality);
+        } catch (refreshErr) {
+          if (refreshErr instanceof AtHomeError) throw refreshErr;
+          lastErr = refreshErr;
+          break;
+        }
         continue;
       }
 
