@@ -15,4 +15,9 @@ export interface MangaDexHttpClient {
   get: <T>(path: string, query?: QueryParams) => Promise<T>;
 }
 
+export interface BucketState {
+  tokens: number;
+  lastRefill: number;
+}
+
 export type QueryParams = Record<string, string | string[] | number | boolean | undefined>;
