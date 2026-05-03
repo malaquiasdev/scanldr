@@ -8,15 +8,16 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { chromium } from "playwright";
 import { AuthError } from "./types.ts";
-import type { AuthSession, RunAuthOptions } from "./types.ts";
+import type { AuthSession, PollForClearanceOptions, RunAuthOptions } from "./types.ts";
 
 export { AuthError } from "./types.ts";
-export type { AuthSession, RunAuthOptions } from "./types.ts";
+export type { AuthSession, PollForClearanceOptions, RunAuthOptions } from "./types.ts";
 
 const AUTH_FILENAME = "auth.json";
 const APP_DIR = "scanldr";
 const SITE_ROOT = "https://mangakakalot.gg";
 const CF_COOKIE_TIMEOUT_MS = 120_000;
+const CF_COOKIE_INTERVAL_MS = 1_000;
 const VERIFY_TIMEOUT_MS = 15_000;
 
 /**
@@ -44,9 +45,33 @@ const SITE_TITLE_MARKER = "MangaKakalot";
  * Returns true when the page has loaded real site content (no CF challenge).
  * Uses page.title() — available synchronously after domcontentloaded and does
  * not trigger extra JS evaluation races.
+ * Not async: purely synchronous string check; no await needed.
  */
-export async function pageHasRealContent(title: string): Promise<boolean> {
+export function pageHasRealContent(title: string): boolean {
   return title.includes(SITE_TITLE_MARKER);
+}
+
+/**
+ * Polls until the `cf_clearance` cookie appears in the browser context.
+ * Extracted as a pure helper so it can be unit-tested without launching Chromium.
+ *
+ * Throws `AuthError` when the deadline expires without the cookie appearing.
+ */
+export async function pollForClearance(opts: PollForClearanceOptions): Promise<void> {
+  const { getCookies, timeoutMs, intervalMs } = opts;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const cookies = await getCookies();
+    if (cookies.some((c) => c.name === "cf_clearance")) return;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+
+  // One final check in case the cookie appeared in the last interval.
+  const finalCookies = await getCookies();
+  if (finalCookies.some((c) => c.name === "cf_clearance")) return;
+
+  throw new AuthError("Challenge not solved within timeout. No session saved.");
 }
 
 /**
@@ -87,8 +112,17 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
   try {
     await page.goto(SITE_ROOT, { waitUntil: "domcontentloaded" });
 
-    const title = await page.title();
-    const realContent = await pageHasRealContent(title);
+    // Wrap title() so a rejected promise becomes a typed AuthError.
+    let title: string;
+    try {
+      title = await page.title();
+    } catch (err) {
+      throw new AuthError(
+        `Failed to read page title: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    const realContent = pageHasRealContent(title);
 
     if (realContent) {
       // Site loaded without a CF challenge — no cf_clearance will appear.
@@ -103,23 +137,20 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
       );
 
       // Poll until cf_clearance cookie appears — networkidle is unreliable for Turnstile.
-      const deadline = Date.now() + CF_COOKIE_TIMEOUT_MS;
-      while (Date.now() < deadline) {
-        if (browserClosed) {
-          throw new AuthError("Browser closed before challenge was resolved. No session saved.");
-        }
-        const cookies = await context.cookies();
-        if (cookies.some((c) => c.name === "cf_clearance")) break;
-        await new Promise((r) => setTimeout(r, 1000));
-      }
+      // Uses pollForClearance helper so the logic is independently testable.
+      await pollForClearance({
+        getCookies: async () => {
+          if (browserClosed) {
+            throw new AuthError("Browser closed before challenge was resolved. No session saved.");
+          }
+          return context.cookies();
+        },
+        timeoutMs: CF_COOKIE_TIMEOUT_MS,
+        intervalMs: CF_COOKIE_INTERVAL_MS,
+      });
 
       if (browserClosed) {
         throw new AuthError("Browser closed before challenge was resolved. No session saved.");
-      }
-
-      const finalCookies = await context.cookies();
-      if (!finalCookies.some((c) => c.name === "cf_clearance")) {
-        throw new AuthError("Challenge not solved within timeout. No session saved.");
       }
     }
 
@@ -131,6 +162,13 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
     const cookies: Record<string, string> = {};
     for (const c of rawCookies) {
       cookies[c.name] = c.value;
+    }
+
+    // Guard: if the no-challenge path produced no cookies, the session is invalid.
+    if (Object.keys(cookies).length === 0) {
+      throw new AuthError(
+        "No cookies captured after page load. Session cannot be saved — re-run scanldr auth.",
+      );
     }
 
     logger.info(

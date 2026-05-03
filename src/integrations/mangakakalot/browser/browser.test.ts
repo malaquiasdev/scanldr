@@ -2,32 +2,40 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AuthError, pageHasRealContent, resolveAuthPath } from "./index.ts";
-import type { RunAuthOptions } from "./types.ts";
+import { AuthError, pageHasRealContent, pollForClearance, resolveAuthPath } from "./index.ts";
+import type { CookieLike, RunAuthOptions } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // pageHasRealContent — CF challenge detection
 // ---------------------------------------------------------------------------
 
 describe("pageHasRealContent", () => {
-  test("returns true when title contains MangaKakalot (no challenge shown)", async () => {
-    expect(await pageHasRealContent("MangaKakalot - Read Manga Online")).toBe(true);
+  test("returns true when title contains MangaKakalot (no challenge shown)", () => {
+    expect(pageHasRealContent("MangaKakalot - Read Manga Online")).toBe(true);
   });
 
-  test("returns true for exact marker", async () => {
-    expect(await pageHasRealContent("MangaKakalot")).toBe(true);
+  test("returns true for exact marker", () => {
+    expect(pageHasRealContent("MangaKakalot")).toBe(true);
   });
 
-  test("returns false when title is a Cloudflare challenge page", async () => {
-    expect(await pageHasRealContent("Just a moment...")).toBe(false);
+  test("returns false when title is a Cloudflare challenge page", () => {
+    expect(pageHasRealContent("Just a moment...")).toBe(false);
   });
 
-  test("returns false when title is empty (CF blocked before HTML loads)", async () => {
-    expect(await pageHasRealContent("")).toBe(false);
+  test("returns false when title is empty (CF blocked before HTML loads)", () => {
+    expect(pageHasRealContent("")).toBe(false);
   });
 
-  test("returns false when title is unrelated", async () => {
-    expect(await pageHasRealContent("Attention Required! | Cloudflare")).toBe(false);
+  test("returns false when title is unrelated", () => {
+    expect(pageHasRealContent("Attention Required! | Cloudflare")).toBe(false);
+  });
+
+  test("is not async (no unnecessary async)", () => {
+    // pageHasRealContent must return a plain boolean, not a Promise.
+    // If the return type were Promise<boolean>, `typeof result` would be "object".
+    const result = pageHasRealContent("MangaKakalot");
+    expect(result).toBe(true);
+    expect(typeof result).toBe("boolean");
   });
 });
 
@@ -124,6 +132,86 @@ describe("resolveAuthPath", () => {
     });
     expect(p.endsWith("/scanldr/auth.json")).toBe(true);
     expect(p.includes(".scanldr-auth.json")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pollForClearance — challenge poll helper
+// ---------------------------------------------------------------------------
+
+describe("pollForClearance", () => {
+  test("resolves immediately when cf_clearance is present on first poll", async () => {
+    const cookies: CookieLike[] = [{ name: "cf_clearance", value: "abc" }];
+    await expect(
+      pollForClearance({
+        getCookies: async () => cookies,
+        timeoutMs: 5_000,
+        intervalMs: 10,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("resolves after cookie appears on a later poll", async () => {
+    let callCount = 0;
+    const getCookies = async (): Promise<CookieLike[]> => {
+      callCount++;
+      // Return cf_clearance only on the 3rd call.
+      if (callCount >= 3) return [{ name: "cf_clearance", value: "xyz" }];
+      return [{ name: "other_cookie", value: "val" }];
+    };
+
+    await expect(
+      pollForClearance({
+        getCookies,
+        timeoutMs: 5_000,
+        intervalMs: 10,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(callCount).toBeGreaterThanOrEqual(3);
+  });
+
+  test("throws AuthError when cf_clearance never appears within timeout", async () => {
+    const getCookies = async (): Promise<CookieLike[]> => [{ name: "unrelated", value: "val" }];
+
+    await expect(
+      pollForClearance({
+        getCookies,
+        timeoutMs: 50, // very short for test speed
+        intervalMs: 10,
+      }),
+    ).rejects.toBeInstanceOf(AuthError);
+  });
+
+  test("timeout error message matches documented text", async () => {
+    const getCookies = async (): Promise<CookieLike[]> => [];
+
+    await expect(
+      pollForClearance({
+        getCookies,
+        timeoutMs: 50,
+        intervalMs: 10,
+      }),
+    ).rejects.toMatchObject({
+      message: "Challenge not solved within timeout. No session saved.",
+    });
+  });
+
+  test("propagates AuthError thrown by getCookies (e.g. browser closed)", async () => {
+    const browserClosedError = new AuthError(
+      "Browser closed before challenge was resolved. No session saved.",
+    );
+    const getCookies = async (): Promise<CookieLike[]> => {
+      throw browserClosedError;
+    };
+
+    await expect(
+      pollForClearance({
+        getCookies,
+        timeoutMs: 5_000,
+        intervalMs: 10,
+      }),
+    ).rejects.toBe(browserClosedError);
   });
 });
 

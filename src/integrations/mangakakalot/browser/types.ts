@@ -10,6 +10,20 @@ export interface AuthSession {
   savedAt: number;
 }
 
+export interface CookieLike {
+  name: string;
+  value: string;
+}
+
+export interface PollForClearanceOptions {
+  /** Returns the current cookie jar — called on every poll tick. May throw AuthError. */
+  getCookies: () => Promise<CookieLike[]>;
+  /** Maximum time to wait before giving up, in milliseconds. */
+  timeoutMs: number;
+  /** Time between polls, in milliseconds. */
+  intervalMs: number;
+}
+
 export interface RunAuthOptions {
   logger: import("@plugins/logger/index.ts").Logger;
   /**
