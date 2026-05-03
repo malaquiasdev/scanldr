@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { MangaDexHttp } from "@integrations/mangadex/http/index.ts";
+import { createMangaDexHttp } from "@integrations/mangadex/http/index.ts";
 import type { FetchFn } from "@integrations/mangadex/http/index.ts";
 import type { Config } from "@plugins/config/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
@@ -56,7 +56,7 @@ function sequenceFetch(responses: Array<() => Response>): FetchFn {
 
 describe("MangaDexHttp.get", () => {
   test("success — returns parsed JSON", async () => {
-    const client = new MangaDexHttp({
+    const client = createMangaDexHttp({
       logger: noopLogger,
       config: baseConfig,
       fetch: okFetch({ result: "ok", data: [1, 2, 3] }),
@@ -68,7 +68,7 @@ describe("MangaDexHttp.get", () => {
 
   test("429 with x-ratelimit-retry-after header — sleeps then succeeds", async () => {
     const sleep = makeSleep();
-    const client = new MangaDexHttp({
+    const client = createMangaDexHttp({
       logger: noopLogger,
       config: baseConfig,
       sleep: sleep.fn,
@@ -89,7 +89,7 @@ describe("MangaDexHttp.get", () => {
 
   test("429 without header — uses exponential backoff then succeeds", async () => {
     const sleep = makeSleep();
-    const client = new MangaDexHttp({
+    const client = createMangaDexHttp({
       logger: noopLogger,
       config: baseConfig,
       sleep: sleep.fn,
@@ -106,7 +106,7 @@ describe("MangaDexHttp.get", () => {
 
   test("503 — retries then succeeds", async () => {
     const sleep = makeSleep();
-    const client = new MangaDexHttp({
+    const client = createMangaDexHttp({
       logger: noopLogger,
       config: baseConfig,
       sleep: sleep.fn,
@@ -125,7 +125,7 @@ describe("MangaDexHttp.get", () => {
   test("network error — retries then succeeds", async () => {
     const sleep = makeSleep();
     let calls = 0;
-    const client = new MangaDexHttp({
+    const client = createMangaDexHttp({
       logger: noopLogger,
       config: baseConfig,
       sleep: sleep.fn,
@@ -143,7 +143,7 @@ describe("MangaDexHttp.get", () => {
 
   test("success after retry — 429 then 200", async () => {
     const sleep = makeSleep();
-    const client = new MangaDexHttp({
+    const client = createMangaDexHttp({
       logger: noopLogger,
       config: baseConfig,
       sleep: sleep.fn,
@@ -159,7 +159,7 @@ describe("MangaDexHttp.get", () => {
 
   test("exhaustion — 5 network errors throw", async () => {
     const sleep = makeSleep();
-    const client = new MangaDexHttp({
+    const client = createMangaDexHttp({
       logger: noopLogger,
       config: baseConfig,
       sleep: sleep.fn,
@@ -175,7 +175,7 @@ describe("MangaDexHttp.get", () => {
 
   test("exhaustion — 5 consecutive 503s throw", async () => {
     const sleep = makeSleep();
-    const client = new MangaDexHttp({
+    const client = createMangaDexHttp({
       logger: noopLogger,
       config: baseConfig,
       sleep: sleep.fn,
@@ -188,7 +188,7 @@ describe("MangaDexHttp.get", () => {
 
   test("4xx non-429 — throws immediately without retry", async () => {
     const sleep = makeSleep();
-    const client = new MangaDexHttp({
+    const client = createMangaDexHttp({
       logger: noopLogger,
       config: baseConfig,
       sleep: sleep.fn,
@@ -201,7 +201,7 @@ describe("MangaDexHttp.get", () => {
 
   test("query params — appended to URL", async () => {
     let capturedUrl = "";
-    const client = new MangaDexHttp({
+    const client = createMangaDexHttp({
       logger: noopLogger,
       config: baseConfig,
       fetch: async (input) => {

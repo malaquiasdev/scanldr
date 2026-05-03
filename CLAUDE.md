@@ -64,3 +64,28 @@ Use aliases for cross-boundary imports:
 - `@integrations/*` → `src/integrations/*`
 
 Relative imports (`./types.ts`, `./service.ts`) are only allowed within the same plugin/module/integration folder.
+
+### No classes — functional style only
+**Never** use `class`. Use factory functions that return objects; use closures for state.
+
+```ts
+// WRONG
+export class MangaDexHttp { constructor(...) {} async get() {} }  ❌
+
+// CORRECT
+export function createMangaDexHttp(opts: MangaDexHttpOptions): MangaDexHttpClient {
+  // state in closure
+  return { get }
+}  ✅
+```
+
+### Gate before every PR
+```bash
+bun test
+bun run typecheck
+bun run check
+```
+
+## Reference Project
+
+`/Users/mateusmalaquias/Developer/me/faturamento/src` — follow its conventions for any pattern not covered here.

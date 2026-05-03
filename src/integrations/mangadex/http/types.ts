@@ -7,15 +7,12 @@ export interface MangaDexHttpOptions {
   baseUrl?: string;
   logger: Logger;
   config: Config;
-  /** Override sleep function for tests */
   sleep?: (ms: number) => Promise<void>;
-  /** Override fetch for tests */
   fetch?: FetchFn;
 }
 
-export interface TokenBucket {
-  tokens: number;
-  lastRefill: number;
+export interface MangaDexHttpClient {
+  get: <T>(path: string, query?: QueryParams) => Promise<T>;
 }
 
 export type QueryParams = Record<string, string | string[] | number | boolean | undefined>;
