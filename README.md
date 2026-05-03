@@ -28,20 +28,25 @@ bun link
 ## Usage
 
 ```bash
-# Authenticate with Mangakakalot (one-time, launches Chromium)
-scanldr auth
+scanldr help
+```
 
-# Download a volume from MangaDex
-scanldr download --volume 1 <manga-slug>
-
-# List available volumes
-scanldr list <manga-slug>
-
-# Watch a series for updates
-scanldr watch <manga-slug>
-
-# Show download history
-scanldr history
+```
+Commands:
+  auth                           Open browser for Cloudflare bypass, save session
+  list <manga>                   List volumes, chapters, languages, groups
+  download <manga> --volume <n>  Download volumes (e.g. 1, 1-5, 1,3,7)
+  download <manga> --chapter <n> Download chapters (same range syntax)
+  update <manga>                 Download what is missing in history
+  sync                           Run update for every active subscription
+  watch <manga>                  Add to subscription list
+  unwatch <manga>                Remove from subscription list (history kept)
+  watchlist [--paused]           List subscriptions
+  pause <manga>                  Skip a subscription on sync
+  resume <manga>                 Re-enable a paused subscription
+  import <file>                  Bootstrap subscriptions from a flat-text list
+  export [--out <file>]          Dump active subscriptions as plain text
+  history [--manga <m>]          Display download history
 ```
 
 ## Configuration
