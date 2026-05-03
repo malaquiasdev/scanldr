@@ -87,6 +87,16 @@ describe("parseChapterFeed", () => {
     expect(chapters[1]?.volume).toBeNull();
     expect(chapters[1]?.chapter).toBeNull();
   });
+
+  it("populates externalUrl as null for CDN-hosted chapters", () => {
+    const chapters = parseChapterFeed(chapterFeedFixture as MdxChapterListResponse);
+    expect(chapters[0]?.externalUrl).toBeNull();
+  });
+
+  it("populates externalUrl with the URL for partner-hosted chapters", () => {
+    const chapters = parseChapterFeed(chapterFeedFixture as MdxChapterListResponse);
+    expect(chapters[2]?.externalUrl).toBe("https://mangaplus.shueisha.co.jp/viewer/1010633");
+  });
 });
 
 describe("createMangaDexClient", () => {

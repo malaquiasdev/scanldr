@@ -1,4 +1,6 @@
 import type { ImageRef } from "@modules/downloader/types.ts";
+import type { Logger } from "@plugins/logger/index.ts";
+import { AtHomeError } from "./types.ts";
 import type {
   AtHomeOptions,
   AtHomeServer,
@@ -7,22 +9,66 @@ import type {
   ReportPayload,
 } from "./types.ts";
 
+export { AtHomeError } from "./types.ts";
 export type { AtHomeOptions, AtHomeServer, ImageQuality, ReportPayload } from "./types.ts";
 
 const REPORT_URL = "https://api.mangadex.network/report";
 const MAX_ATTEMPTS = 5;
 
+function logAtHomeError(
+  logger: Logger | undefined,
+  chapterId: string,
+  err: unknown,
+  status?: number | null,
+): void {
+  logger?.warn(
+    { event: "mangadex.at_home_error", context: "at-home", chapterId, status, err },
+    status !== undefined && status !== null
+      ? "at-home server failed; wrapping as AtHomeError"
+      : "at-home server failed with unexpected error",
+  );
+}
+
+function logRefreshFailed(logger: Logger, chapterId: string, attempt: number, err: unknown): void {
+  logger.warn(
+    { event: "mangadex.at_home_refresh_failed", context: "at-home", chapterId, attempt, err },
+    "failed to refresh at-home server during retry",
+  );
+}
+
+// Parse HTTP status from error messages like "MangaDex HTTP 404: <url>"
+function parseHttpStatus(err: unknown): number | null {
+  if (!(err instanceof Error)) return null;
+  const match = /^MangaDex HTTP (\d+):/.exec(err.message);
+  return match ? Number(match[1]) : null;
+}
+
 export async function getAtHomeServer(
   httpClient: AtHomeOptions["httpClient"],
   chapterId: string,
   quality: ImageQuality = "data",
+  logger?: Logger,
 ): Promise<AtHomeServer> {
-  const res = await httpClient.get<AtHomeServerResponse>(`/at-home/server/${chapterId}`);
-  return {
-    baseUrl: res.baseUrl,
-    hash: res.chapter.hash,
-    pages: quality === "data" ? res.chapter.data : res.chapter.dataSaver,
-  };
+  try {
+    const res = await httpClient.get<AtHomeServerResponse>(`/at-home/server/${chapterId}`);
+    return {
+      baseUrl: res.baseUrl,
+      hash: res.chapter.hash,
+      pages: quality === "data" ? res.chapter.data : res.chapter.dataSaver,
+    };
+  } catch (err) {
+    const status = parseHttpStatus(err);
+    if (status !== null) {
+      const msg =
+        status === 404
+          ? `at-home server returned 404 for chapter ${chapterId}. Likely an externally-hosted chapter (MangaPlus / Comikey / Cubari). Check chapter.externalUrl in the feed.`
+          : `at-home server returned ${status} for chapter ${chapterId}`;
+      logAtHomeError(logger, chapterId, err, status);
+      throw new AtHomeError(chapterId, status, msg);
+    }
+    logAtHomeError(logger, chapterId, err);
+    throw err;
+  }
 }
 
 async function sendReport(
@@ -59,7 +105,7 @@ export function mangadexImageFetcher(
   return async function fetchImage(ref: ImageRef): Promise<Uint8Array> {
     let lastErr: unknown;
     // Cache the server result; only re-fetch after a failure to get a fresh CDN URL.
-    let server = await getAtHomeServer(httpClient, chapterId, quality);
+    let server = await getAtHomeServer(httpClient, chapterId, quality, logger);
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       const filename = server.pages[ref.page - 1] ?? ref.url;
@@ -92,7 +138,14 @@ export function mangadexImageFetcher(
           logger,
         );
         await sleep(waitMs);
-        server = await getAtHomeServer(httpClient, chapterId, quality);
+        try {
+          server = await getAtHomeServer(httpClient, chapterId, quality, logger);
+        } catch (refreshErr) {
+          logRefreshFailed(logger, chapterId, attempt + 1, refreshErr);
+          if (refreshErr instanceof AtHomeError) throw refreshErr;
+          lastErr = refreshErr;
+          break;
+        }
         continue;
       }
 
@@ -119,7 +172,14 @@ export function mangadexImageFetcher(
           logger,
         );
         await sleep(waitMs);
-        server = await getAtHomeServer(httpClient, chapterId, quality);
+        try {
+          server = await getAtHomeServer(httpClient, chapterId, quality, logger);
+        } catch (refreshErr) {
+          logRefreshFailed(logger, chapterId, attempt + 1, refreshErr);
+          if (refreshErr instanceof AtHomeError) throw refreshErr;
+          lastErr = refreshErr;
+          break;
+        }
         continue;
       }
 

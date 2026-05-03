@@ -4,6 +4,7 @@ import {
   formatChapterDetail,
   formatMangaList,
   formatVolumeList,
+  parseExternalHost,
 } from "./formatter.ts";
 import { runList } from "./index.ts";
 import type {
@@ -13,8 +14,6 @@ import type {
   MangaDexClientLike,
   VolumeRef,
 } from "./types.ts";
-
-// --- Fixtures ---
 
 const candidate: MangaCandidate = {
   id: "a1c7c817-4e59-43b7-9365-09675a149a6f",
@@ -37,6 +36,7 @@ const chapters: ChapterRef[] = [
     translatedLanguage: "en",
     scanlationGroup: "TCB Scans",
     readableAt: "1997-07-22T00:00:00+00:00",
+    externalUrl: null,
   },
   {
     id: "ch-002",
@@ -46,6 +46,7 @@ const chapters: ChapterRef[] = [
     translatedLanguage: "en",
     scanlationGroup: "TCB Scans",
     readableAt: "1997-07-29T00:00:00+00:00",
+    externalUrl: null,
   },
   {
     id: "ch-003",
@@ -55,6 +56,7 @@ const chapters: ChapterRef[] = [
     translatedLanguage: "en",
     scanlationGroup: "TCB Scans",
     readableAt: "1997-08-05T00:00:00+00:00",
+    externalUrl: "https://mangaplus.shueisha.co.jp/viewer/1000001",
   },
   {
     id: "ch-009",
@@ -64,6 +66,7 @@ const chapters: ChapterRef[] = [
     translatedLanguage: "en",
     scanlationGroup: "Manga Plus",
     readableAt: "1997-10-14T00:00:00+00:00",
+    externalUrl: null,
   },
   {
     id: "ch-010",
@@ -73,6 +76,7 @@ const chapters: ChapterRef[] = [
     translatedLanguage: "en",
     scanlationGroup: "Manga Plus",
     readableAt: "1997-10-21T00:00:00+00:00",
+    externalUrl: "https://comikey.com/read/example/1",
   },
 ];
 
@@ -84,8 +88,6 @@ const ctx: ListContext = {
   },
   languages: ["en"],
 };
-
-// --- formatter tests ---
 
 describe("formatMangaList", () => {
   it("includes manga title and id", () => {
@@ -138,6 +140,7 @@ const ch0 = chapters[0] ?? {
   translatedLanguage: "en",
   scanlationGroup: null,
   readableAt: "",
+  externalUrl: null,
 };
 
 describe("formatChapterDetail", () => {
@@ -166,8 +169,6 @@ describe("formatCandidateList", () => {
     expect(out).toContain("[1] One Piece");
   });
 });
-
-// --- runList tests ---
 
 function makeClient(overrides: Partial<MangaDexClientLike> = {}): MangaDexClientLike {
   return {
@@ -262,5 +263,91 @@ describe("runList", () => {
     await expect(
       runList({ manga: "One Piece", chapter: "999", nonTty: true }, ctx, makeClient()),
     ).rejects.toThrow("Chapter 999 not found");
+  });
+});
+
+describe("parseExternalHost", () => {
+  it("returns 'mangaplus' for mangaplus.shueisha.co.jp", () => {
+    expect(parseExternalHost("https://mangaplus.shueisha.co.jp/viewer/1010633")).toBe("mangaplus");
+  });
+
+  it("returns 'comikey' for comikey.com", () => {
+    expect(parseExternalHost("https://comikey.com/read/example/1")).toBe("comikey");
+  });
+
+  it("returns null for malformed URL (no scheme)", () => {
+    expect(parseExternalHost("mangaplus")).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(parseExternalHost("")).toBeNull();
+  });
+
+  it("returns null for non-URL string", () => {
+    expect(parseExternalHost("not a url at all")).toBeNull();
+  });
+});
+
+describe("formatMangaList — external annotation", () => {
+  it("appends [external: mangaplus] for external chapters", () => {
+    const out = formatMangaList(candidate, volumes, chapters);
+    expect(out).toContain("[external: mangaplus]");
+  });
+
+  it("does NOT append external tag for CDN chapters", () => {
+    const out = formatMangaList(candidate, volumes, chapters);
+    expect(out).toContain("Chapter 1 — Romance Dawn\n");
+  });
+});
+
+describe("formatVolumeList — external annotation", () => {
+  it("appends [external: mangaplus] for external chapters", () => {
+    const vol1Chapters = chapters.filter((c) => c.volume === "1");
+    const out = formatVolumeList(candidate, "1", vol1Chapters);
+    expect(out).toContain("[external: mangaplus]");
+  });
+
+  it("does NOT append tag for CDN chapters", () => {
+    const vol1Chapters = chapters.filter((c) => c.volume === "1");
+    const out = formatVolumeList(candidate, "1", vol1Chapters);
+    expect(out).toContain("Chapter 1 — Romance Dawn\n");
+  });
+});
+
+describe("formatMangaList — malformed externalUrl", () => {
+  it("renders [external] (no host) and does not crash when externalUrl has no scheme", () => {
+    const malformedChapter: ChapterRef = {
+      id: "ch-bad",
+      volume: "1",
+      chapter: "5",
+      title: null,
+      translatedLanguage: "en",
+      scanlationGroup: null,
+      readableAt: "2020-01-01T00:00:00+00:00",
+      externalUrl: "mangaplus",
+    };
+    const out = formatMangaList(
+      candidate,
+      [{ volume: "1", numeric: 1, chapterIds: ["ch-bad"] }],
+      [malformedChapter],
+    );
+    expect(out).toContain("[external]");
+    expect(out).not.toContain("[external: ]");
+  });
+});
+
+describe("formatChapterDetail — external annotation", () => {
+  it("includes External: line when externalUrl is set", () => {
+    const externalChapter = chapters[2]; // ch-003 with mangaplus URL
+    if (!externalChapter) throw new Error("fixture missing");
+    const out = formatChapterDetail(candidate, externalChapter);
+    expect(out).toContain("External:  https://mangaplus.shueisha.co.jp/viewer/1000001");
+  });
+
+  it("does NOT include External: line when externalUrl is null", () => {
+    const cdnChapter = chapters[0]; // ch-001 with null externalUrl
+    if (!cdnChapter) throw new Error("fixture missing");
+    const out = formatChapterDetail(candidate, cdnChapter);
+    expect(out).not.toContain("External:");
   });
 });

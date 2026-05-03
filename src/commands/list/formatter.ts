@@ -2,6 +2,21 @@
 
 import type { ChapterRef, MangaCandidate, VolumeRef } from "./types.ts";
 
+/**
+ * Parses the hostname from a URL and returns the first label (e.g. "mangaplus").
+ * Returns `null` when the URL is malformed so callers can distinguish "bad URL"
+ * from "valid URL with no useful label" (empty host), instead of silently swallowing
+ * the parse error.
+ */
+export function parseExternalHost(url: string): string | null {
+  try {
+    const host = new URL(url).hostname;
+    return host.split(".")[0] ?? host;
+  } catch {
+    return null;
+  }
+}
+
 /** Format full manga listing (all volumes). */
 export function formatMangaList(
   candidate: MangaCandidate,
@@ -50,7 +65,9 @@ export function formatMangaList(
     for (const ch of volChapters) {
       const num = ch.chapter ?? "?";
       const title = ch.title ? ` — ${ch.title}` : "";
-      lines.push(`  Chapter ${num}${title}`);
+      const extTag = ch.externalUrl !== null ? parseExternalHost(ch.externalUrl) : undefined;
+      const ext = extTag === undefined ? "" : extTag ? ` [external: ${extTag}]` : " [external]";
+      lines.push(`  Chapter ${num}${title}${ext}`);
     }
 
     lines.push("");
@@ -90,7 +107,9 @@ export function formatVolumeList(
   for (const ch of sorted) {
     const num = ch.chapter ?? "?";
     const title = ch.title ? ` — ${ch.title}` : "";
-    lines.push(`  Chapter ${num}${title}`);
+    const extTag = ch.externalUrl !== null ? parseExternalHost(ch.externalUrl) : undefined;
+    const ext = extTag === undefined ? "" : extTag ? ` [external: ${extTag}]` : " [external]";
+    lines.push(`  Chapter ${num}${title}${ext}`);
   }
 
   return lines.join("\n");
@@ -112,6 +131,9 @@ export function formatChapterDetail(
   }
   lines.push(`Language:  ${chapter.translatedLanguage}`);
   lines.push(`Group:     ${chapter.scanlationGroup ?? "—"}`);
+  if (chapter.externalUrl !== null) {
+    lines.push(`External:  ${chapter.externalUrl}`);
+  }
   lines.push(`Published: ${chapter.readableAt.slice(0, 10)}`);
   return lines.join("\n");
 }
