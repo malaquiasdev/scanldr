@@ -12,34 +12,9 @@ cd scanldr
 bun install
 ```
 
-## Before every PR
+## Code conventions
 
-All three gates must pass:
-
-```bash
-bun test && bun run typecheck && bun run check
-```
-
-## Project structure
-
-```
-src/
-├── index.ts            # CLI entrypoint
-├── types.ts            # Shared domain types
-├── plugins/            # Infrastructure: config/, logger/, db/, errors/, guards/
-├── modules/            # Business logic: downloader/, history/, subscriptions/
-└── integrations/       # External clients: mangadex/, mangakakalot/
-migrations/             # Versioned SQL migrations (applied in lexicographic order)
-```
-
-## Conventions
-
-- **No classes** — factory functions with closures (`createX(opts): XClient`)
-- **Interfaces in `types.ts`** — never in `index.ts` or `service.ts`
-- **Tests colocated** — `src/modules/foo/foo.test.ts`, not `src/__tests__/`
-- **Import aliases** — use `@plugins/*`, `@modules/*`, `@integrations/*` for cross-boundary imports; relative imports only within the same folder
-- **Logger** — `logger.warn({ event, context, ...fields }, msg)` — fields first, message last; no `debug` level
-- **SQL** — queries in `repository.ts`, business logic in `service.ts`
+See **[docs/conventions.md](docs/conventions.md)** for the full reference: project structure, coding rules, logger signature, SQL pattern, and test conventions.
 
 ## Pull requests
 
@@ -47,16 +22,4 @@ migrations/             # Versioned SQL migrations (applied in lexicographic ord
 - Title follows [Conventional Commits](https://www.conventionalcommits.org): `feat(scope): description`
 - Fill the PR template — description is required
 - Every PR must close an open issue (`Closes #N`)
-
-## Migrations
-
-Add new SQL files under `migrations/` with lexicographic ordering:
-
-```
-migrations/
-├── 001_create_downloads.sql
-├── 002_create_subscriptions.sql
-└── 003_your_new_migration.sql
-```
-
-Migrations run automatically on CLI boot via `runMigrations(db)`.
+- All gates must pass before merge: `bun test && bun run typecheck && bun run check`
