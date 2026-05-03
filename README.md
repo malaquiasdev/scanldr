@@ -22,25 +22,26 @@ A command-line tool to download manga from MangaDex and Mangakakalot, packaged a
 git clone https://github.com/malaquiasdev/scanldr.git
 cd scanldr
 bun install
+bun link
 ```
 
 ## Usage
 
 ```bash
 # Authenticate with Mangakakalot (one-time, launches Chromium)
-bun run src/index.ts auth
+scanldr auth
 
 # Download a volume from MangaDex
-bun run src/index.ts download --volume 1 <manga-slug>
+scanldr download --volume 1 <manga-slug>
 
 # List available volumes
-bun run src/index.ts list <manga-slug>
+scanldr list <manga-slug>
 
 # Watch a series for updates
-bun run src/index.ts watch <manga-slug>
+scanldr watch <manga-slug>
 
 # Show download history
-bun run src/index.ts history
+scanldr history
 ```
 
 ## Configuration
@@ -71,13 +72,13 @@ Create a `scanldr.json` in your project directory (or `~/.config/scanldr/scanldr
 
 ```bash
 # Default (info level, human format)
-bun run src/index.ts list <slug>
+scanldr list <slug>
 
 # Quiet (warn + error only)
-bun run src/index.ts download --volume 1 <slug> --quiet
+scanldr download --volume 1 <slug> --quiet
 
 # JSON output (for log shippers)
-bun run src/index.ts download --volume 1 <slug> --json
+scanldr download --volume 1 <slug> --json
 ```
 
 ## Development
