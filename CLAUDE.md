@@ -56,17 +56,3 @@ export type { Logger, LoggerOptions } from "./types.ts";
 
 ### No flat files in `src/`
 Every new feature lives in its own folder. The only flat files allowed at `src/` root are `index.ts` and `types.ts` (shared domain types).
-
-### Gate before every PR
-Run all three before pushing:
-```bash
-bun test
-bun run typecheck
-bun run check
-```
-
-All must pass with zero errors/warnings.
-
-## Reference Project
-
-`/Users/mateusmalaquias/Developer/me/faturamento/src` — follow its conventions for any pattern not covered here.
