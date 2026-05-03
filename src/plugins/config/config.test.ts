@@ -52,6 +52,7 @@ describe("loadConfig — discovery", () => {
       download_quality: "data-saver",
       default_format: "zip",
       default_out: "./out",
+      db_path: DEFAULT_CONFIG.db_path,
       image_concurrency: 8,
       chapter_delay_ms: 250,
     });

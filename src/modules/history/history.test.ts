@@ -1,4 +1,3 @@
-import type { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,17 +6,19 @@ import {
   getDownloadedChapterIds,
   isVolumeFullyDownloaded,
   listHistory,
-  openDb,
   recordDownloadedChapters,
 } from "@modules/history/index.ts";
 import type { DownloadRow } from "@modules/history/index.ts";
+import { openDb, runMigrations } from "@plugins/db/index.ts";
+import type { Db } from "@plugins/db/index.ts";
 
 let workDir: string;
-let db: Database;
+let db: Db;
 
 beforeEach(async () => {
   workDir = await mkdtemp(join(tmpdir(), "scanldr-history-"));
   db = openDb(join(workDir, "test.db"));
+  runMigrations(db);
 });
 
 afterEach(async () => {
@@ -46,8 +47,7 @@ describe("openDb / migration", () => {
   });
 
   test("migration is idempotent — running twice does not error", () => {
-    const db2 = openDb(join(workDir, "test.db"));
-    db2.close();
+    runMigrations(db);
   });
 
   test("creates unique index idx_unique_chapter", () => {

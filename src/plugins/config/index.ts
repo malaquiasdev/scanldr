@@ -13,6 +13,7 @@ export const DEFAULT_CONFIG: Config = {
   download_quality: "data",
   default_format: "cbz",
   default_out: "./download",
+  db_path: join(homedir(), ".local", "share", "scanldr", "scanldr.db"),
   image_concurrency: 4,
   chapter_delay_ms: 1000,
 };
@@ -117,6 +118,15 @@ export function validateAndMerge(parsed: unknown, source?: string): Config {
       new ConfigError("image_concurrency must be an integer >= 1", source),
     );
     merged.image_concurrency = v;
+  }
+
+  if ("db_path" in p) {
+    const v = p.db_path;
+    check(
+      typeof v === "string" && v.length > 0,
+      new ConfigError("db_path must be a non-empty string", source),
+    );
+    merged.db_path = v;
   }
 
   if ("chapter_delay_ms" in p) {
