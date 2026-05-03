@@ -3,8 +3,13 @@ import { join } from "node:path";
 import { zipSync } from "fflate";
 import { detectExtFromBytes, pad } from "./helpers.ts";
 import { createSemaphore } from "./semaphore.ts";
-import type { Semaphore } from "./semaphore.ts";
-import type { ChapterInput, DownloadVolumeInput, DownloadVolumeResult, ImageRef } from "./types.ts";
+import type {
+  ChapterInput,
+  DownloadVolumeInput,
+  DownloadVolumeResult,
+  ImageRef,
+  Semaphore,
+} from "./types.ts";
 
 async function fetchPage(
   ref: ImageRef,

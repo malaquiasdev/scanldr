@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { downloadVolume, extFromContentType } from "@modules/downloader/index.ts";
+import { downloadVolume } from "@modules/downloader/index.ts";
 import type { ChapterInput, ImageRef } from "@modules/downloader/types.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { unzipSync } from "fflate";
@@ -70,25 +70,6 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await rm(outDir, { recursive: true, force: true });
-});
-
-// ---------------------------------------------------------------------------
-// extFromContentType
-// ---------------------------------------------------------------------------
-
-describe("extFromContentType", () => {
-  test("png", () => expect(extFromContentType("image/png")).toBe(".png"));
-  test("jpeg", () => expect(extFromContentType("image/jpeg")).toBe(".jpg"));
-  test("jpeg alt", () => expect(extFromContentType("image/jpg")).toBe(".jpg"));
-  test("webp", () => expect(extFromContentType("image/webp")).toBe(".webp"));
-  test("gif", () => expect(extFromContentType("image/gif")).toBe(".gif"));
-  test("avif", () => expect(extFromContentType("image/avif")).toBe(".avif"));
-  test("with charset param", () =>
-    expect(extFromContentType("image/png; charset=utf-8")).toBe(".png"));
-  test("null → .jpg", () => expect(extFromContentType(null)).toBe(".jpg"));
-  test("undefined → .jpg", () => expect(extFromContentType(undefined)).toBe(".jpg"));
-  test("unknown mime → .jpg", () =>
-    expect(extFromContentType("application/octet-stream")).toBe(".jpg"));
 });
 
 // ---------------------------------------------------------------------------

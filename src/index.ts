@@ -4,12 +4,7 @@ import { AuthError, runAuth } from "@integrations/mangakakalot/browser/index.ts"
 import { loadConfig } from "@plugins/config/index.ts";
 import { openDb, runMigrations } from "@plugins/db/index.ts";
 import type { Db } from "@plugins/db/index.ts";
-import {
-  type LogFormat,
-  type LogLevel,
-  type Logger,
-  createLogger,
-} from "./plugins/logger/index.ts";
+import { type LogFormat, type LogLevel, type Logger, createLogger } from "@plugins/logger/index.ts";
 
 const VERSION = "0.0.0";
 
@@ -65,15 +60,7 @@ type Handler = (rest: string[], ctx: HandlerContext) => Promise<void> | void;
 
 const handlers: Record<string, Handler> = {
   auth: async (_rest, ctx) => {
-    try {
-      await runAuth({ logger: ctx.logger });
-    } catch (err) {
-      if (err instanceof AuthError) {
-        process.stderr.write(`${err.message}\n`);
-        process.exit(1);
-      }
-      throw err;
-    }
+    await runAuth({ logger: ctx.logger });
   },
   list: () => {
     throw new NotImplementedError("list");

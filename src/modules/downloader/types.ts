@@ -1,7 +1,5 @@
 import type { Logger } from "@plugins/logger/index.ts";
 
-export type { Logger };
-
 export interface ImageRef {
   url: string;
   page: number;
@@ -30,4 +28,8 @@ export interface DownloadVolumeResult {
   chapterIds: string[];
   outputPath: string;
   byteSize: number;
+}
+
+export interface Semaphore {
+  run: <T>(fn: () => Promise<T>) => Promise<T>;
 }

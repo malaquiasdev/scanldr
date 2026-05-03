@@ -12,7 +12,15 @@ export interface AuthSession {
 
 export interface RunAuthOptions {
   logger: import("@plugins/logger/index.ts").Logger;
-  cwd?: string;
+  /**
+   * Base data directory. Defaults to `$XDG_DATA_HOME` or `~/.local/share`.
+   * Mostly for tests — production callers should rely on the default.
+   */
+  dataHome?: string;
+  /** Override for `process.env`. Tests only. */
+  env?: NodeJS.ProcessEnv;
+  /** Override for `os.homedir()`. Tests only. */
+  home?: string;
 }
 
 export class AuthError extends Error {

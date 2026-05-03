@@ -42,7 +42,7 @@ graph TD
         Browser[sites/mangakakalot/browser.ts<br/>Playwright — auth only]
         Downloader[downloader.ts<br/>Image download + packaging]
         History[history.ts<br/>SQLite download history]
-        AuthFile[(.scanldr-auth.json)<br/>Saved Cloudflare session]
+        AuthFile[($XDG_DATA_HOME/scanldr/auth.json)<br/>Saved Cloudflare session]
     end
 
     subgraph External

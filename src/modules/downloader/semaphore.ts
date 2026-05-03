@@ -1,6 +1,4 @@
-export interface Semaphore {
-  run: <T>(fn: () => Promise<T>) => Promise<T>;
-}
+import type { Semaphore } from "./types.ts";
 
 export function createSemaphore(limit: number): Semaphore {
   const queue: Array<() => void> = [];

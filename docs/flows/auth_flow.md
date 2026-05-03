@@ -12,7 +12,7 @@ sequenceDiagram
     participant CLI as scanldr CLI
     participant Browser as Playwright (Chromium headful)
     participant CF as Cloudflare / mangakakalot.gg
-    participant FS as .scanldr-auth.json
+    participant FS as $XDG_DATA_HOME/scanldr/auth.json
 
     User->>CLI: scanldr auth
     CLI->>Browser: launch headful Chromium
@@ -44,5 +44,5 @@ sequenceDiagram
 |---|---|
 | User closes the browser before challenge resolves | CLI exits with error — no auth saved |
 | Site returns 403 after cookie replay | `CloudflareError` thrown — user must re-run `scanldr auth` |
-| `.scanldr-auth.json` missing | Any download command exits early with "Not authenticated. Run `scanldr auth` first." |
+| `$XDG_DATA_HOME/scanldr/auth.json` missing | Any download command exits early with "Not authenticated. Run `scanldr auth` first." |
 | Cookie expired (>30 days) | Same as above — `CloudflareError` triggers re-auth prompt |
