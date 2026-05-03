@@ -1,5 +1,11 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
+import {
+  type LogFormat,
+  type LogLevel,
+  type Logger,
+  createLogger,
+} from "./plugins/logger/index.ts";
 
 const VERSION = "0.0.0";
 
@@ -36,7 +42,21 @@ class NotImplementedError extends Error {
   }
 }
 
-type Handler = (rest: string[]) => Promise<void> | void;
+class CliError extends Error {
+  constructor(
+    message: string,
+    public readonly exitCode: number = 2,
+  ) {
+    super(message);
+    this.name = "CliError";
+  }
+}
+
+interface HandlerContext {
+  logger: Logger;
+}
+
+type Handler = (rest: string[], ctx: HandlerContext) => Promise<void> | void;
 
 const handlers: Record<string, Handler> = {
   auth: () => {
@@ -80,6 +100,24 @@ const handlers: Record<string, Handler> = {
   },
 };
 
+export function resolveLogConfig(values: {
+  verbose?: unknown;
+  quiet?: unknown;
+  json?: unknown;
+}): { level: LogLevel; format: LogFormat } {
+  const verbose = values.verbose === true;
+  const quiet = values.quiet === true;
+  const json = values.json === true;
+
+  if (verbose && quiet) {
+    throw new CliError("--verbose and --quiet are mutually exclusive", 2);
+  }
+
+  const level: LogLevel = verbose ? "debug" : quiet ? "warn" : "info";
+  const format: LogFormat = json ? "json" : "human";
+  return { level, format };
+}
+
 function main(argv: string[]): Promise<void> | void {
   const { positionals, values } = parseArgs({
     args: argv,
@@ -88,6 +126,9 @@ function main(argv: string[]): Promise<void> | void {
     options: {
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
+      verbose: { type: "boolean" },
+      quiet: { type: "boolean", short: "q" },
+      json: { type: "boolean" },
     },
   });
 
@@ -103,22 +144,31 @@ function main(argv: string[]): Promise<void> | void {
     return;
   }
 
+  const { level, format } = resolveLogConfig(values);
+  const logger = createLogger({ level, format });
+
   const handler = handlers[command];
   if (!handler) {
     process.stderr.write(`Unknown command: ${command}\n\n${USAGE}`);
     process.exit(1);
   }
 
-  return handler(rest);
+  return handler(rest, { logger });
 }
 
-try {
-  await main(process.argv.slice(2));
-} catch (err) {
-  if (err instanceof NotImplementedError) {
-    process.stderr.write(`${err.message}\n`);
-    process.exit(2);
+if (import.meta.main) {
+  try {
+    await main(process.argv.slice(2));
+  } catch (err) {
+    if (err instanceof CliError) {
+      process.stderr.write(`${err.message}\n`);
+      process.exit(err.exitCode);
+    }
+    if (err instanceof NotImplementedError) {
+      process.stderr.write(`${err.message}\n`);
+      process.exit(2);
+    }
+    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(1);
   }
-  process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
-  process.exit(1);
 }
