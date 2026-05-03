@@ -2,7 +2,7 @@
 // Schema mirrors docs/models/auth_model.md.
 
 export interface AuthSession {
-  /** All cookies captured for the target host. Must include cf_clearance. */
+  /** All cookies captured for the target host. May include cf_clearance when a challenge was shown. */
   cookies: Record<string, string>;
   /** User-Agent string used when the cookies were generated. */
   userAgent: string;

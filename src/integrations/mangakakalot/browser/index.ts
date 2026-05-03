@@ -38,18 +38,31 @@ export function resolveAuthPath(opts: RunAuthOptions): string {
   return join(base, APP_DIR, AUTH_FILENAME);
 }
 
+const SITE_TITLE_MARKER = "MangaKakalot";
+
+/**
+ * Returns true when the page has loaded real site content (no CF challenge).
+ * Uses page.title() — available synchronously after domcontentloaded and does
+ * not trigger extra JS evaluation races.
+ */
+export async function pageHasRealContent(title: string): Promise<boolean> {
+  return title.includes(SITE_TITLE_MARKER);
+}
+
 /**
  * Runs the interactive auth flow:
  * 1. Opens headful Chromium.
- * 2. Navigates to SITE_ROOT — user solves the Turnstile.
- * 3. Polls until cf_clearance cookie is present (up to 120s).
+ * 2. Navigates to SITE_ROOT.
+ * 3a. If the page title contains "MangaKakalot", the site loaded without a
+ *     Cloudflare challenge — skip the cf_clearance poll entirely.
+ * 3b. Otherwise, polls until cf_clearance cookie is present (up to 120s).
  * 4. Extracts cookies + UA.
- * 5. Verifies session via plain fetch.
+ * 5. Verifies session via plain fetch (single source of truth).
  * 6. Atomically writes auth.json with mode 0600 under the XDG data dir.
  *
  * Throws (exit non-zero) when:
  * - User closes the browser before settlement.
- * - cf_clearance cookie never appears within timeout.
+ * - cf_clearance cookie never appears within timeout (challenge branch only).
  * - Session verification fails.
  */
 export async function runAuth(opts: RunAuthOptions): Promise<void> {
@@ -74,29 +87,40 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
   try {
     await page.goto(SITE_ROOT, { waitUntil: "domcontentloaded" });
 
-    logger.info(
-      { event: "auth.waiting", context: "browser" },
-      "Waiting for you to solve the challenge…",
-    );
+    const title = await page.title();
+    const realContent = await pageHasRealContent(title);
 
-    // Poll until cf_clearance cookie appears — networkidle is unreliable for Turnstile.
-    const deadline = Date.now() + CF_COOKIE_TIMEOUT_MS;
-    while (Date.now() < deadline) {
+    if (realContent) {
+      // Site loaded without a CF challenge — no cf_clearance will appear.
+      logger.info(
+        { event: "auth.no_challenge", context: "browser" },
+        "Page loaded with real site content — skipping cf_clearance poll.",
+      );
+    } else {
+      logger.info(
+        { event: "auth.waiting", context: "browser" },
+        "Waiting for you to solve the challenge…",
+      );
+
+      // Poll until cf_clearance cookie appears — networkidle is unreliable for Turnstile.
+      const deadline = Date.now() + CF_COOKIE_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        if (browserClosed) {
+          throw new AuthError("Browser closed before challenge was resolved. No session saved.");
+        }
+        const cookies = await context.cookies();
+        if (cookies.some((c) => c.name === "cf_clearance")) break;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+
       if (browserClosed) {
         throw new AuthError("Browser closed before challenge was resolved. No session saved.");
       }
-      const cookies = await context.cookies();
-      if (cookies.some((c) => c.name === "cf_clearance")) break;
-      await new Promise((r) => setTimeout(r, 1000));
-    }
 
-    if (browserClosed) {
-      throw new AuthError("Browser closed before challenge was resolved. No session saved.");
-    }
-
-    const finalCookies = await context.cookies();
-    if (!finalCookies.some((c) => c.name === "cf_clearance")) {
-      throw new AuthError("Challenge not solved within timeout. No session saved.");
+      const finalCookies = await context.cookies();
+      if (!finalCookies.some((c) => c.name === "cf_clearance")) {
+        throw new AuthError("Challenge not solved within timeout. No session saved.");
+      }
     }
 
     // Extract User-Agent from the browser context.

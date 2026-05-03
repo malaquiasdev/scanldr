@@ -2,8 +2,34 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AuthError, resolveAuthPath } from "./index.ts";
+import { AuthError, pageHasRealContent, resolveAuthPath } from "./index.ts";
 import type { RunAuthOptions } from "./types.ts";
+
+// ---------------------------------------------------------------------------
+// pageHasRealContent — CF challenge detection
+// ---------------------------------------------------------------------------
+
+describe("pageHasRealContent", () => {
+  test("returns true when title contains MangaKakalot (no challenge shown)", async () => {
+    expect(await pageHasRealContent("MangaKakalot - Read Manga Online")).toBe(true);
+  });
+
+  test("returns true for exact marker", async () => {
+    expect(await pageHasRealContent("MangaKakalot")).toBe(true);
+  });
+
+  test("returns false when title is a Cloudflare challenge page", async () => {
+    expect(await pageHasRealContent("Just a moment...")).toBe(false);
+  });
+
+  test("returns false when title is empty (CF blocked before HTML loads)", async () => {
+    expect(await pageHasRealContent("")).toBe(false);
+  });
+
+  test("returns false when title is unrelated", async () => {
+    expect(await pageHasRealContent("Attention Required! | Cloudflare")).toBe(false);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // AuthError shape
