@@ -2,8 +2,8 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { ConfigError } from "../errors/index.ts";
-import { check, isPlainObject } from "../guards/index.ts";
+import { ConfigError } from "@plugins/errors/index.ts";
+import { check, isPlainObject } from "@plugins/guards/index.ts";
 import type { Config, LoadConfigOptions, LoadConfigResult } from "./types.ts";
 
 export type { Config, LoadConfigOptions, LoadConfigResult } from "./types.ts";
