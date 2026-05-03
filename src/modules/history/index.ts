@@ -13,6 +13,5 @@ export {
   getDownloadedChapterIds,
   isVolumeFullyDownloaded,
   listHistory,
-  openDb,
   recordDownloadedChapters,
 } from "./service.ts";

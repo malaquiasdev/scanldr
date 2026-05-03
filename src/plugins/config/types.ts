@@ -3,6 +3,7 @@ export interface Config {
   download_quality: "data" | "data-saver";
   default_format: "cbz" | "zip";
   default_out: string;
+  db_path: string;
   image_concurrency: number;
   chapter_delay_ms: number;
 }

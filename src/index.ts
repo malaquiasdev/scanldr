@@ -1,5 +1,8 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
+import { loadConfig } from "@plugins/config/index.ts";
+import { openDb, runMigrations } from "@plugins/db/index.ts";
+import type { Db } from "@plugins/db/index.ts";
 import {
   type LogFormat,
   type LogLevel,
@@ -54,6 +57,7 @@ class CliError extends Error {
 
 interface HandlerContext {
   logger: Logger;
+  db: Db;
 }
 
 type Handler = (rest: string[], ctx: HandlerContext) => Promise<void> | void;
@@ -118,7 +122,7 @@ export function resolveLogConfig(values: {
   return { level, format };
 }
 
-function main(argv: string[]): Promise<void> | void {
+async function main(argv: string[]): Promise<void> {
   const { positionals, values } = parseArgs({
     args: argv,
     allowPositionals: true,
@@ -153,7 +157,11 @@ function main(argv: string[]): Promise<void> | void {
     process.exit(1);
   }
 
-  return handler(rest, { logger });
+  const { config } = await loadConfig();
+  const db = openDb(config.db_path);
+  runMigrations(db);
+
+  return handler(rest, { logger, db });
 }
 
 if (import.meta.main) {

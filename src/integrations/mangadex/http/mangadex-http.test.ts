@@ -18,6 +18,7 @@ const baseConfig: Config = {
   download_quality: "data",
   default_format: "cbz",
   default_out: "./download",
+  db_path: "./scanldr.db",
   image_concurrency: 4,
   chapter_delay_ms: 100,
 };
