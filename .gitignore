@@ -17,3 +17,7 @@ coverage/
 
 # OS
 .DS_Store
+
+# Claude worktrees
+.claude/worktrees/
+pr*.patch

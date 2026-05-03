@@ -20,5 +20,8 @@
     "@biomejs/biome": "^1.9.4",
     "@types/bun": "latest",
     "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2"
   }
 }
