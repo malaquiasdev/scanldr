@@ -66,7 +66,6 @@ export async function getAtHomeServer(
       logAtHomeError(logger, chapterId, err, status);
       throw new AtHomeError(chapterId, status, msg);
     }
-    // Unexpected error shape — log so the root cause survives in logs, then re-throw as-is.
     logAtHomeError(logger, chapterId, err);
     throw err;
   }
@@ -143,8 +142,6 @@ export function mangadexImageFetcher(
           server = await getAtHomeServer(httpClient, chapterId, quality, logger);
         } catch (refreshErr) {
           logRefreshFailed(logger, chapterId, attempt + 1, refreshErr);
-          // AtHomeError already has a clear message (e.g. 404 = externally-hosted chapter).
-          // Propagate it directly so the user sees the real cause, not a generic retry message.
           if (refreshErr instanceof AtHomeError) throw refreshErr;
           lastErr = refreshErr;
           break;

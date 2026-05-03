@@ -15,8 +15,6 @@ import type {
   VolumeRef,
 } from "./types.ts";
 
-// --- Fixtures ---
-
 const candidate: MangaCandidate = {
   id: "a1c7c817-4e59-43b7-9365-09675a149a6f",
   title: "One Piece",
@@ -90,8 +88,6 @@ const ctx: ListContext = {
   },
   languages: ["en"],
 };
-
-// --- formatter tests ---
 
 describe("formatMangaList", () => {
   it("includes manga title and id", () => {
@@ -173,8 +169,6 @@ describe("formatCandidateList", () => {
     expect(out).toContain("[1] One Piece");
   });
 });
-
-// --- runList tests ---
 
 function makeClient(overrides: Partial<MangaDexClientLike> = {}): MangaDexClientLike {
   return {
@@ -272,8 +266,6 @@ describe("runList", () => {
   });
 });
 
-// --- parseExternalHost tests ---
-
 describe("parseExternalHost", () => {
   it("returns 'mangaplus' for mangaplus.shueisha.co.jp", () => {
     expect(parseExternalHost("https://mangaplus.shueisha.co.jp/viewer/1010633")).toBe("mangaplus");
@@ -296,8 +288,6 @@ describe("parseExternalHost", () => {
   });
 });
 
-// --- external chapter annotation tests ---
-
 describe("formatMangaList — external annotation", () => {
   it("appends [external: mangaplus] for external chapters", () => {
     const out = formatMangaList(candidate, volumes, chapters);
@@ -306,7 +296,6 @@ describe("formatMangaList — external annotation", () => {
 
   it("does NOT append external tag for CDN chapters", () => {
     const out = formatMangaList(candidate, volumes, chapters);
-    // ch-001 (Romance Dawn) is CDN — must not have external tag
     expect(out).toContain("Chapter 1 — Romance Dawn\n");
   });
 });

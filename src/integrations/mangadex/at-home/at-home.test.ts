@@ -43,8 +43,6 @@ function makeImageResponse(opts: {
   } as unknown as Response;
 }
 
-// ---------- getAtHomeServer ----------
-
 describe("getAtHomeServer", () => {
   it("returns baseUrl, hash, and data pages for quality=data", async () => {
     const client = makeHttpClient();
@@ -135,8 +133,6 @@ describe("getAtHomeServer", () => {
   });
 });
 
-// ---------- mangadexImageFetcher — success path ----------
-
 describe("mangadexImageFetcher — success path", () => {
   it("returns image bytes on first attempt", async () => {
     const imageBytes = new Uint8Array([10, 20, 30]);
@@ -184,8 +180,6 @@ describe("mangadexImageFetcher — success path", () => {
   });
 });
 
-// ---------- stale CDN retry ----------
-
 describe("mangadexImageFetcher — stale CDN retry", () => {
   it("re-fetches /at-home/server on every failure before retrying", async () => {
     let atHomeCallCount = 0;
@@ -223,8 +217,6 @@ describe("mangadexImageFetcher — stale CDN retry", () => {
   });
 });
 
-// ---------- all 5 attempts fail ----------
-
 describe("mangadexImageFetcher — all attempts fail", () => {
   it("throws after 5 attempts", async () => {
     let imageFetchCount = 0;
@@ -247,8 +239,6 @@ describe("mangadexImageFetcher — all attempts fail", () => {
   });
 });
 
-// ---------- at-home refresh fails during retry ----------
-
 describe("mangadexImageFetcher — refresh failure during retry", () => {
   it("throws AtHomeError immediately when refresh call throws AtHomeError(404)", async () => {
     let atHomeCallCount = 0;
@@ -256,20 +246,17 @@ describe("mangadexImageFetcher — refresh failure during retry", () => {
       get: async <T>(_path: string) => {
         atHomeCallCount++;
         if (atHomeCallCount === 1) {
-          // first call (initial server fetch) succeeds
           return {
             baseUrl: "https://cdn.example.com",
             chapter: { hash: "abc123", data: ["page1.jpg"], dataSaver: [] },
           } as T;
         }
-        // refresh after first failure: simulate chapter deleted → 404
         throw new Error("MangaDex HTTP 404: https://api.mangadex.org/at-home/server/ch-del");
       },
     });
 
     const mockFetch = mock(async (url: string) => {
       if (url === "https://api.mangadex.network/report") return new Response(null, { status: 200 });
-      // image fetch always fails to trigger the refresh path
       return makeImageResponse({ ok: false, status: 503 });
     });
 
@@ -316,7 +303,6 @@ describe("mangadexImageFetcher — refresh failure during retry", () => {
     const fetcher = mangadexImageFetcher("ch-net", opts);
     const err = await fetcher({ url: "", page: 1 }).catch((e) => e);
     expect(err).toBeInstanceOf(Error);
-    // Must surface the refresh error, not "Failed to fetch image page X after 5 attempts"
     expect((err as Error).message).toBe("network timeout on refresh");
   });
 
@@ -403,8 +389,6 @@ describe("mangadexImageFetcher — refresh failure during retry", () => {
     expect((refreshFailLog?.err as Error).message).toBe(expectedErr.message);
   });
 });
-
-// ---------- report HTTP failure tolerated ----------
 
 describe("mangadexImageFetcher — report failure tolerated", () => {
   it("does not throw when the report POST fails", async () => {
