@@ -2,10 +2,17 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { downloadVolume } from "@modules/downloader/index.ts";
-import { extFromContentType } from "@modules/downloader/service.ts";
+import { downloadVolume, extFromContentType } from "@modules/downloader/index.ts";
 import type { ChapterInput, ImageRef } from "@modules/downloader/types.ts";
+import type { Logger } from "@plugins/logger/index.ts";
 import { unzipSync } from "fflate";
+
+const noopLogger: Logger = {
+  error: () => {},
+  warn: () => {},
+  info: () => {},
+  debug: () => {},
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -100,6 +107,7 @@ describe("downloadVolume — archive structure", () => {
       imageConcurrency: 2,
       delayMs: 0,
       dryRun: false,
+      logger: noopLogger,
       imageFetcher: makeFetcher(),
     });
 
@@ -124,6 +132,7 @@ describe("downloadVolume — archive structure", () => {
       imageConcurrency: 1,
       delayMs: 0,
       dryRun: false,
+      logger: noopLogger,
       imageFetcher: makeFetcher(),
     });
 
@@ -140,6 +149,7 @@ describe("downloadVolume — archive structure", () => {
       imageConcurrency: 1,
       delayMs: 0,
       dryRun: false,
+      logger: noopLogger,
       imageFetcher: makeFetcher(),
     });
     expect(result.outputPath).toContain("volume-103.cbz");
@@ -165,6 +175,7 @@ describe("downloadVolume — page ordering", () => {
       imageConcurrency: 1,
       delayMs: 0,
       dryRun: false,
+      logger: noopLogger,
       imageFetcher: makeFetcher(),
     });
 
@@ -186,6 +197,7 @@ describe("downloadVolume — page ordering", () => {
       imageConcurrency: 2,
       delayMs: 0,
       dryRun: false,
+      logger: noopLogger,
       imageFetcher: makeFetcher(),
     });
 
@@ -226,6 +238,7 @@ describe("downloadVolume — concurrency limit", () => {
       imageConcurrency: limit,
       delayMs: 0,
       dryRun: false,
+      logger: noopLogger,
       imageFetcher: fetcher,
     });
 
@@ -255,6 +268,7 @@ describe("downloadVolume — dry-run", () => {
       imageConcurrency: 2,
       delayMs: 0,
       dryRun: true,
+      logger: noopLogger,
       imageFetcher: fetcher,
     });
 
@@ -275,6 +289,7 @@ describe("downloadVolume — dry-run", () => {
       imageConcurrency: 1,
       delayMs: 0,
       dryRun: true,
+      logger: noopLogger,
       imageFetcher: makeFetcher(),
     });
 
@@ -308,6 +323,7 @@ describe("downloadVolume — interruption simulation", () => {
         imageConcurrency: 1,
         delayMs: 0,
         dryRun: false,
+        logger: noopLogger,
         imageFetcher: fetcher,
       }),
     ).rejects.toThrow("simulated network failure");
@@ -338,6 +354,7 @@ describe("downloadVolume — result metadata", () => {
       imageConcurrency: 1,
       delayMs: 0,
       dryRun: false,
+      logger: noopLogger,
       imageFetcher: makeFetcher(),
     });
 
@@ -361,6 +378,7 @@ describe("downloadVolume — extension detection from bytes", () => {
       imageConcurrency: 1,
       delayMs: 0,
       dryRun: false,
+      logger: noopLogger,
       imageFetcher: async (_ref) => makePng(1),
     });
 
@@ -382,6 +400,7 @@ describe("downloadVolume — extension detection from bytes", () => {
       imageConcurrency: 1,
       delayMs: 0,
       dryRun: false,
+      logger: noopLogger,
       imageFetcher: async (_ref) => makeJpeg(1),
     });
 
