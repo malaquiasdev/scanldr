@@ -9,7 +9,7 @@ import type { Config, LoadConfigOptions, LoadConfigResult } from "./types.ts";
 export type { Config, LoadConfigOptions, LoadConfigResult } from "./types.ts";
 
 export const DEFAULT_CONFIG: Config = {
-  preferred_languages: ["en", "pt-BR"],
+  preferred_languages: ["en"],
   download_quality: "data",
   default_format: "cbz",
   default_out: "./download",

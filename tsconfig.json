@@ -21,7 +21,8 @@
     "paths": {
       "@plugins/*": ["./src/plugins/*"],
       "@modules/*": ["./src/modules/*"],
-      "@integrations/*": ["./src/integrations/*"]
+      "@integrations/*": ["./src/integrations/*"],
+      "@commands/*": ["./src/commands/*"]
     }
   },
   "include": ["src/**/*"]
