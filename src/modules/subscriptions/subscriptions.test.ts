@@ -177,6 +177,69 @@ describe("refreshTitle", () => {
   });
 });
 
+describe("addSubscription idempotency — addedAt preserved", () => {
+  test("second insert does not change addedAt or mangaTitle", () => {
+    addSubscription(db, { source: SOURCE, mangaId: MANGA_ID, mangaTitle: MANGA_TITLE });
+    const [first] = listSubscriptions(db);
+    addSubscription(db, { source: SOURCE, mangaId: MANGA_ID, mangaTitle: "Different Title" });
+    const [second] = listSubscriptions(db);
+    expect(second?.addedAt).toBe(first?.addedAt);
+    expect(second?.mangaTitle).toBe(MANGA_TITLE);
+  });
+});
+
+describe("markSynced on missing row", () => {
+  test("does not throw and does not create a row", () => {
+    expect(() =>
+      markSynced(db, { source: SOURCE, mangaId: "ghost-id", at: 1_700_000_000_000 }),
+    ).not.toThrow();
+    const subs = listSubscriptions(db, { includePaused: true });
+    expect(subs).toHaveLength(0);
+  });
+});
+
+describe("refreshTitle on missing row", () => {
+  test("does not throw and does not create a row", () => {
+    expect(() =>
+      refreshTitle(db, { source: SOURCE, mangaId: "ghost-id", title: "Phantom" }),
+    ).not.toThrow();
+    const subs = listSubscriptions(db, { includePaused: true });
+    expect(subs).toHaveLength(0);
+  });
+});
+
+describe("composite PK isolation", () => {
+  const OTHER_SOURCE = "mangakakalot";
+
+  test("same mangaId under two sources coexist", () => {
+    addSubscription(db, { source: SOURCE, mangaId: "x-1", mangaTitle: "Title A" });
+    addSubscription(db, { source: OTHER_SOURCE, mangaId: "x-1", mangaTitle: "Title B" });
+    const subs = listSubscriptions(db, { includePaused: true });
+    expect(subs).toHaveLength(2);
+  });
+
+  test("removeSubscription removes only the targeted source row", () => {
+    addSubscription(db, { source: SOURCE, mangaId: "x-1", mangaTitle: "Title A" });
+    addSubscription(db, { source: OTHER_SOURCE, mangaId: "x-1", mangaTitle: "Title B" });
+    removeSubscription(db, { source: SOURCE, mangaId: "x-1" });
+    const subs = listSubscriptions(db, { includePaused: true });
+    expect(subs).toHaveLength(1);
+    expect(subs[0]?.source).toBe(OTHER_SOURCE);
+    expect(subs[0]?.mangaTitle).toBe("Title B");
+  });
+
+  test("setPaused flips only the targeted source row", () => {
+    addSubscription(db, { source: SOURCE, mangaId: "x-1", mangaTitle: "Title A" });
+    addSubscription(db, { source: OTHER_SOURCE, mangaId: "x-1", mangaTitle: "Title B" });
+    setPaused(db, { source: SOURCE, mangaId: "x-1", paused: true });
+    const subs = listSubscriptions(db, { includePaused: true });
+    const mdex = subs.find((s) => s.source === SOURCE);
+    const mkal = subs.find((s) => s.source === OTHER_SOURCE);
+    expect(mdex?.paused).toBe(true);
+    expect(mkal?.paused).toBe(false);
+  });
+});
+
 describe("listSubscriptions", () => {
   beforeEach(() => {
     addSubscription(db, { source: SOURCE, mangaId: "manga-1", mangaTitle: "A" });
