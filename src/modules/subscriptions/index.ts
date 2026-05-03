@@ -1,16 +1,20 @@
 // Public API for the subscriptions module.
 
 export type {
+  AddSubscriptionInput,
   ListSubscriptionsFilter,
+  MarkSyncedInput,
+  RefreshTitleInput,
+  RemoveSubscriptionInput,
+  SetPausedInput,
   Subscription,
-  SubscriptionRow,
 } from "./types.ts";
 
 export {
   addSubscription,
   listSubscriptions,
   markSynced,
-  pauseSubscription,
+  refreshTitle,
   removeSubscription,
-  resumeSubscription,
+  setPaused,
 } from "./service.ts";

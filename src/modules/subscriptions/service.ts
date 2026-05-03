@@ -6,28 +6,37 @@ import {
   insertSubscription,
   querySubscriptions,
   updateLastSyncedAt,
+  updateMangaTitle,
   updatePaused,
 } from "./repository.ts";
-import type { ListSubscriptionsFilter, Subscription, SubscriptionRow } from "./types.ts";
+import type {
+  AddSubscriptionInput,
+  ListSubscriptionsFilter,
+  MarkSyncedInput,
+  RefreshTitleInput,
+  RemoveSubscriptionInput,
+  SetPausedInput,
+  Subscription,
+} from "./types.ts";
 
-export function addSubscription(db: Db, row: SubscriptionRow): void {
-  insertSubscription(db, row);
+export function addSubscription(db: Db, input: AddSubscriptionInput): void {
+  insertSubscription(db, input, Date.now());
 }
 
-export function removeSubscription(db: Db, source: string, mangaId: string): void {
-  deleteSubscription(db, source, mangaId);
+export function removeSubscription(db: Db, input: RemoveSubscriptionInput): boolean {
+  return deleteSubscription(db, input.source, input.mangaId);
 }
 
-export function pauseSubscription(db: Db, source: string, mangaId: string): void {
-  updatePaused(db, source, mangaId, true);
+export function setPaused(db: Db, input: SetPausedInput): boolean {
+  return updatePaused(db, input.source, input.mangaId, input.paused);
 }
 
-export function resumeSubscription(db: Db, source: string, mangaId: string): void {
-  updatePaused(db, source, mangaId, false);
+export function markSynced(db: Db, input: MarkSyncedInput): void {
+  updateLastSyncedAt(db, input.source, input.mangaId, input.at);
 }
 
-export function markSynced(db: Db, source: string, mangaId: string, at: number): void {
-  updateLastSyncedAt(db, source, mangaId, at);
+export function refreshTitle(db: Db, input: RefreshTitleInput): void {
+  updateMangaTitle(db, input.source, input.mangaId, input.title);
 }
 
 export function listSubscriptions(db: Db, filter?: ListSubscriptionsFilter): Subscription[] {
