@@ -1,8 +1,8 @@
 // DB plugin — opens SQLite and applies versioned migrations from migrations/*.sql.
 
 import { Database } from "bun:sqlite";
-import { readFileSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import type { Db, MigrationRow } from "./types.ts";
 
 export type { Db, MigrationRow } from "./types.ts";
@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS _migrations (
 `;
 
 export function openDb(path: string): Db {
+  mkdirSync(dirname(path), { recursive: true });
   const db = new Database(path, { create: true });
   db.exec("PRAGMA journal_mode=WAL;");
   db.exec("PRAGMA foreign_keys=ON;");
@@ -26,9 +27,16 @@ export function openDb(path: string): Db {
 export function runMigrations(db: Db): void {
   db.exec(BOOTSTRAP_MIGRATIONS_TABLE);
 
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith(".sql"))
-    .sort(); // lexicographic order
+  let files: string[];
+  try {
+    files = readdirSync(MIGRATIONS_DIR)
+      .filter((f) => f.endsWith(".sql"))
+      .sort(); // lexicographic order
+  } catch (err) {
+    throw new Error(
+      `migrations directory not found at ${MIGRATIONS_DIR}: ${(err as Error).message}`,
+    );
+  }
 
   const applied = new Set(
     db

@@ -18,6 +18,17 @@ afterEach(async () => {
   await rm(workDir, { recursive: true, force: true });
 });
 
+describe("openDb", () => {
+  test("creates parent directories when they do not exist", async () => {
+    const base = await mkdtemp(join(tmpdir(), "scanldr-mkdir-"));
+    const nestedPath = join(base, "a", "b", "c", "test.db");
+    const nestedDb = openDb(nestedPath);
+    expect(nestedDb).toBeDefined();
+    nestedDb.close();
+    await rm(base, { recursive: true, force: true });
+  });
+});
+
 describe("runMigrations", () => {
   test("boot with 0 applied migrations — creates _migrations table and applies all files", () => {
     runMigrations(db);
