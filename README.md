@@ -1,4 +1,6 @@
-# scanldr
+<p align="center">
+  <img src="assets/banner.svg" alt="scanldr" width="800"/>
+</p>
 
 A command-line tool to download manga from MangaDex and Mangakakalot, packaged as CBZ archives.
 
