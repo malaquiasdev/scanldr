@@ -27,11 +27,10 @@ async function fetchChapterPages(
   chapter: ChapterInput,
   sem: Semaphore,
   globalOffset: number,
-  fetcher: (ref: ImageRef) => Promise<Uint8Array>,
 ): Promise<Array<{ filename: string; data: Uint8Array }>> {
   const tasks = chapter.pages.map((ref, localIdx) => {
     const globalIdx = globalOffset + localIdx;
-    return fetchPage(ref, fetcher, sem).then(({ data, ext }) => ({
+    return fetchPage(ref, chapter.imageFetcher, sem).then(({ data, ext }) => ({
       filename: `${pad(globalIdx + 1, 4)}${ext}`,
       data,
     }));
@@ -50,7 +49,6 @@ export async function downloadVolume(input: DownloadVolumeInput): Promise<Downlo
     delayMs,
     dryRun,
     logger,
-    imageFetcher,
   } = input;
 
   const volumePad = pad(volumeNumber, 3);
@@ -96,7 +94,7 @@ export async function downloadVolume(input: DownloadVolumeInput): Promise<Downlo
       "downloading chapter",
     );
 
-    const pages = await fetchChapterPages(chapter, sem, globalOffset, imageFetcher);
+    const pages = await fetchChapterPages(chapter, sem, globalOffset);
     for (const { filename: fname, data } of pages) {
       zipEntries[fname] = data;
     }

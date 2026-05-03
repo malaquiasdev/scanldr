@@ -7,17 +7,17 @@ import {
 import type { MangaDexClient } from "@integrations/mangadex/client/index.ts";
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
 import { downloadVolume } from "@modules/downloader/index.ts";
-import type { ChapterInput, ImageRef } from "@modules/downloader/types.ts";
+import type { ChapterInput } from "@modules/downloader/types.ts";
 import { isVolumeFullyDownloaded, recordDownloadedChapters } from "@modules/history/index.ts";
 import type { DownloadRow } from "@modules/history/index.ts";
+import { CliError } from "@plugins/errors/index.ts";
 import { resolveLanguage } from "./language.ts";
-import { CliError } from "./range.ts";
 import { parseRangeSet } from "./range.ts";
 import type { DownloadArgs, DownloadContext } from "./types.ts";
 
 export type { DownloadArgs, DownloadContext } from "./types.ts";
 
-export { CliError } from "./range.ts";
+export { CliError } from "@plugins/errors/index.ts";
 
 /** kebab-case a manga title for use as filesystem slug */
 export function toSlug(
@@ -193,76 +193,26 @@ export async function runDownload(
       }
     }
 
-    // volumeNumber for downloader: parse numeric token
+    // volumeNumber for downloader: parseRangeSet already validates numeric tokens
     const volumeNumber = Number(volumeToken);
-    if (!Number.isFinite(volumeNumber)) {
-      throw new CliError(`Cannot coerce volume "${volumeToken}" to a number`, 2);
-    }
 
-    // 6c–d. Build ChapterInput[] with per-chapter fetchers routed by chapterId
-    const fetcherCache = new Map<string, (ref: ImageRef) => Promise<Uint8Array>>();
-
+    // 6c. Build ChapterInput[] — each chapter carries its own image fetcher
     const chapterInputs: ChapterInput[] = [];
 
     for (const ch of volChapters) {
-      // Get at-home server to know the page count
       const server = await getAtHomeServer(http, ch.id, args.quality, logger);
-
-      const pages: ImageRef[] = server.pages.map((filename, i) => ({
-        url: filename,
-        page: i + 1,
-      }));
 
       chapterInputs.push({
         id: ch.id,
         num: Number(ch.chapter ?? "0"),
-        pages,
-      });
-
-      // Build fetcher for this chapter
-      fetcherCache.set(
-        ch.id,
-        mangadexImageFetcher(ch.id, {
+        pages: server.pages.map((filename, i) => ({ url: filename, page: i + 1 })),
+        imageFetcher: mangadexImageFetcher(ch.id, {
           httpClient: http,
           logger,
           quality: args.quality,
         }),
-      );
-    }
-
-    // Single imageFetcher that routes by page position (downloader calls it with ImageRef)
-    // The downloader passes refs from chapterInputs.pages, so we need to route by chapterId.
-    // We build a flat list mapping each ref to its chapter fetcher via a closure-captured array.
-    // Build a ref→fetcher map based on chapter order and page ranges
-    // Since ImageRef doesn't carry chapterId, we route by tracking page offsets.
-    // Downloader passes pages from chapters in sorted order; we rebuild that mapping here.
-    const sortedChapterInputs = [...chapterInputs].sort((a, b) => a.num - b.num);
-    const pageRanges: Array<{
-      startPage: number;
-      endPage: number;
-      fetcher: (ref: ImageRef) => Promise<Uint8Array>;
-    }> = [];
-    let pageOffset = 0;
-    for (const ci of sortedChapterInputs) {
-      const fetcher = fetcherCache.get(ci.id);
-      if (!fetcher) continue;
-      pageRanges.push({
-        startPage: pageOffset + 1,
-        endPage: pageOffset + ci.pages.length,
-        fetcher,
       });
-      pageOffset += ci.pages.length;
     }
-
-    const imageFetcher = async (ref: ImageRef): Promise<Uint8Array> => {
-      const range = pageRanges.find((r) => ref.page >= r.startPage && ref.page <= r.endPage);
-      if (!range) {
-        throw new Error(`No fetcher found for page ${ref.page}`);
-      }
-      // Create a local ref with page index within the chapter
-      const localRef: ImageRef = { url: ref.url, page: ref.page - range.startPage + 1 };
-      return range.fetcher(localRef);
-    };
 
     // 6d–e. Download
     if (args.dryRun) {
@@ -293,7 +243,6 @@ export async function runDownload(
         delayMs: args.delayMs,
         dryRun: false,
         logger,
-        imageFetcher,
       });
     } catch (err) {
       if (err instanceof AtHomeError && err.status === 404) {

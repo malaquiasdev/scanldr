@@ -9,6 +9,7 @@ export interface ChapterInput {
   id: string;
   num: number;
   pages: ImageRef[];
+  imageFetcher: (ref: ImageRef) => Promise<Uint8Array>;
 }
 
 export interface DownloadVolumeInput {
@@ -21,7 +22,6 @@ export interface DownloadVolumeInput {
   delayMs: number;
   dryRun: boolean;
   logger: Logger;
-  imageFetcher: (ref: ImageRef) => Promise<Uint8Array>;
 }
 
 export interface DownloadVolumeResult {

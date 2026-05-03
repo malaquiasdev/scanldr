@@ -39,12 +39,17 @@ function makeJpeg(seed: number, size = 64): Uint8Array {
 }
 
 /** Build a trivial chapter with n pages. */
-function makeChapter(id: string, num: number, pageCount: number): ChapterInput {
+function makeChapter(
+  id: string,
+  num: number,
+  pageCount: number,
+  fetcher?: (ref: ImageRef) => Promise<Uint8Array>,
+): ChapterInput {
   const pages: ImageRef[] = [];
   for (let i = 1; i <= pageCount; i++) {
     pages.push({ url: `https://cdn.example.com/${id}/page-${i}.png`, page: i });
   }
-  return { id, num, pages };
+  return { id, num, pages, imageFetcher: fetcher ?? makeFetcher() };
 }
 
 /** A fetcher that returns deterministic PNG bytes per URL. */
@@ -88,7 +93,6 @@ describe("downloadVolume — archive structure", () => {
       delayMs: 0,
       dryRun: false,
       logger: noopLogger,
-      imageFetcher: makeFetcher(),
     });
 
     expect(result.outputPath).toBe(
@@ -113,7 +117,6 @@ describe("downloadVolume — archive structure", () => {
       delayMs: 0,
       dryRun: false,
       logger: noopLogger,
-      imageFetcher: makeFetcher(),
     });
 
     expect(result.outputPath).toContain("volume-001.cbz");
@@ -130,7 +133,6 @@ describe("downloadVolume — archive structure", () => {
       delayMs: 0,
       dryRun: false,
       logger: noopLogger,
-      imageFetcher: makeFetcher(),
     });
     expect(result.outputPath).toContain("volume-103.cbz");
   });
@@ -156,7 +158,6 @@ describe("downloadVolume — page ordering", () => {
       delayMs: 0,
       dryRun: false,
       logger: noopLogger,
-      imageFetcher: makeFetcher(),
     });
 
     const raw = await readFile(result.outputPath);
@@ -178,7 +179,6 @@ describe("downloadVolume — page ordering", () => {
       delayMs: 0,
       dryRun: false,
       logger: noopLogger,
-      imageFetcher: makeFetcher(),
     });
 
     const raw = await readFile(result.outputPath);
@@ -214,12 +214,11 @@ describe("downloadVolume — concurrency limit", () => {
       format: "cbz",
       slug: "concurrency-test",
       volumeNumber: 1,
-      chapters: [makeChapter("ch-1", 1, pages)],
+      chapters: [makeChapter("ch-1", 1, pages, fetcher)],
       imageConcurrency: limit,
       delayMs: 0,
       dryRun: false,
       logger: noopLogger,
-      imageFetcher: fetcher,
     });
 
     expect(maxObserved).toBeLessThanOrEqual(limit);
@@ -244,12 +243,11 @@ describe("downloadVolume — dry-run", () => {
       format: "cbz",
       slug: "dry-test",
       volumeNumber: 5,
-      chapters: [makeChapter("ch-050", 50, 3)],
+      chapters: [makeChapter("ch-050", 50, 3, fetcher)],
       imageConcurrency: 2,
       delayMs: 0,
       dryRun: true,
       logger: noopLogger,
-      imageFetcher: fetcher,
     });
 
     expect(fetchCalled).toBe(false);
@@ -270,7 +268,6 @@ describe("downloadVolume — dry-run", () => {
       delayMs: 0,
       dryRun: true,
       logger: noopLogger,
-      imageFetcher: makeFetcher(),
     });
 
     // outDir should still be empty
@@ -299,12 +296,11 @@ describe("downloadVolume — interruption simulation", () => {
         format: "cbz",
         slug: "interrupted",
         volumeNumber: 1,
-        chapters: [makeChapter("ch-1", 1, 5)],
+        chapters: [makeChapter("ch-1", 1, 5, fetcher)],
         imageConcurrency: 1,
         delayMs: 0,
         dryRun: false,
         logger: noopLogger,
-        imageFetcher: fetcher,
       }),
     ).rejects.toThrow("simulated network failure");
 
@@ -335,7 +331,6 @@ describe("downloadVolume — result metadata", () => {
       delayMs: 0,
       dryRun: false,
       logger: noopLogger,
-      imageFetcher: makeFetcher(),
     });
 
     // chapterIds is derived from input chapters array (not sorted order)
@@ -354,12 +349,11 @@ describe("downloadVolume — extension detection from bytes", () => {
       format: "cbz",
       slug: "ext-detect",
       volumeNumber: 1,
-      chapters: [makeChapter("c1", 1, 3)],
+      chapters: [makeChapter("c1", 1, 3, async (_ref) => makePng(1))],
       imageConcurrency: 1,
       delayMs: 0,
       dryRun: false,
       logger: noopLogger,
-      imageFetcher: async (_ref) => makePng(1),
     });
 
     const raw = await readFile(result.outputPath);
@@ -376,12 +370,11 @@ describe("downloadVolume — extension detection from bytes", () => {
       format: "cbz",
       slug: "ext-fallback",
       volumeNumber: 1,
-      chapters: [makeChapter("c1", 1, 2)],
+      chapters: [makeChapter("c1", 1, 2, async (_ref) => makeJpeg(1))],
       imageConcurrency: 1,
       delayMs: 0,
       dryRun: false,
       logger: noopLogger,
-      imageFetcher: async (_ref) => makeJpeg(1),
     });
 
     const raw = await readFile(result.outputPath);

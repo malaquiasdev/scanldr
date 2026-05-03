@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { CliError, expandIntegerRange, parseRangeSet } from "./range.ts";
+import { CliError } from "@plugins/errors/index.ts";
+import { expandIntegerRange, parseRangeSet } from "./range.ts";
 
 describe("parseRangeSet — happy paths", () => {
   test("single integer", () => {

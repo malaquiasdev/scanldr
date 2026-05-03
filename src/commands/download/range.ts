@@ -1,8 +1,6 @@
 import { CliError } from "@plugins/errors/index.ts";
 import type { ParsedRange } from "./types.ts";
 
-export { CliError };
-
 function isPositiveNumber(s: string): boolean {
   return /^\d+(\.\d+)?$/.test(s) && Number(s) > 0;
 }

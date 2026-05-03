@@ -392,6 +392,87 @@ describe("runDownload — atomic history on mid-download failure", () => {
   });
 });
 
+describe("runDownload — multi-chapter volume", () => {
+  test("happy path: 2 chapters produce 5 files in monotonic order with correct bytes", async () => {
+    const ch1 = makeChapterRef({ id: "ch-1", volume: "1", chapter: "1" });
+    const ch2 = makeChapterRef({ id: "ch-2", volume: "1", chapter: "2" });
+
+    const multiClient = makeClient({
+      aggregateVolumes: async () => [makeVolumeRef("1", ["ch-1", "ch-2"])],
+      feedChapters: async () => [ch1, ch2],
+    });
+
+    // ch-1 at-home: 2 pages (hash "hash-ch1")
+    // ch-2 at-home: 3 pages (hash "hash-ch2")
+    const multiHttp: MangaDexHttpClient = {
+      get: async (path: string) => {
+        if (path === "/at-home/server/ch-1") {
+          return {
+            baseUrl: "https://example.com",
+            chapter: { hash: "hash-ch1", data: ["p1.jpg", "p2.jpg"], dataSaver: [] },
+          };
+        }
+        if (path === "/at-home/server/ch-2") {
+          return {
+            baseUrl: "https://example.com",
+            chapter: { hash: "hash-ch2", data: ["p1.jpg", "p2.jpg", "p3.jpg"], dataSaver: [] },
+          };
+        }
+        throw new Error(`Unexpected HTTP GET: ${path}`);
+      },
+    } as unknown as MangaDexHttpClient;
+
+    // Distinct marker bytes per chapter: ch1 pages start ff d8 ff e1, ch2 pages start ff d8 ff e2
+    const CH1_JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe1, ...JPEG_BYTES.slice(4)]);
+    const CH2_JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe2, ...JPEG_BYTES.slice(4)]);
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (url: string | URL | Request) => {
+        const urlStr = typeof url === "string" ? url : url instanceof URL ? url.href : url.url;
+        const bytes = urlStr.includes("hash-ch1") ? CH1_JPEG : CH2_JPEG;
+        return new Response(bytes, {
+          status: 200,
+          headers: { "x-cache": "MISS", "content-type": "image/jpeg" },
+        });
+      },
+      { preconnect: () => {} },
+    ) as typeof fetch;
+
+    try {
+      await runDownload(baseArgs(), baseCtx(), multiClient, multiHttp);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    const cbzPath = join(tmpDir, "test-manga", "test-manga-volume-001.cbz");
+    const exists = await Bun.file(cbzPath).exists();
+    expect(exists).toBe(true);
+
+    const raw = new Uint8Array(await Bun.file(cbzPath).arrayBuffer());
+    const entries = unzipSync(raw);
+    const names = Object.keys(entries).sort();
+
+    // 2 ch1 pages + 3 ch2 pages = 5
+    expect(names).toHaveLength(5);
+    expect(names).toEqual(["0001.jpg", "0002.jpg", "0003.jpg", "0004.jpg", "0005.jpg"]);
+
+    // First 2 files must come from ch1 fetcher (marker byte 0xe1)
+    expect(entries["0001.jpg"]?.[3]).toBe(0xe1);
+    expect(entries["0002.jpg"]?.[3]).toBe(0xe1);
+
+    // Last 3 files must come from ch2 fetcher (marker byte 0xe2)
+    expect(entries["0003.jpg"]?.[3]).toBe(0xe2);
+    expect(entries["0004.jpg"]?.[3]).toBe(0xe2);
+    expect(entries["0005.jpg"]?.[3]).toBe(0xe2);
+
+    // 2 history rows: one per chapter
+    const history = listHistory(db);
+    expect(history).toHaveLength(2);
+    expect(history.map((r) => r.chapterId).sort()).toEqual(["ch-1", "ch-2"]);
+  });
+});
+
 describe("runDownload — range parsing", () => {
   test("invalid range throws CliError", async () => {
     await expect(
