@@ -27,7 +27,7 @@ export function createMangaDexClient(http: MangaDexHttpClient): MangaDexClient {
 
   async function aggregateVolumes(mangaId: string, languages: string[]): Promise<VolumeRef[]> {
     const raw = await http.get<MdxAggregateResponse>(`/manga/${mangaId}/aggregate`, {
-      "translatedLanguage[]": languages,
+      "translatedLanguage[]": languages.map((l) => l.toLowerCase()),
     });
     return parseAggregate(raw);
   }
@@ -38,7 +38,7 @@ export function createMangaDexClient(http: MangaDexHttpClient): MangaDexClient {
     offset = 0,
   ): Promise<ChapterRef[]> {
     const raw = await http.get<MdxChapterListResponse>(`/manga/${mangaId}/feed`, {
-      "translatedLanguage[]": languages,
+      "translatedLanguage[]": languages.map((l) => l.toLowerCase()),
       "includes[]": "scanlation_group",
       limit: 500,
       offset,
