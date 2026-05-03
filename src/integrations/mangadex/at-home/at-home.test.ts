@@ -357,8 +357,8 @@ describe("mangadexImageFetcher — refresh failure during retry", () => {
     await fetcher({ url: "", page: 1 }).catch(() => {});
 
     const refreshFailLog = warnCalls.find((f) => f.event === "mangadex.at_home_refresh_failed");
-    expect(refreshFailLog).toBeDefined();
-    expect(refreshFailLog?.chapterId).toBe("ch-del");
+    expect(refreshFailLog).toMatchObject({ chapterId: "ch-del", attempt: 1 });
+    expect(refreshFailLog?.err).toBeInstanceOf(AtHomeError);
   });
 
   it("logs mangadex.at_home_refresh_failed when generic Error thrown during refresh", async () => {
@@ -398,8 +398,9 @@ describe("mangadexImageFetcher — refresh failure during retry", () => {
     await fetcher({ url: "", page: 1 }).catch(() => {});
 
     const refreshFailLog = warnCalls.find((f) => f.event === "mangadex.at_home_refresh_failed");
-    expect(refreshFailLog).toBeDefined();
-    expect(refreshFailLog?.chapterId).toBe("ch-net");
+    const expectedErr = new Error("network timeout on refresh");
+    expect(refreshFailLog).toMatchObject({ chapterId: "ch-net", attempt: 1 });
+    expect((refreshFailLog?.err as Error).message).toBe(expectedErr.message);
   });
 });
 

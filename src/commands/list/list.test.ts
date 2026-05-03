@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import {
   formatCandidateList,
   formatChapterDetail,
-  formatExternalTag,
   formatMangaList,
   formatVolumeList,
   parseExternalHost,
@@ -270,34 +269,6 @@ describe("runList", () => {
     await expect(
       runList({ manga: "One Piece", chapter: "999", nonTty: true }, ctx, makeClient()),
     ).rejects.toThrow("Chapter 999 not found");
-  });
-});
-
-// --- formatExternalTag tests ---
-
-describe("formatExternalTag", () => {
-  it("returns 'mangaplus' for mangaplus.shueisha.co.jp", () => {
-    expect(formatExternalTag("https://mangaplus.shueisha.co.jp/viewer/1010633")).toBe("mangaplus");
-  });
-
-  it("returns 'comikey' for comikey.com", () => {
-    expect(formatExternalTag("https://comikey.com/read/example/1")).toBe("comikey");
-  });
-
-  it("returns first subdomain segment for arbitrary URLs", () => {
-    expect(formatExternalTag("https://cubari.moe/read/imgur/xyz")).toBe("cubari");
-  });
-
-  it("returns empty string for URL without scheme (e.g. 'mangaplus')", () => {
-    expect(formatExternalTag("mangaplus")).toBe("");
-  });
-
-  it("returns empty string for empty string", () => {
-    expect(formatExternalTag("")).toBe("");
-  });
-
-  it("returns empty string for non-URL string", () => {
-    expect(formatExternalTag("not a url at all")).toBe("");
   });
 });
 

@@ -17,17 +17,6 @@ export function parseExternalHost(url: string): string | null {
   }
 }
 
-/**
- * Returns a short human-readable label for an external chapter URL.
- * e.g. "https://mangaplus.shueisha.co.jp/..." → "mangaplus"
- *      "https://comikey.com/..." → "comikey"
- * Returns empty string when the URL cannot be parsed (malformed / no scheme).
- * @deprecated prefer parseExternalHost which returns null for malformed URLs.
- */
-export function formatExternalTag(url: string): string {
-  return parseExternalHost(url) ?? "";
-}
-
 /** Format full manga listing (all volumes). */
 export function formatMangaList(
   candidate: MangaCandidate,
@@ -76,8 +65,8 @@ export function formatMangaList(
     for (const ch of volChapters) {
       const num = ch.chapter ?? "?";
       const title = ch.title ? ` — ${ch.title}` : "";
-      const extTag = ch.externalUrl !== null ? formatExternalTag(ch.externalUrl) : null;
-      const ext = extTag === null ? "" : extTag ? ` [external: ${extTag}]` : " [external]";
+      const extTag = ch.externalUrl !== null ? parseExternalHost(ch.externalUrl) : undefined;
+      const ext = extTag === undefined ? "" : extTag ? ` [external: ${extTag}]` : " [external]";
       lines.push(`  Chapter ${num}${title}${ext}`);
     }
 
@@ -118,8 +107,8 @@ export function formatVolumeList(
   for (const ch of sorted) {
     const num = ch.chapter ?? "?";
     const title = ch.title ? ` — ${ch.title}` : "";
-    const extTag = ch.externalUrl !== null ? formatExternalTag(ch.externalUrl) : null;
-    const ext = extTag === null ? "" : extTag ? ` [external: ${extTag}]` : " [external]";
+    const extTag = ch.externalUrl !== null ? parseExternalHost(ch.externalUrl) : undefined;
+    const ext = extTag === undefined ? "" : extTag ? ` [external: ${extTag}]` : " [external]";
     lines.push(`  Chapter ${num}${title}${ext}`);
   }
 
