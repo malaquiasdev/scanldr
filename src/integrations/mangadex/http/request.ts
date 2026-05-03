@@ -7,27 +7,25 @@ export function buildUrl(base: string, path: string, query?: QueryParams): strin
   const url = new URL(path, base);
   if (!query) return url.toString();
 
-  // Build scalar params via URLSearchParams (handles encoding).
-  // Array params must be appended as raw query string to avoid [] being percent-encoded
-  // (URLSearchParams encodes [] as %5B%5D but MangaDex requires literal brackets).
-  const arrays: [string, string[]][] = [];
+  // Keys containing "[" must be appended as raw query string — URLSearchParams encodes
+  // brackets as %5B%5D but MangaDex requires literal brackets (includes[], order[chapter], …).
+  const raw: string[] = [];
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined) continue;
     if (Array.isArray(value)) {
-      arrays.push([key, value.map(String)]);
+      for (const v of value) raw.push(`${key}=${encodeURIComponent(v)}`);
+    } else if (key.includes("[")) {
+      raw.push(`${key}=${encodeURIComponent(String(value))}`);
     } else {
       url.searchParams.set(key, String(value));
     }
   }
 
-  if (arrays.length === 0) return url.toString();
+  if (raw.length === 0) return url.toString();
 
-  const base64 = url.toString();
-  const sep = base64.includes("?") ? "&" : "?";
-  const arrayStr = arrays
-    .flatMap(([k, vs]) => vs.map((v) => `${k}=${encodeURIComponent(v)}`))
-    .join("&");
-  return `${base64}${sep}${arrayStr}`;
+  const built = url.toString();
+  const sep = built.includes("?") ? "&" : "?";
+  return `${built}${sep}${raw.join("&")}`;
 }
 
 export function backoffMs(attempt: number, baseMs: number): number {
