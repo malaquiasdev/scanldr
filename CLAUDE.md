@@ -1,25 +1,12 @@
-# scanldr — Conventions for Claude Agents
+# scanldr — Agent Instructions
 
-## Project Structure
+## Conventions
 
-```
-src/
-├── index.ts         # CLI entrypoint
-├── types.ts         # Shared domain types
-├── plugins/         # Infrastructure: config/, logger/, errors/, guards/
-├── modules/         # Business logic: downloader/, history/, subscriptions/
-└── integrations/    # External clients: mangadex/, mangakakalot/
-```
+All code conventions (project structure, no classes, interfaces in types.ts, colocated tests, logger signature, SQL pattern, migrations) are documented in:
 
-Each folder has `index.ts` (public API / logic), `types.ts` (interfaces), `service.ts` or `repository.ts` as needed, and `<name>.test.ts` colocated — never in a top-level `__tests__/` directory.
+**[docs/conventions.md](docs/conventions.md)**
 
-## Hard Rules
-
-- **Interfaces in `types.ts`** — never declare interfaces in `index.ts` or `service.ts`. Re-export from `index.ts`.
-- **No classes** — factory functions only. State lives in closures (`createX(opts): XClient`).
-- **No flat files in `src/`** — every feature in its own folder. Only `index.ts` and `types.ts` at root.
-- **Import aliases** — cross-boundary imports use `@plugins/*`, `@modules/*`, `@integrations/*`. Relative imports only within the same folder.
-- **`plugins/`** = infrastructure (no business rules). **`modules/`** = business domain. **`integrations/`** = external site clients.
+Read it before writing any code.
 
 ## Gates before every PR
 
