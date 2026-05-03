@@ -4,13 +4,7 @@ import { zipSync } from "fflate";
 import { detectExtFromBytes, pad } from "./helpers.ts";
 import { createSemaphore } from "./semaphore.ts";
 import type { Semaphore } from "./semaphore.ts";
-import type {
-  ChapterInput,
-  DownloadVolumeInput,
-  DownloadVolumeResult,
-  ImageRef,
-  Logger,
-} from "./types.ts";
+import type { ChapterInput, DownloadVolumeInput, DownloadVolumeResult, ImageRef } from "./types.ts";
 
 async function fetchPage(
   ref: ImageRef,
@@ -29,19 +23,9 @@ async function fetchChapterPages(
   sem: Semaphore,
   globalOffset: number,
   fetcher: (ref: ImageRef) => Promise<Uint8Array>,
-  logger: Logger,
 ): Promise<Array<{ filename: string; data: Uint8Array }>> {
   const tasks = chapter.pages.map((ref, localIdx) => {
     const globalIdx = globalOffset + localIdx;
-    logger.debug(
-      {
-        event: "downloader.fetch_page",
-        context: "downloader",
-        chapterId: chapter.id,
-        page: ref.page,
-      },
-      "fetching image",
-    );
     return fetchPage(ref, fetcher, sem).then(({ data, ext }) => ({
       filename: `${pad(globalIdx + 1, 4)}${ext}`,
       data,
@@ -107,7 +91,7 @@ export async function downloadVolume(input: DownloadVolumeInput): Promise<Downlo
       "downloading chapter",
     );
 
-    const pages = await fetchChapterPages(chapter, sem, globalOffset, imageFetcher, logger);
+    const pages = await fetchChapterPages(chapter, sem, globalOffset, imageFetcher);
     for (const { filename: fname, data } of pages) {
       zipEntries[fname] = data;
     }

@@ -5,7 +5,7 @@ import type { LogLevel, Logger, LoggerOptions } from "./types.ts";
 
 export type { Logger, LogFormat, LogLevel, LoggerOptions } from "./types.ts";
 
-const LEVELS: Record<LogLevel, number> = { error: 0, warn: 1, info: 2, debug: 3 };
+const LEVELS: Record<LogLevel, number> = { error: 0, warn: 1, info: 2 };
 
 const DENYLIST = new Set(["cookies", "cf_clearance", "useragent", "authorization"]);
 const REDACTED = "[REDACTED]";
@@ -43,6 +43,5 @@ export function createLogger(options: LoggerOptions): Logger {
     error: (fields, msg) => emit("error", fields, msg),
     warn: (fields, msg) => emit("warn", fields, msg),
     info: (fields, msg) => emit("info", fields, msg),
-    debug: (fields, msg) => emit("debug", fields, msg),
   };
 }

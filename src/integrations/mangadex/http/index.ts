@@ -28,7 +28,7 @@ export function createMangaDexHttp(opts: MangaDexHttpOptions): MangaDexHttpClien
       } catch (err) {
         lastError = err;
         const waitMs = backoffMs(attempt, baseMs);
-        logger.debug(
+        logger.warn(
           { event: "mangadex.network_error", context: "http", attempt: attempt + 1, waitMs },
           "network error, retrying",
         );
@@ -53,7 +53,7 @@ export function createMangaDexHttp(opts: MangaDexHttpOptions): MangaDexHttpClien
 
       if (response.status >= 500) {
         const waitMs = backoffMs(attempt, baseMs);
-        logger.debug(
+        logger.warn(
           {
             event: "mangadex.server_error",
             context: "http",

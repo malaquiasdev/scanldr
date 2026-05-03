@@ -11,7 +11,6 @@ const noopLogger: Logger = {
   error: noop,
   warn: noop,
   info: noop,
-  debug: noop,
 };
 
 const baseConfig: Config = {

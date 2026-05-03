@@ -1,4 +1,4 @@
-export type LogLevel = "error" | "warn" | "info" | "debug";
+export type LogLevel = "error" | "warn" | "info";
 export type LogFormat = "human" | "json";
 
 export interface LoggerOptions {
@@ -12,5 +12,4 @@ export interface Logger {
   error: (fields: Record<string, unknown>, msg: string) => void;
   warn: (fields: Record<string, unknown>, msg: string) => void;
   info: (fields: Record<string, unknown>, msg: string) => void;
-  debug: (fields: Record<string, unknown>, msg: string) => void;
 }
