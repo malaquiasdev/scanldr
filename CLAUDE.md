@@ -1,13 +1,5 @@
 # scanldr — Conventions for Claude Agents
 
-## Stack
-
-- **Runtime:** Bun (never Node)
-- **Language:** TypeScript strict (`strict: true`, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`)
-- **Linter/Formatter:** Biome 1.9.4 (`lineWidth: 100`, double quotes, semicolons always, trailing commas all)
-- **Test runner:** `bun test`
-- **Package manager:** `bun install`
-
 ## Project Structure
 
 ```
