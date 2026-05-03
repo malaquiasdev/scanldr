@@ -1,7 +1,11 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
+import { runList } from "@commands/list/index.ts";
+import { createMangaDexClient } from "@integrations/mangadex/client/index.ts";
+import { createMangaDexHttp } from "@integrations/mangadex/http/index.ts";
 import { AuthError, runAuth } from "@integrations/mangakakalot/browser/index.ts";
 import { loadConfig } from "@plugins/config/index.ts";
+import type { Config } from "@plugins/config/index.ts";
 import { openDb, runMigrations } from "@plugins/db/index.ts";
 import type { Db } from "@plugins/db/index.ts";
 import { type LogFormat, type LogLevel, type Logger, createLogger } from "@plugins/logger/index.ts";
@@ -54,6 +58,7 @@ class CliError extends Error {
 interface HandlerContext {
   logger: Logger;
   db: Db;
+  config: Config;
 }
 
 type Handler = (rest: string[], ctx: HandlerContext) => Promise<void> | void;
@@ -62,8 +67,38 @@ const handlers: Record<string, Handler> = {
   auth: async (_rest, ctx) => {
     await runAuth({ logger: ctx.logger });
   },
-  list: () => {
-    throw new NotImplementedError("list");
+  list: async (rest, ctx) => {
+    const { values: listValues, positionals: listPos } = parseArgs({
+      args: rest,
+      allowPositionals: true,
+      strict: false,
+      options: {
+        volume: { type: "string" },
+        chapter: { type: "string" },
+        "non-tty": { type: "boolean" },
+      },
+    });
+
+    const manga = listPos[0];
+    if (!manga) {
+      throw new CliError("Usage: scanldr list <manga> [--volume <n>] [--chapter <n>]", 2);
+    }
+
+    const nonTty = listValues["non-tty"] === true || !process.stdout.isTTY;
+
+    const http = createMangaDexHttp({ logger: ctx.logger, config: ctx.config });
+    const client = createMangaDexClient(http);
+
+    await runList(
+      {
+        manga,
+        volume: typeof listValues.volume === "string" ? listValues.volume : undefined,
+        chapter: typeof listValues.chapter === "string" ? listValues.chapter : undefined,
+        nonTty,
+      },
+      { logger: ctx.logger, languages: ctx.config.preferred_languages },
+      client,
+    );
   },
   download: () => {
     throw new NotImplementedError("download");
@@ -157,7 +192,7 @@ async function main(argv: string[]): Promise<void> {
   const db = openDb(config.db_path);
   runMigrations(db);
 
-  return handler(rest, { logger, db });
+  return handler(rest, { logger, db, config });
 }
 
 if (import.meta.main) {
