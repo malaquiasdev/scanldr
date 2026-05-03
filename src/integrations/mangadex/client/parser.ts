@@ -76,7 +76,7 @@ export function parseChapterFeed(raw: MdxChapterListResponse): ChapterRef[] {
       title: item.attributes.title,
       translatedLanguage: normalizeLang(item.attributes.translatedLanguage),
       scanlationGroup: typeof scanlationGroup === "string" ? scanlationGroup : null,
-      publishAt: item.attributes.publishAt,
+      readableAt: item.attributes.readableAt,
     };
   });
 }

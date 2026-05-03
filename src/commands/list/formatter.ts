@@ -112,7 +112,7 @@ export function formatChapterDetail(
   }
   lines.push(`Language:  ${chapter.translatedLanguage}`);
   lines.push(`Group:     ${chapter.scanlationGroup ?? "—"}`);
-  lines.push(`Published: ${chapter.publishAt.slice(0, 10)}`);
+  lines.push(`Published: ${chapter.readableAt.slice(0, 10)}`);
   return lines.join("\n");
 }
 
