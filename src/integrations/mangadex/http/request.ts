@@ -1,4 +1,5 @@
 import type { QueryParams } from "./types.ts";
+import { jitter } from "./util.ts";
 
 const BACKOFF_CAP_MS = 60_000;
 
@@ -15,10 +16,6 @@ export function buildUrl(base: string, path: string, query?: QueryParams): strin
     }
   }
   return url.toString();
-}
-
-export function jitter(): number {
-  return Math.floor(Math.random() * 200);
 }
 
 export function backoffMs(attempt: number, baseMs: number): number {

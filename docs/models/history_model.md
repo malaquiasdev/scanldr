@@ -1,6 +1,6 @@
 # Model — Download History
 
-Persisted in `scanldr.db` (SQLite) via `bun:sqlite`. Lives in the project root alongside `.scanldr-auth.json`.
+Persisted in `scanldr.db` (SQLite) via `bun:sqlite`. Lives by default at `$XDG_DATA_HOME/scanldr/scanldr.db`, alongside `auth.json`. Configurable via `db_path` in `scanldr.json`.
 
 The history is the single source of truth for "what has been downloaded". It is intentionally decoupled from the output directory — the user can delete `.cbz` files freely and the CLI will not re-download them.
 

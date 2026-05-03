@@ -1,10 +1,11 @@
 // Auth command handler for mangakakalot.
 // Opens headful Chromium via Playwright, waits for user to solve Cloudflare Turnstile,
-// captures cookies + User-Agent, verifies the session, writes .scanldr-auth.json.
+// captures cookies + User-Agent, verifies the session, writes auth.json under XDG data dir.
 // Per ADR-001: no stealth — cookie replay is the strategy.
 
-import { chmod, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { chromium } from "playwright";
 import { AuthError } from "./types.ts";
 import type { AuthSession, RunAuthOptions } from "./types.ts";
@@ -12,10 +13,30 @@ import type { AuthSession, RunAuthOptions } from "./types.ts";
 export { AuthError } from "./types.ts";
 export type { AuthSession, RunAuthOptions } from "./types.ts";
 
-const AUTH_FILE = ".scanldr-auth.json";
+const AUTH_FILENAME = "auth.json";
+const APP_DIR = "scanldr";
 const SITE_ROOT = "https://mangakakalot.gg";
 const CF_COOKIE_TIMEOUT_MS = 120_000;
 const VERIFY_TIMEOUT_MS = 15_000;
+
+/**
+ * Resolves the absolute path where the auth session is persisted.
+ *
+ * Order:
+ * 1. `opts.dataHome` (test override) → `<dataHome>/scanldr/auth.json`
+ * 2. `$XDG_DATA_HOME/scanldr/auth.json`
+ * 3. `<home>/.local/share/scanldr/auth.json`
+ */
+export function resolveAuthPath(opts: RunAuthOptions): string {
+  const env = opts.env ?? process.env;
+  const home = opts.home ?? homedir();
+  const base =
+    opts.dataHome ??
+    (env.XDG_DATA_HOME && env.XDG_DATA_HOME.length > 0
+      ? env.XDG_DATA_HOME
+      : join(home, ".local", "share"));
+  return join(base, APP_DIR, AUTH_FILENAME);
+}
 
 /**
  * Runs the interactive auth flow:
@@ -24,7 +45,7 @@ const VERIFY_TIMEOUT_MS = 15_000;
  * 3. Polls until cf_clearance cookie is present (up to 120s).
  * 4. Extracts cookies + UA.
  * 5. Verifies session via plain fetch.
- * 6. Writes .scanldr-auth.json with mode 0600.
+ * 6. Atomically writes auth.json with mode 0600 under the XDG data dir.
  *
  * Throws (exit non-zero) when:
  * - User closes the browser before settlement.
@@ -33,7 +54,7 @@ const VERIFY_TIMEOUT_MS = 15_000;
  */
 export async function runAuth(opts: RunAuthOptions): Promise<void> {
   const { logger } = opts;
-  const cwd = opts.cwd ?? process.cwd();
+  const outPath = resolveAuthPath(opts);
 
   logger.info(
     { event: "auth.launch", context: "browser" },
@@ -127,13 +148,15 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
       savedAt: Date.now(),
     };
 
-    const outPath = join(cwd, AUTH_FILE);
-    await writeFile(outPath, JSON.stringify(session, null, 2), { encoding: "utf8" });
-    await chmod(outPath, 0o600);
+    await mkdir(dirname(outPath), { recursive: true, mode: 0o700 });
+    await writeFile(outPath, JSON.stringify(session, null, 2), {
+      encoding: "utf8",
+      mode: 0o600,
+    });
 
     logger.info(
       { event: "auth.saved", context: "browser", path: outPath },
-      `Auth saved to ${AUTH_FILE}. Valid for ~30 days.`,
+      `Auth saved to ${outPath}. Valid for ~30 days.`,
     );
   } finally {
     if (!browserClosed) {

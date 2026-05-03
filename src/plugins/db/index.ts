@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Db, MigrationRow } from "./types.ts";
 
-export type { Db, MigrationRow } from "./types.ts";
+export type { Db } from "./types.ts";
 
 const MIGRATIONS_DIR = resolve(import.meta.dir, "../../../migrations");
 

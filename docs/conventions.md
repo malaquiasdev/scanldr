@@ -5,7 +5,6 @@
 ```
 src/
 ├── index.ts            # CLI entrypoint
-├── types.ts            # Shared domain types
 ├── plugins/            # Infrastructure: config/, logger/, db/, errors/, guards/
 ├── modules/            # Business logic: downloader/, history/, subscriptions/
 └── integrations/       # External clients: mangadex/, mangakakalot/
@@ -14,11 +13,21 @@ migrations/             # Versioned SQL migrations (applied in lexicographic ord
 
 Each folder has `index.ts` (public API), `types.ts` (interfaces), `service.ts` or `repository.ts` as needed, and `<name>.test.ts` colocated — never in a top-level `__tests__/` directory.
 
+### Allowed extra filenames inside a feature folder
+
+A feature folder may also contain narrowly-scoped helpers when their concern doesn't fit `service.ts` or `repository.ts`:
+
+- **`helpers.ts`** — pure utility functions used only inside the feature (e.g. `pad`, `detectExtFromBytes` in `modules/downloader/`).
+- **`semaphore.ts`**, **`bucket.ts`**, **`util.ts`**, etc. — single-responsibility helpers named after the primitive they implement. Keep them small and feature-internal; promote to a plugin only if they end up imported across boundaries.
+
+These files still follow all other rules: no classes, types live in the feature's `types.ts`, public surface is re-exported from `index.ts` only when needed.
+
 ## Hard Rules
 
 - **No classes** — factory functions with closures only (`createX(opts): XClient`). State lives in the closure.
+  - **Exception:** `Error` subclasses are allowed when a domain needs a typed exception that callers branch on with `instanceof` (`AuthError`, `CliError`, `ConfigError`, `NotImplementedError`). Keep the body trivial — just `super(message)` and `this.name = "..."`.
 - **Interfaces in `types.ts`** — never declare interfaces or types in `index.ts` or `service.ts`. Re-export from `index.ts`.
-- **No flat files in `src/`** — every feature in its own folder. Only `index.ts` and `types.ts` at root level.
+- **No flat files in `src/`** — every feature in its own folder. Only `index.ts` at root level (the CLI entrypoint).
 - **Import aliases** — cross-boundary imports use `@plugins/*`, `@modules/*`, `@integrations/*`. Relative imports only within the same folder.
 - **`plugins/`** = infrastructure (no business rules). **`modules/`** = business domain. **`integrations/`** = external site clients.
 

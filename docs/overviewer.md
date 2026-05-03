@@ -25,7 +25,7 @@ scanldr/
 │           └── parser.ts         # HTML/JSON extraction (Cheerio)
 ├── docs/                         # This documentation
 ├── scanldr.db                    # SQLite — download history + subscriptions (gitignored)
-└── .scanldr-auth.json            # Saved Cloudflare session (gitignored)
+└── $XDG_DATA_HOME/scanldr/auth.json  # Saved Cloudflare session (mode 0600, outside repo)
 ```
 
 ## 3. Component Definitions
