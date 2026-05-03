@@ -5,7 +5,7 @@ import type { LogLevel, Logger, LoggerOptions } from "./types.ts";
 
 export type { Logger, LogFormat, LogLevel, LoggerOptions } from "./types.ts";
 
-const LEVELS: Record<LogLevel, number> = { error: 0, warn: 1, info: 2, debug: 3 };
+const LEVELS: Record<LogLevel, number> = { error: 0, warn: 1, info: 2 };
 
 const DENYLIST = new Set(["cookies", "cf_clearance", "useragent", "authorization"]);
 const REDACTED = "[REDACTED]";
@@ -27,12 +27,12 @@ export function createLogger(options: LoggerOptions): Logger {
   const write = options.write ?? ((line: string) => process.stderr.write(line));
   const now = options.now ?? (() => new Date().toISOString());
 
-  function emit(level: LogLevel, msg: string, fields?: Record<string, unknown>): void {
+  function emit(level: LogLevel, fields: Record<string, unknown>, msg: string): void {
     if (LEVELS[level] > threshold) return;
     const ts = now();
     if (options.format === "json") {
-      const safeFields = fields ? (redact(fields) as Record<string, unknown>) : undefined;
-      const payload = { ts, level, msg, ...(safeFields ?? {}) };
+      const safeFields = redact(fields) as Record<string, unknown>;
+      const payload = { ts, level, msg, ...safeFields };
       write(`${JSON.stringify(payload)}\n`);
       return;
     }
@@ -40,9 +40,8 @@ export function createLogger(options: LoggerOptions): Logger {
   }
 
   return {
-    error: (msg, fields) => emit("error", msg, fields),
-    warn: (msg, fields) => emit("warn", msg, fields),
-    info: (msg, fields) => emit("info", msg, fields),
-    debug: (msg, fields) => emit("debug", msg, fields),
+    error: (fields, msg) => emit("error", fields, msg),
+    warn: (fields, msg) => emit("warn", fields, msg),
+    info: (fields, msg) => emit("info", fields, msg),
   };
 }

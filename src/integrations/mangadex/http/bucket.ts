@@ -1,3 +1,4 @@
+import type { Logger } from "@plugins/logger/index.ts";
 import type { BucketState } from "./types.ts";
 
 const CAPACITY = 5;
@@ -17,7 +18,7 @@ export function refill(bucket: BucketState): void {
 
 export async function acquire(
   bucket: BucketState,
-  warn: (msg: string, fields?: Record<string, unknown>) => void,
+  logger: Logger,
   sleep: (ms: number) => Promise<void>,
 ): Promise<void> {
   refill(bucket);
@@ -26,7 +27,10 @@ export async function acquire(
     return;
   }
   const waitMs = REFILL_INTERVAL_MS + jitter();
-  warn("rate-limit token bucket empty, throttling", { waitMs });
+  logger.warn(
+    { event: "mangadex.rate_limit", context: "bucket", waitMs },
+    "rate-limit token bucket empty, throttling",
+  );
   await sleep(waitMs);
   refill(bucket);
   bucket.tokens = Math.max(0, bucket.tokens - 1);

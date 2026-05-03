@@ -8,10 +8,9 @@ import type { Logger } from "@plugins/logger/index.ts";
 import { unzipSync } from "fflate";
 
 const noopLogger: Logger = {
-  error: () => {},
-  warn: () => {},
-  info: () => {},
-  debug: () => {},
+  error: (_f, _m) => {},
+  warn: (_f, _m) => {},
+  info: (_f, _m) => {},
 };
 
 // ---------------------------------------------------------------------------

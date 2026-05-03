@@ -113,7 +113,7 @@ export function resolveLogConfig(values: {
     throw new CliError("--verbose and --quiet are mutually exclusive", 2);
   }
 
-  const level: LogLevel = verbose ? "debug" : quiet ? "warn" : "info";
+  const level: LogLevel = quiet ? "warn" : "info";
   const format: LogFormat = json ? "json" : "human";
   return { level, format };
 }

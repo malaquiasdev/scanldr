@@ -4,13 +4,7 @@ import { zipSync } from "fflate";
 import { detectExtFromBytes, pad } from "./helpers.ts";
 import { createSemaphore } from "./semaphore.ts";
 import type { Semaphore } from "./semaphore.ts";
-import type {
-  ChapterInput,
-  DownloadVolumeInput,
-  DownloadVolumeResult,
-  ImageRef,
-  Logger,
-} from "./types.ts";
+import type { ChapterInput, DownloadVolumeInput, DownloadVolumeResult, ImageRef } from "./types.ts";
 
 async function fetchPage(
   ref: ImageRef,
@@ -29,11 +23,9 @@ async function fetchChapterPages(
   sem: Semaphore,
   globalOffset: number,
   fetcher: (ref: ImageRef) => Promise<Uint8Array>,
-  logger: Logger,
 ): Promise<Array<{ filename: string; data: Uint8Array }>> {
   const tasks = chapter.pages.map((ref, localIdx) => {
     const globalIdx = globalOffset + localIdx;
-    logger.debug("fetching image", { chapterId: chapter.id, page: ref.page });
     return fetchPage(ref, fetcher, sem).then(({ data, ext }) => ({
       filename: `${pad(globalIdx + 1, 4)}${ext}`,
       data,
@@ -67,11 +59,16 @@ export async function downloadVolume(input: DownloadVolumeInput): Promise<Downlo
 
   if (dryRun) {
     const totalPages = sorted.reduce((sum, c) => sum + c.pages.length, 0);
-    logger.info("dry-run: would produce archive", {
-      outputPath: finalPath,
-      chapters: chapterIds.length,
-      totalPages,
-    });
+    logger.info(
+      {
+        event: "downloader.dry_run",
+        context: "downloader",
+        outputPath: finalPath,
+        chapters: chapterIds.length,
+        totalPages,
+      },
+      "dry-run: would produce archive",
+    );
     return { chapterIds, outputPath: `[dry-run] ${finalPath}`, byteSize: 0 };
   }
 
@@ -84,9 +81,17 @@ export async function downloadVolume(input: DownloadVolumeInput): Promise<Downlo
   for (let i = 0; i < sorted.length; i++) {
     const chapter = sorted[i];
     if (!chapter) continue;
-    logger.info("downloading chapter", { id: chapter.id, num: chapter.num });
+    logger.info(
+      {
+        event: "downloader.chapter_start",
+        context: "downloader",
+        id: chapter.id,
+        num: chapter.num,
+      },
+      "downloading chapter",
+    );
 
-    const pages = await fetchChapterPages(chapter, sem, globalOffset, imageFetcher, logger);
+    const pages = await fetchChapterPages(chapter, sem, globalOffset, imageFetcher);
     for (const { filename: fname, data } of pages) {
       zipEntries[fname] = data;
     }
@@ -97,11 +102,17 @@ export async function downloadVolume(input: DownloadVolumeInput): Promise<Downlo
     }
   }
 
-  logger.info("packing archive", { tempPath });
+  logger.info(
+    { event: "downloader.pack_start", context: "downloader", tempPath },
+    "packing archive",
+  );
   const zipped = zipSync(zipEntries);
   await writeFile(tempPath, zipped);
   await rename(tempPath, finalPath);
-  logger.info("archive ready", { outputPath: finalPath });
+  logger.info(
+    { event: "downloader.pack_done", context: "downloader", outputPath: finalPath },
+    "archive ready",
+  );
 
   const { size } = await stat(finalPath);
   return { chapterIds, outputPath: finalPath, byteSize: size };

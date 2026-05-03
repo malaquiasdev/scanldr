@@ -265,20 +265,18 @@ Every command writes structured logs to stderr; the only thing that goes to stdo
 
 | Level | Purpose |
 |---|---|
-| `error` | Operation failed. Always shown. Non-zero exit. |
-| `warn`  | Operation succeeded but something is off (slow CDN, retried image, fallback used). Always shown. |
+| `error` | Unhandled failure. Operation aborted. Non-zero exit. |
+| `warn`  | Handled failure — operation continued (rate-limit retry, network error with backoff, fallback used). |
 | `info`  | Default level. One line per chapter / per stage. |
-| `debug` | Verbose diagnostics (request URLs, header dumps, retry deltas). Hidden unless `--verbose`. |
 
 Flags:
 
 | Flag | Effect |
 |---|---|
-| `--verbose` / `-v` | Lower the threshold to `debug`. |
-| `--quiet` / `-q` | Raise the threshold to `warn`. Errors still print. |
-| `--json` | Emit one JSON object per log line (newline-delimited). Useful for piping into log shippers. Mutually exclusive with `--verbose`'s human format — JSON output already includes the level. |
+| `--quiet` / `-q` | Raise the threshold to `warn`. Info lines are suppressed. |
+| `--json` | Emit one JSON object per log line (newline-delimited). Useful for piping into log shippers. |
 
-`debug` logs include MangaDex request URLs and `x-cache` / latency telemetry but **never** include cookie values from `.scanldr-auth.json`.
+All log lines follow the pino convention: structured fields first, human message last — `logger.warn({ event, context, ...fields }, msg)`.
 
 ## 10. Future Considerations
 
