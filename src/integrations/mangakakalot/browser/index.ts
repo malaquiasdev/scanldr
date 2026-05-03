@@ -35,7 +35,10 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
   const { logger } = opts;
   const cwd = opts.cwd ?? process.cwd();
 
-  logger.info({}, "Launching Chromium — solve the Cloudflare challenge in the browser window.");
+  logger.info(
+    { event: "auth.launch", context: "browser" },
+    "Launching Chromium — solve the Cloudflare challenge in the browser window.",
+  );
 
   const browser = await chromium.launch({ headless: false });
 
@@ -50,7 +53,10 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
   try {
     await page.goto(SITE_ROOT, { waitUntil: "domcontentloaded" });
 
-    logger.info({}, "Waiting for you to solve the challenge…");
+    logger.info(
+      { event: "auth.waiting", context: "browser" },
+      "Waiting for you to solve the challenge…",
+    );
 
     // Poll until cf_clearance cookie appears — networkidle is unreliable for Turnstile.
     const deadline = Date.now() + CF_COOKIE_TIMEOUT_MS;
@@ -82,7 +88,10 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
       cookies[c.name] = c.value;
     }
 
-    logger.info({}, "Challenge resolved. Verifying session…");
+    logger.info(
+      { event: "auth.challenge_resolved", context: "browser" },
+      "Challenge resolved. Verifying session…",
+    );
 
     // Verify: plain fetch with captured cookies + UA must return 200.
     const cookieHeader = Object.entries(cookies)
@@ -122,7 +131,10 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
     await writeFile(outPath, JSON.stringify(session, null, 2), { encoding: "utf8" });
     await chmod(outPath, 0o600);
 
-    logger.info({}, `Auth saved to ${AUTH_FILE}. Valid for ~30 days.`);
+    logger.info(
+      { event: "auth.saved", context: "browser", path: outPath },
+      `Auth saved to ${AUTH_FILE}. Valid for ~30 days.`,
+    );
   } finally {
     if (!browserClosed) {
       await browser.close();
