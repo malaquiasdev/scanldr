@@ -1,16 +1,6 @@
+import { CliError } from "@plugins/errors/index.ts";
 import type { ParsedRange } from "./types.ts";
 
-class CliError extends Error {
-  constructor(
-    message: string,
-    public readonly exitCode: number = 2,
-  ) {
-    super(message);
-    this.name = "CliError";
-  }
-}
-
-// Re-export so callers can import from this module
 export { CliError };
 
 function isPositiveNumber(s: string): boolean {

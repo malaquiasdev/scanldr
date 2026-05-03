@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { CliError } from "@plugins/errors/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { resolveLanguage } from "./language.ts";
-import { CliError } from "./range.ts";
 
 const noopLogger: Logger = {
   info: () => {},
@@ -39,6 +39,34 @@ describe("resolveLanguage", () => {
         logger: noopLogger,
       }),
     ).rejects.toBeInstanceOf(CliError);
+  });
+
+  test("empty available (nonTty=true) throws CliError with helpful message", async () => {
+    await expect(
+      resolveLanguage({
+        preferred: ["en"],
+        available: [],
+        nonTty: true,
+        logger: noopLogger,
+      }),
+    ).rejects.toMatchObject({
+      name: "CliError",
+      message: expect.stringContaining("scanldr list"),
+    });
+  });
+
+  test("empty available (nonTty=false) throws CliError with helpful message", async () => {
+    await expect(
+      resolveLanguage({
+        preferred: ["en"],
+        available: [],
+        nonTty: false,
+        logger: noopLogger,
+      }),
+    ).rejects.toMatchObject({
+      name: "CliError",
+      message: expect.stringContaining("scanldr list"),
+    });
   });
 
   test("no match + nonTty error message is actionable", async () => {

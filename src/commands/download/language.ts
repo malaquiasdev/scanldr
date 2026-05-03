@@ -1,5 +1,5 @@
 import { createInterface } from "node:readline";
-import { CliError } from "./range.ts";
+import { CliError } from "@plugins/errors/index.ts";
 import type { ResolveLanguageInput } from "./types.ts";
 
 function promptLanguagePick(available: readonly string[]): Promise<string> {
@@ -21,6 +21,13 @@ function promptLanguagePick(available: readonly string[]): Promise<string> {
 
 export async function resolveLanguage(input: ResolveLanguageInput): Promise<string> {
   const { preferred, available, nonTty, logger } = input;
+
+  if (available.length === 0) {
+    throw new CliError(
+      'No chapters available for this manga in any language. Try `scanldr list "<manga>"` to verify.',
+      2,
+    );
+  }
 
   for (const lang of preferred) {
     if (available.includes(lang)) {

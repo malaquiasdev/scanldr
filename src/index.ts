@@ -9,6 +9,7 @@ import { loadConfig } from "@plugins/config/index.ts";
 import type { Config } from "@plugins/config/index.ts";
 import { openDb, runMigrations } from "@plugins/db/index.ts";
 import type { Db } from "@plugins/db/index.ts";
+import { CliError } from "@plugins/errors/index.ts";
 import { type LogFormat, type LogLevel, type Logger, createLogger } from "@plugins/logger/index.ts";
 
 const VERSION = "0.0.0";
@@ -43,16 +44,6 @@ class NotImplementedError extends Error {
   constructor(command: string) {
     super(`'${command}' is not implemented yet — scaffold only.`);
     this.name = "NotImplementedError";
-  }
-}
-
-class CliError extends Error {
-  constructor(
-    message: string,
-    public readonly exitCode: number = 2,
-  ) {
-    super(message);
-    this.name = "CliError";
   }
 }
 

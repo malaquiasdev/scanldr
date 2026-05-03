@@ -8,9 +8,10 @@ import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
 import { listHistory } from "@modules/history/index.ts";
 import { openDb, runMigrations } from "@plugins/db/index.ts";
 import type { Db } from "@plugins/db/index.ts";
+import { CliError } from "@plugins/errors/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
+import { unzipSync } from "fflate";
 import { runDownload } from "./index.ts";
-import { CliError } from "./range.ts";
 import type { DownloadArgs, DownloadContext } from "./types.ts";
 
 // Minimal 1x1 JPEG bytes
@@ -178,11 +179,28 @@ describe("runDownload — happy path", () => {
     const exists = await Bun.file(cbzPath).exists();
     expect(exists).toBe(true);
 
-    // Check history recorded
+    // P1.2 — assert .cbz contents: page count, filename convention, sort order
+    const raw = new Uint8Array(await Bun.file(cbzPath).arrayBuffer());
+    const entries = unzipSync(raw);
+    const names = Object.keys(entries).sort();
+    // makeFullHttpClient returns 2 pages for "data" quality (data: ["page1.jpg","page2.jpg"])
+    expect(names).toHaveLength(2);
+    expect(names[0]).toBe("0001.jpg");
+    expect(names[1]).toBe("0002.jpg");
+
+    // P1.1 — assert all history columns
     const history = listHistory(db);
-    expect(history.length).toBeGreaterThan(0);
-    expect(history[0]?.mangaId).toBe("manga-id-1");
-    expect(history[0]?.language).toBe("en");
+    expect(history.length).toBe(1);
+    expect(history[0]).toMatchObject({
+      mangaId: "manga-id-1",
+      mangaTitle: "Test Manga",
+      volume: "1",
+      chapterId: "ch-1",
+      chapterNum: "1",
+      source: "mangadex",
+      language: "en",
+      downloadedAt: expect.any(Number),
+    });
   });
 });
 
@@ -322,6 +340,55 @@ describe("runDownload — volume not in feed", () => {
     });
 
     expect(warnLogged).toBe(true);
+  });
+});
+
+describe("runDownload — atomic history on mid-download failure", () => {
+  test("no .cbz and no history rows when at-home server fails for chapter 2", async () => {
+    // Three chapters in volume 1
+    const ch1 = makeChapterRef({ id: "ch-1", volume: "1", chapter: "1" });
+    const ch2 = makeChapterRef({ id: "ch-2", volume: "1", chapter: "2" });
+    const ch3 = makeChapterRef({ id: "ch-3", volume: "1", chapter: "3" });
+
+    const multiChapterClient = makeClient({
+      aggregateVolumes: async () => [makeVolumeRef("1", ["ch-1", "ch-2", "ch-3"])],
+      feedChapters: async () => [ch1, ch2, ch3],
+    });
+
+    // at-home: ch-2 server call throws (simulates network error after ch-1 succeeds)
+    let atHomeCallCount = 0;
+    const failingHttp: MangaDexHttpClient = {
+      get: async (path: string) => {
+        if (path.startsWith("/at-home/server/")) {
+          atHomeCallCount++;
+          if (atHomeCallCount === 2) {
+            throw new Error("MangaDex HTTP 500: simulated server error for chapter 2");
+          }
+          return {
+            baseUrl: "https://example.com",
+            chapter: {
+              hash: "abc123",
+              data: ["page1.jpg"],
+              dataSaver: ["ds1.jpg"],
+            },
+          };
+        }
+        throw new Error(`Unexpected HTTP GET: ${path}`);
+      },
+    } as unknown as MangaDexHttpClient;
+
+    await expect(
+      runDownload(baseArgs(), baseCtx(), multiChapterClient, failingHttp),
+    ).rejects.toThrow();
+
+    // No .cbz orphan left on disk
+    const cbzPath = join(tmpDir, "test-manga", "test-manga-volume-001.cbz");
+    const exists = await Bun.file(cbzPath).exists();
+    expect(exists).toBe(false);
+
+    // Zero history rows — atomicity preserved
+    const history = listHistory(db);
+    expect(history.length).toBe(0);
   });
 });
 
