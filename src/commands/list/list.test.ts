@@ -36,7 +36,7 @@ const chapters: ChapterRef[] = [
     title: "Romance Dawn",
     translatedLanguage: "en",
     scanlationGroup: "TCB Scans",
-    publishAt: "1997-07-22T00:00:00+00:00",
+    readableAt: "1997-07-22T00:00:00+00:00",
   },
   {
     id: "ch-002",
@@ -45,7 +45,7 @@ const chapters: ChapterRef[] = [
     title: "They Call Him",
     translatedLanguage: "en",
     scanlationGroup: "TCB Scans",
-    publishAt: "1997-07-29T00:00:00+00:00",
+    readableAt: "1997-07-29T00:00:00+00:00",
   },
   {
     id: "ch-003",
@@ -54,7 +54,7 @@ const chapters: ChapterRef[] = [
     title: "Morgan versus Luffy",
     translatedLanguage: "en",
     scanlationGroup: "TCB Scans",
-    publishAt: "1997-08-05T00:00:00+00:00",
+    readableAt: "1997-08-05T00:00:00+00:00",
   },
   {
     id: "ch-009",
@@ -63,7 +63,7 @@ const chapters: ChapterRef[] = [
     title: "Versus Cabaji!!",
     translatedLanguage: "en",
     scanlationGroup: "Manga Plus",
-    publishAt: "1997-10-14T00:00:00+00:00",
+    readableAt: "1997-10-14T00:00:00+00:00",
   },
   {
     id: "ch-010",
@@ -72,7 +72,7 @@ const chapters: ChapterRef[] = [
     title: "Incident at the Bar",
     translatedLanguage: "en",
     scanlationGroup: "Manga Plus",
-    publishAt: "1997-10-21T00:00:00+00:00",
+    readableAt: "1997-10-21T00:00:00+00:00",
   },
 ];
 
@@ -137,7 +137,7 @@ const ch0 = chapters[0] ?? {
   title: null,
   translatedLanguage: "en",
   scanlationGroup: null,
-  publishAt: "",
+  readableAt: "",
 };
 
 describe("formatChapterDetail", () => {

@@ -10,7 +10,7 @@
         "chapter": "1",
         "title": "Prologue",
         "translatedLanguage": "en",
-        "publishAt": "2021-01-01T00:00:00+00:00"
+        "readableAt": "2021-01-01T00:00:00+00:00"
       },
       "relationships": [
         {
@@ -30,7 +30,7 @@
         "chapter": null,
         "title": "Oneshot",
         "translatedLanguage": "pt-br",
-        "publishAt": "2021-02-01T00:00:00+00:00"
+        "readableAt": "2021-02-01T00:00:00+00:00"
       },
       "relationships": []
     }

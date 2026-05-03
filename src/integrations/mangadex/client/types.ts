@@ -21,7 +21,7 @@ export interface ChapterRef {
   title: string | null;
   translatedLanguage: string;
   scanlationGroup: string | null;
-  publishAt: string;
+  readableAt: string;
 }
 
 // --- MangaDex REST response shapes ---
@@ -79,7 +79,7 @@ export interface MdxChapterAttributes {
   chapter: string | null;
   title: string | null;
   translatedLanguage: string;
-  publishAt: string;
+  readableAt: string;
 }
 
 export interface MdxChapterData {
