@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_CONFIG, loadConfig, validateAndMerge } from "../config.ts";
-import { ConfigError } from "../errors.ts";
+import { DEFAULT_CONFIG, loadConfig, validateAndMerge } from "../plugins/config/index.ts";
+import { ConfigError } from "../plugins/errors/index.ts";
 
 let workDir: string;
 let homeDir: string;
