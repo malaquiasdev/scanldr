@@ -249,6 +249,13 @@ describe("validateAndMerge — field validations", () => {
     expect(cfg.preferred_languages).toEqual(["en", "pt-BR", "zh-CN"]);
   });
 
+  test("normalizes BCP 47 codes to canonical form", () => {
+    const cfg = validateAndMerge({
+      preferred_languages: ["PT-br", "EN", "zh-cn"],
+    });
+    expect(cfg.preferred_languages).toEqual(["pt-BR", "en", "zh-CN"]);
+  });
+
   test("rejects empty default_out", () => {
     expect(() => validateAndMerge({ default_out: "" })).toThrow(/default_out/);
   });

@@ -19,6 +19,14 @@ export const DEFAULT_CONFIG: Config = {
 
 const BCP47 = /^[a-z]{2,3}(?:-[A-Z]{2})?(?:-[a-zA-Z0-9]{1,8})*$/;
 
+function normalizeBcp47(tag: string): string {
+  const [lang, region, ...rest] = tag.split("-");
+  if (!lang) return tag;
+  const parts = [lang.toLowerCase()];
+  if (region) parts.push(region.length === 2 ? region.toUpperCase() : region.toLowerCase());
+  return [...parts, ...rest].join("-");
+}
+
 async function resolveConfigPath(opts: LoadConfigOptions): Promise<string | null> {
   const env = opts.env ?? process.env;
   const cwd = opts.cwd ?? process.cwd();
@@ -64,10 +72,15 @@ export function validateAndMerge(parsed: unknown, source?: string): Config {
   if ("preferred_languages" in p) {
     const v = p.preferred_languages;
     check(
-      Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string" && BCP47.test(x)),
-      new ConfigError("preferred_languages must be a non-empty array of BCP 47 codes", source),
+      Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string" && x.length > 0),
+      new ConfigError("preferred_languages must be a non-empty array of strings", source),
     );
-    merged.preferred_languages = v as string[];
+    const normalized = (v as string[]).map(normalizeBcp47);
+    check(
+      normalized.every((x) => BCP47.test(x)),
+      new ConfigError("preferred_languages contains an invalid BCP 47 code", source),
+    );
+    merged.preferred_languages = normalized;
   }
 
   if ("download_quality" in p) {
