@@ -3,18 +3,29 @@
 import type { ChapterRef, MangaCandidate, VolumeRef } from "./types.ts";
 
 /**
- * Returns a short human-readable label for an external chapter URL.
- * e.g. "https://mangaplus.shueisha.co.jp/..." → "mangaplus"
- *      "https://comikey.com/..." → "comikey"
- * Returns empty string when the URL cannot be parsed (malformed / no scheme).
+ * Parses the hostname from a URL and returns the first label (e.g. "mangaplus").
+ * Returns `null` when the URL is malformed so callers can distinguish "bad URL"
+ * from "valid URL with no useful label" (empty host), instead of silently swallowing
+ * the parse error.
  */
-export function formatExternalTag(url: string): string {
+export function parseExternalHost(url: string): string | null {
   try {
     const host = new URL(url).hostname;
     return host.split(".")[0] ?? host;
   } catch {
-    return "";
+    return null;
   }
+}
+
+/**
+ * Returns a short human-readable label for an external chapter URL.
+ * e.g. "https://mangaplus.shueisha.co.jp/..." → "mangaplus"
+ *      "https://comikey.com/..." → "comikey"
+ * Returns empty string when the URL cannot be parsed (malformed / no scheme).
+ * @deprecated prefer parseExternalHost which returns null for malformed URLs.
+ */
+export function formatExternalTag(url: string): string {
+  return parseExternalHost(url) ?? "";
 }
 
 /** Format full manga listing (all volumes). */

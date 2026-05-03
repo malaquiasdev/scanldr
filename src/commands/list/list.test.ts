@@ -5,6 +5,7 @@ import {
   formatExternalTag,
   formatMangaList,
   formatVolumeList,
+  parseExternalHost,
 } from "./formatter.ts";
 import { runList } from "./index.ts";
 import type {
@@ -297,6 +298,30 @@ describe("formatExternalTag", () => {
 
   it("returns empty string for non-URL string", () => {
     expect(formatExternalTag("not a url at all")).toBe("");
+  });
+});
+
+// --- parseExternalHost tests ---
+
+describe("parseExternalHost", () => {
+  it("returns 'mangaplus' for mangaplus.shueisha.co.jp", () => {
+    expect(parseExternalHost("https://mangaplus.shueisha.co.jp/viewer/1010633")).toBe("mangaplus");
+  });
+
+  it("returns 'comikey' for comikey.com", () => {
+    expect(parseExternalHost("https://comikey.com/read/example/1")).toBe("comikey");
+  });
+
+  it("returns null for malformed URL (no scheme)", () => {
+    expect(parseExternalHost("mangaplus")).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(parseExternalHost("")).toBeNull();
+  });
+
+  it("returns null for non-URL string", () => {
+    expect(parseExternalHost("not a url at all")).toBeNull();
   });
 });
 

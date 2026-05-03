@@ -96,6 +96,43 @@ describe("getAtHomeServer", () => {
     expect(err).not.toBeInstanceOf(AtHomeError);
     expect((err as Error).message).toBe("network failure");
   });
+
+  it("calls logger.warn with mangadex.at_home_error before throwing AtHomeError on HTTP 404", async () => {
+    const warnCalls: Array<Record<string, unknown>> = [];
+    const spyLogger: Logger = {
+      ...noopLogger,
+      warn: (fields) => warnCalls.push(fields as Record<string, unknown>),
+    };
+    const client = makeHttpClient({
+      get: async () => {
+        throw new Error("MangaDex HTTP 404: https://api.mangadex.org/at-home/server/ch-ext");
+      },
+    });
+    const err = await getAtHomeServer(client, "ch-ext", "data", spyLogger).catch((e) => e);
+    expect(err).toBeInstanceOf(AtHomeError);
+    expect(warnCalls).toHaveLength(1);
+    expect(warnCalls[0]?.event).toBe("mangadex.at_home_error");
+    expect(warnCalls[0]?.chapterId).toBe("ch-ext");
+    expect(warnCalls[0]?.status).toBe(404);
+  });
+
+  it("calls logger.warn once and re-throws original error for non-HTTP errors", async () => {
+    const warnCalls: Array<Record<string, unknown>> = [];
+    const spyLogger: Logger = {
+      ...noopLogger,
+      warn: (fields) => warnCalls.push(fields as Record<string, unknown>),
+    };
+    const originalErr = new Error("network failure");
+    const client = makeHttpClient({
+      get: async () => {
+        throw originalErr;
+      },
+    });
+    const err = await getAtHomeServer(client, "ch-net", "data", spyLogger).catch((e) => e);
+    expect(err).toBe(originalErr);
+    expect(warnCalls).toHaveLength(1);
+    expect(warnCalls[0]?.event).toBe("mangadex.at_home_error");
+  });
 });
 
 // ---------- mangadexImageFetcher — success path ----------
@@ -281,6 +318,88 @@ describe("mangadexImageFetcher — refresh failure during retry", () => {
     expect(err).toBeInstanceOf(Error);
     // Must surface the refresh error, not "Failed to fetch image page X after 5 attempts"
     expect((err as Error).message).toBe("network timeout on refresh");
+  });
+
+  it("logs mangadex.at_home_refresh_failed when AtHomeError thrown during refresh", async () => {
+    const warnCalls: Array<Record<string, unknown>> = [];
+    const spyLogger: Logger = {
+      ...noopLogger,
+      warn: (fields) => warnCalls.push(fields as Record<string, unknown>),
+    };
+
+    let atHomeCallCount = 0;
+    const httpClient = makeHttpClient({
+      get: async <T>(_path: string) => {
+        atHomeCallCount++;
+        if (atHomeCallCount === 1) {
+          return {
+            baseUrl: "https://cdn.example.com",
+            chapter: { hash: "abc123", data: ["page1.jpg"], dataSaver: [] },
+          } as T;
+        }
+        throw new Error("MangaDex HTTP 404: https://api.mangadex.org/at-home/server/ch-del");
+      },
+    });
+
+    const mockFetch = mock(async (url: string) => {
+      if (url === "https://api.mangadex.network/report") return new Response(null, { status: 200 });
+      return makeImageResponse({ ok: false, status: 503 });
+    });
+
+    const opts: AtHomeOptions = {
+      httpClient,
+      logger: spyLogger,
+      fetch: mockFetch as unknown as AtHomeOptions["fetch"],
+      sleep: async () => {},
+    };
+
+    const fetcher = mangadexImageFetcher("ch-del", opts);
+    await fetcher({ url: "", page: 1 }).catch(() => {});
+
+    const refreshFailLog = warnCalls.find((f) => f.event === "mangadex.at_home_refresh_failed");
+    expect(refreshFailLog).toBeDefined();
+    expect(refreshFailLog?.chapterId).toBe("ch-del");
+  });
+
+  it("logs mangadex.at_home_refresh_failed when generic Error thrown during refresh", async () => {
+    const warnCalls: Array<Record<string, unknown>> = [];
+    const spyLogger: Logger = {
+      ...noopLogger,
+      warn: (fields) => warnCalls.push(fields as Record<string, unknown>),
+    };
+
+    let atHomeCallCount = 0;
+    const httpClient = makeHttpClient({
+      get: async <T>(_path: string) => {
+        atHomeCallCount++;
+        if (atHomeCallCount === 1) {
+          return {
+            baseUrl: "https://cdn.example.com",
+            chapter: { hash: "abc123", data: ["page1.jpg"], dataSaver: [] },
+          } as T;
+        }
+        throw new Error("network timeout on refresh");
+      },
+    });
+
+    const mockFetch = mock(async (url: string) => {
+      if (url === "https://api.mangadex.network/report") return new Response(null, { status: 200 });
+      return makeImageResponse({ ok: false, status: 503 });
+    });
+
+    const opts: AtHomeOptions = {
+      httpClient,
+      logger: spyLogger,
+      fetch: mockFetch as unknown as AtHomeOptions["fetch"],
+      sleep: async () => {},
+    };
+
+    const fetcher = mangadexImageFetcher("ch-net", opts);
+    await fetcher({ url: "", page: 1 }).catch(() => {});
+
+    const refreshFailLog = warnCalls.find((f) => f.event === "mangadex.at_home_refresh_failed");
+    expect(refreshFailLog).toBeDefined();
+    expect(refreshFailLog?.chapterId).toBe("ch-net");
   });
 });
 

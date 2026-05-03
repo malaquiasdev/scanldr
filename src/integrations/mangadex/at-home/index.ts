@@ -1,4 +1,5 @@
 import type { ImageRef } from "@modules/downloader/types.ts";
+import type { Logger } from "@plugins/logger/index.ts";
 import { AtHomeError } from "./types.ts";
 import type {
   AtHomeOptions,
@@ -25,6 +26,7 @@ export async function getAtHomeServer(
   httpClient: AtHomeOptions["httpClient"],
   chapterId: string,
   quality: ImageQuality = "data",
+  logger?: Logger,
 ): Promise<AtHomeServer> {
   try {
     const res = await httpClient.get<AtHomeServerResponse>(`/at-home/server/${chapterId}`);
@@ -40,8 +42,17 @@ export async function getAtHomeServer(
         status === 404
           ? `at-home server returned 404 for chapter ${chapterId}. Likely an externally-hosted chapter (MangaPlus / Comikey / Cubari). Check chapter.externalUrl in the feed.`
           : `at-home server returned ${status} for chapter ${chapterId}`;
+      logger?.warn(
+        { event: "mangadex.at_home_error", context: "at-home", chapterId, status, err },
+        "at-home server failed; wrapping as AtHomeError",
+      );
       throw new AtHomeError(chapterId, status, msg);
     }
+    // Unexpected error shape — log so the root cause survives in logs, then re-throw as-is.
+    logger?.warn(
+      { event: "mangadex.at_home_error", context: "at-home", chapterId, err },
+      "at-home server failed with unexpected error",
+    );
     throw err;
   }
 }
@@ -80,7 +91,7 @@ export function mangadexImageFetcher(
   return async function fetchImage(ref: ImageRef): Promise<Uint8Array> {
     let lastErr: unknown;
     // Cache the server result; only re-fetch after a failure to get a fresh CDN URL.
-    let server = await getAtHomeServer(httpClient, chapterId, quality);
+    let server = await getAtHomeServer(httpClient, chapterId, quality, logger);
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       const filename = server.pages[ref.page - 1] ?? ref.url;
@@ -114,8 +125,18 @@ export function mangadexImageFetcher(
         );
         await sleep(waitMs);
         try {
-          server = await getAtHomeServer(httpClient, chapterId, quality);
+          server = await getAtHomeServer(httpClient, chapterId, quality, logger);
         } catch (refreshErr) {
+          logger.warn(
+            {
+              event: "mangadex.at_home_refresh_failed",
+              context: "at-home",
+              chapterId,
+              attempt: attempt + 1,
+              err: refreshErr,
+            },
+            "failed to refresh at-home server during retry",
+          );
           // AtHomeError already has a clear message (e.g. 404 = externally-hosted chapter).
           // Propagate it directly so the user sees the real cause, not a generic retry message.
           if (refreshErr instanceof AtHomeError) throw refreshErr;
@@ -149,8 +170,18 @@ export function mangadexImageFetcher(
         );
         await sleep(waitMs);
         try {
-          server = await getAtHomeServer(httpClient, chapterId, quality);
+          server = await getAtHomeServer(httpClient, chapterId, quality, logger);
         } catch (refreshErr) {
+          logger.warn(
+            {
+              event: "mangadex.at_home_refresh_failed",
+              context: "at-home",
+              chapterId,
+              attempt: attempt + 1,
+              err: refreshErr,
+            },
+            "failed to refresh at-home server during retry",
+          );
           if (refreshErr instanceof AtHomeError) throw refreshErr;
           lastErr = refreshErr;
           break;
