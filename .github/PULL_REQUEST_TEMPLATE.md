@@ -1,50 +1,48 @@
-## O que esse PR faz
+## What this PR does
 
-<!-- Resumo direto do que mudou. 1-3 parágrafos ou bullets. -->
-
-
-## Por que existe
-
-<!-- Motivação: bug em produção, ticket, decisão de produto, dívida técnica.
-     Linka issue/discussão se houver. REMOVA esta seção se a motivação for óbvia
-     pelo título. -->
+<!-- Direct summary of what changed. 1-3 paragraphs or bullets. -->
 
 
-## Como funciona por dentro
+## Why it exists
 
-<!-- Passo-a-passo técnico: arquivos chave, fluxo, decisões de implementação.
-     Use trechos de código se ajudar. REMOVA se for mudança trivial. -->
-
-
-## O que não mudou
-
-<!-- Liste o que ficou EXPLICITAMENTE de fora — útil em refactors, migrations,
-     security fixes. Reduz medo de blast radius pro reviewer.
-     REMOVA se irrelevante. -->
+<!-- Motivation: production bug, ticket, product decision, tech debt.
+     Link issue/discussion if applicable. REMOVE this section if the motivation is obvious from the title. -->
 
 
-## Checklist de testes
+## How it works internally
 
-<!-- O que foi validado e o que ainda precisa ser validado. -->
+<!-- Technical walkthrough: key files, flow, implementation decisions.
+     Use code snippets if helpful. REMOVE if the change is trivial. -->
+
+
+## What did not change
+
+<!-- List what was EXPLICITLY left out — useful in refactors, migrations,
+     security fixes. Reduces blast-radius fear for the reviewer.
+     REMOVE if irrelevant. -->
+
+
+## Test checklist
+
+<!-- What was validated and what still needs to be validated. -->
 - [ ]
 
 
-## Pontos de atenção pra quem revisar
+## Reviewer notes
 
-<!-- Trade-offs, decisões de borda, suposições, pontos onde a opinião do
-     reviewer importa (ex.: "operador é < exclusivo, não <="). REMOVA se não
-     houver. -->
+<!-- Trade-offs, edge decisions, assumptions, points where the reviewer's opinion matters
+     (e.g. "operator is < exclusive, not <="). REMOVE if none. -->
 
 
 ## Closes
 
-<!-- Linka issues fechadas. -->
+<!-- Link closed issues. -->
 
 
 ### ✅ Checklist
 
-- [ ] Código testado localmente
-- [ ] Self-review concluído
-- [ ] Sem erros no console
-- [ ] Código segue os padrões do projeto
-- [ ] Documentação atualizada em `docs/` (se necessário)
+- [ ] Tested locally
+- [ ] Self-review complete
+- [ ] No console errors
+- [ ] Code follows project conventions
+- [ ] Docs updated in `docs/` (if applicable)
