@@ -19,7 +19,7 @@ const APP_DIR = "scanldr";
  * 2. `$XDG_DATA_HOME/scanldr/auth.json`
  * 3. `<home>/.local/share/scanldr/auth.json`
  */
-export function resolveAuthPath(opts: ResolveAuthPathOptions): string {
+export function resolveAuthPath(opts: ResolveAuthPathOptions = {}): string {
   const env = opts.env ?? process.env;
   const home = opts.home ?? homedir();
   const base =

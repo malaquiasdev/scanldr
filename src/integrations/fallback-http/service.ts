@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import type { AuthSession } from "@integrations/mangakakalot/browser/types.ts";
 import { resolveAuthPath } from "@plugins/auth-path/index.ts";
 import { CloudflareError, MissingAuthError } from "./types.ts";
-import type { FallbackHttpClient, FallbackHttpOptions } from "./types.ts";
+import type { FallbackHttpClient, FallbackHttpOptions, FetchFn } from "./types.ts";
 
 const MAX_ATTEMPTS = 4; // 1 initial + 3 retries
 const BASE_BACKOFF_MS = 500;
@@ -30,13 +30,12 @@ function isValidAuthSession(v: unknown): v is AuthSession {
 
 export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<FallbackHttpClient> {
   const { logger } = opts;
-  const fetchFn: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
-    opts.fetch ?? globalThis.fetch.bind(globalThis);
+  const fetchFn: FetchFn = opts.fetch ?? globalThis.fetch.bind(globalThis);
   const sleep = opts.sleep ?? defaultSleep;
   const now = opts.now ?? Date.now;
 
   // Resolve path once — either from opts or XDG.
-  const path = opts.authPath ?? resolveAuthPath({});
+  const path = opts.authPath ?? resolveAuthPath();
 
   // Read auth.json eagerly — fail fast if missing or corrupt.
   let raw: string;
@@ -139,12 +138,8 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
         throw new CloudflareError(url);
       }
 
-      // 2xx or 4xx (non-403) — return to caller.
-      if (res && res.status >= 200 && res.status < 400) {
-        return res;
-      }
-      if (res && res.status >= 400 && res.status < 500) {
-        // 4xx other than 403 — caller decides.
+      // 2xx, 3xx, and 4xx other than 403: return to caller (no retry).
+      if (res && res.status < 500) {
         return res;
       }
 
@@ -160,6 +155,7 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
       }
 
       const status = res ? res.status : 0;
+      // Math.random is fine here — jitter only, no security relevance.
       const waitMs = BASE_BACKOFF_MS * 2 ** attempt + Math.floor(Math.random() * JITTER_MS);
 
       logger.warn(
@@ -177,8 +173,8 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
       await sleep(waitMs);
     }
 
-    // Unreachable — loop always returns or throws.
-    throw new Error(`Fallback HTTP unexpected exit: ${url}`);
+    // invariant: every iteration returns or throws — this line is unreachable.
+    throw new Error("invariant: retry loop exited without returning or throwing");
   }
 
   return { get };

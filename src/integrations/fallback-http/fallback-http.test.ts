@@ -35,14 +35,14 @@ const VALID_SESSION = {
 let tmpDir: string;
 
 beforeEach(async () => {
-  tmpDir = await mkdtemp(join(tmpdir(), "fallback-http-test-"));
+  tmpDir = await makeTempDir(join(tmpdir(), "fallback-http-test-"));
 });
 
 afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true });
 });
 
-async function mkdtemp(path: string): Promise<string> {
+async function makeTempDir(path: string): Promise<string> {
   await mkdir(path, { recursive: true });
   return path;
 }

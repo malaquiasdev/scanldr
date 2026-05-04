@@ -3,6 +3,9 @@
 
 import type { Logger } from "@plugins/logger/index.ts";
 
+/** Matches the signature of globalThis.fetch and test doubles. */
+export type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
 export class MissingAuthError extends Error {
   override readonly name = "MissingAuthError";
   constructor(public readonly path: string) {
@@ -24,7 +27,7 @@ export interface FallbackHttpOptions {
   authPath?: string;
   logger: Logger;
   /** Override fetch for testing. Defaults to globalThis.fetch. */
-  fetch?: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+  fetch?: FetchFn;
   /** Override sleep for testing. Defaults to setTimeout-based. */
   sleep?: (ms: number) => Promise<void>;
   /** Override the clock for testing. Defaults to Date.now. */
