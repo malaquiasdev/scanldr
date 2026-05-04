@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { toSlug } from "./index.ts";
+import { toSlug } from "./slug.ts";
 
 describe("toSlug", () => {
   test("simple ASCII title", () => {
