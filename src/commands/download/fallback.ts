@@ -2,7 +2,6 @@
 // Handles site-picker prompt, mangakakalot client bootstrap, bundle construction,
 // image fetching, and history recording.
 
-import { createInterface } from "node:readline";
 import type { ChapterRef, VolumeRef } from "@integrations/_shared/manga.ts";
 import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
 import type { createMangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
@@ -18,6 +17,7 @@ import type {
   FallbackSiteOption,
   MangaDexResolveResult,
 } from "./fallback-types.ts";
+import { promptNumericChoice } from "./prompt.ts";
 import { parseRangeSet } from "./range.ts";
 import { toSlug } from "./slug.ts";
 import type { DownloadArgs, DownloadContext } from "./types.ts";
@@ -76,20 +76,13 @@ export async function promptFallbackSite(
     );
   }
 
-  return new Promise((resolve, reject) => {
-    const rl = createInterface({ input: process.stdin, output: process.stderr });
-    const list = sites.map((s, i) => `  [${i + 1}] ${s.display}`).join("\n");
-    process.stderr.write(`MangaDex unavailable. Choose a fallback site:\n${list}\nPick one: `);
-    rl.once("line", (line) => {
-      rl.close();
-      const n = Number.parseInt(line.trim(), 10);
-      if (Number.isNaN(n) || n < 1 || n > sites.length) {
-        reject(new CliError(`Invalid selection: "${line.trim()}"`, 2));
-      } else {
-        resolve(sites[n - 1] as FallbackSiteOption);
-      }
-    });
+  const idx = await promptNumericChoice({
+    header: "MangaDex unavailable. Choose a fallback site:",
+    items: sites.map((s) => ({ display: s.display })),
+    logger,
+    event: "download.invalid_selection",
   });
+  return sites[idx] as FallbackSiteOption;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,20 +109,13 @@ async function pickCandidate(
     );
   }
 
-  return new Promise((resolve, reject) => {
-    const rl = createInterface({ input: process.stdin, output: process.stderr });
-    const list = candidates.map((c, i) => `  [${i + 1}] ${c.title}`).join("\n");
-    process.stderr.write(`Multiple results on ${siteName}:\n${list}\nPick one: `);
-    rl.once("line", (line) => {
-      rl.close();
-      const n = Number.parseInt(line.trim(), 10);
-      if (Number.isNaN(n) || n < 1 || n > candidates.length) {
-        reject(new CliError(`Invalid selection: "${line.trim()}"`, 2));
-      } else {
-        resolve(candidates[n - 1] as { id: string; title: string });
-      }
-    });
+  const idx = await promptNumericChoice({
+    header: `Multiple results on ${siteName}:`,
+    items: candidates.map((c) => ({ display: c.title })),
+    logger,
+    event: "download.invalid_selection",
   });
+  return candidates[idx] as { id: string; title: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -257,7 +243,7 @@ export async function runFallbackDownload(opts: {
     logger: Logger;
   }) => import("@integrations/mangakakalot/client/types.ts").MangakakalotClient;
   /** Override for tests — bypasses stdin prompt. When provided, nonTty check is skipped. */
-  _promptFallbackSite?: (sites: FallbackSiteOption[]) => Promise<FallbackSiteOption>;
+  promptSite?: (sites: FallbackSiteOption[]) => Promise<FallbackSiteOption>;
 }): Promise<void> {
   const {
     args,
@@ -265,7 +251,7 @@ export async function runFallbackDownload(opts: {
     mangadexResolve,
     createFallbackHttp: mkFallbackHttp,
     createMangakakalotClient: mkClientFactory,
-    _promptFallbackSite,
+    promptSite,
   } = opts;
   const { logger } = ctx;
 
@@ -282,8 +268,8 @@ export async function runFallbackDownload(opts: {
   }
 
   const sites: FallbackSiteOption[] = [{ name: "mangakakalot", display: "mangakakalot.gg" }];
-  const site = _promptFallbackSite
-    ? await _promptFallbackSite(sites)
+  const site = promptSite
+    ? await promptSite(sites)
     : await promptFallbackSite(sites, args.nonTty, logger);
 
   // Bootstrap fallback HTTP + mangakakalot client (createFallbackHttp is async — reads auth.json).

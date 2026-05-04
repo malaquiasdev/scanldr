@@ -393,7 +393,7 @@ describe("runFallbackDownload — MissingAuthError propagates unwrapped", () => 
         throw new Error("should not be called");
       },
       // biome-ignore lint/style/noNonNullAssertion: test stub
-      _promptFallbackSite: async (sites) => sites[0]!,
+      promptSite: async (sites) => sites[0]!,
     }).catch((e) => e);
 
     db.close();
@@ -465,7 +465,7 @@ describe("runFallbackDownload — searchManga returns empty", () => {
       createFallbackHttp: async () => fakeFallbackHttp,
       createMangakakalotClient: () => mkClientNoResults,
       // biome-ignore lint/style/noNonNullAssertion: test stub
-      _promptFallbackSite: async (sites) => sites[0]!,
+      promptSite: async (sites) => sites[0]!,
     }).catch((e) => e);
 
     db.close();

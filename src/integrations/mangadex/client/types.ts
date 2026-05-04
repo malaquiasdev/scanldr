@@ -6,6 +6,14 @@ import type { ChapterRef, MangaCandidate, VolumeRef } from "@integrations/_share
 
 export type { ChapterRef, MangaCandidate, VolumeRef };
 
+/** Thrown by resolveTitleToId when the MangaDex search returns zero results. */
+export class TitleNotFoundError extends Error {
+  override readonly name = "TitleNotFoundError";
+  constructor(public readonly title: string) {
+    super(`No manga found for title: "${title}"`);
+  }
+}
+
 // --- MangaDex REST response shapes ---
 
 export interface MdxLocalizedString {

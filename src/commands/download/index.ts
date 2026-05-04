@@ -1,4 +1,3 @@
-import { createInterface } from "node:readline";
 import { createFallbackHttp } from "@integrations/fallback-http/index.ts";
 import {
   AtHomeError,
@@ -7,6 +6,7 @@ import {
 } from "@integrations/mangadex/at-home/index.ts";
 import type { ChapterRef, MangaCandidate } from "@integrations/mangadex/client/index.ts";
 import type { MangaDexClient } from "@integrations/mangadex/client/index.ts";
+import { TitleNotFoundError } from "@integrations/mangadex/client/index.ts";
 import { parseExternalHost } from "@integrations/mangadex/external-host.ts";
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
 import { createMangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
@@ -17,6 +17,7 @@ import type { DownloadRow } from "@modules/history/index.ts";
 import { CliError } from "@plugins/errors/index.ts";
 import type { MangaDexResolveResult } from "./fallback-types.ts";
 import { isFallbackEligible, runFallbackDownload } from "./fallback.ts";
+import { promptNumericChoice } from "./prompt.ts";
 import { parseRangeSet } from "./range.ts";
 import { toSlug } from "./slug.ts";
 import type { Bundle, DownloadArgs, DownloadContext, ProcessBundleArgs } from "./types.ts";
@@ -25,20 +26,15 @@ export type { DownloadArgs, DownloadContext } from "./types.ts";
 export { CliError } from "@plugins/errors/index.ts";
 
 /** Prompt user to pick one from a list of candidates with titles */
-function promptCandidatePick(candidates: { title: string }[]): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const rl = createInterface({ input: process.stdin, output: process.stderr });
-    const list = candidates.map((c, i) => `  [${i + 1}] ${c.title}`).join("\n");
-    process.stderr.write(`Multiple results found:\n${list}\nPick one: `);
-    rl.once("line", (line) => {
-      rl.close();
-      const n = Number.parseInt(line.trim(), 10);
-      if (Number.isNaN(n) || n < 1 || n > candidates.length) {
-        reject(new CliError(`Invalid selection: "${line.trim()}"`, 2));
-      } else {
-        resolve(n - 1);
-      }
-    });
+function promptCandidatePick(
+  candidates: { title: string }[],
+  logger: DownloadContext["logger"],
+): Promise<number> {
+  return promptNumericChoice({
+    header: "Multiple results found:",
+    items: candidates.map((c) => ({ display: c.title })),
+    logger,
+    event: "download.invalid_selection",
   });
 }
 
@@ -74,7 +70,7 @@ async function resolveTitle(
         2,
       );
     }
-    chosenIndex = await promptCandidatePick(candidates);
+    chosenIndex = await promptCandidatePick(candidates, logger);
   }
 
   const chosen = candidates[chosenIndex];
@@ -325,7 +321,7 @@ async function tryMangaDexPipeline(
   try {
     candidate = await resolveTitle(client, args.manga, args.nonTty, logger);
   } catch (err) {
-    if (err instanceof Error && err.message.startsWith("No manga found")) {
+    if (err instanceof TitleNotFoundError) {
       return null;
     }
     // CliError from resolveTitle (ambiguous title non-TTY, etc.) — propagate

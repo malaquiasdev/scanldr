@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createMangaDexClient } from "./index.ts";
+import { TitleNotFoundError, createMangaDexClient } from "./index.ts";
 import { normalizeLang, parseAggregate, parseChapterFeed, parseMangaList } from "./parser.ts";
 import type {
   MdxAggregateResponse,
@@ -105,7 +105,7 @@ describe("createMangaDexClient", () => {
       get: async <T>(_path: string, _q?: unknown) => ({ result: "ok", data: [] }) as unknown as T,
     };
     const client = createMangaDexClient(http);
-    await expect(client.resolveTitleToId("nonexistent")).rejects.toThrow("No manga found");
+    await expect(client.resolveTitleToId("nonexistent")).rejects.toBeInstanceOf(TitleNotFoundError);
   });
 
   it("resolveTitleToId returns candidates when found", async () => {

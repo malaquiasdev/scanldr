@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
 import { AtHomeError } from "@integrations/mangadex/at-home/index.ts";
 import type { MangaDexClient } from "@integrations/mangadex/client/index.ts";
+import { TitleNotFoundError } from "@integrations/mangadex/client/index.ts";
 import type { ChapterRef, MangaCandidate, VolumeRef } from "@integrations/mangadex/client/index.ts";
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
 import type { MangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
@@ -1012,7 +1013,7 @@ describe("fallback — title not on MangaDex, mangakakalot has it", () => {
       createFallbackHttp: async () => fallbackHttp,
       createMangakakalotClient: () => mkClient,
       // biome-ignore lint/style/noNonNullAssertion: test stub — sites always has 1 entry
-      _promptFallbackSite: async (sites) => sites[0]!,
+      promptSite: async (sites) => sites[0]!,
     });
 
     const cbzPath = join(tmpDir, "dandadan", "dandadan-chapter-001.cbz");
@@ -1084,7 +1085,7 @@ describe("fallback — MangaDex aggregate reused for volume mode", () => {
       createFallbackHttp: async () => fallbackHttp,
       createMangakakalotClient: () => mkClient,
       // biome-ignore lint/style/noNonNullAssertion: test stub — sites always has 1 entry
-      _promptFallbackSite: async (sites) => sites[0]!,
+      promptSite: async (sites) => sites[0]!,
     });
 
     const cbzPath = join(tmpDir, "witch-hat-atelier", "witch-hat-atelier-volume-003.cbz");
@@ -1139,7 +1140,7 @@ describe("fallback — non-TTY with title_not_found → CliError", () => {
   test("throws CliError pointing at auth and interactive use (--chapter mode)", async () => {
     const clientNoResults = makeClient({
       resolveTitleToId: async () => {
-        throw new Error("No manga found for: Nonexistent");
+        throw new TitleNotFoundError("Nonexistent");
       },
     });
 
@@ -1159,7 +1160,7 @@ describe("fallback — non-TTY with title_not_found → CliError", () => {
   test("throws CliError with --chapter hint when title_not_found in --volume mode", async () => {
     const clientNoResults = makeClient({
       resolveTitleToId: async () => {
-        throw new Error("No manga found for: Nonexistent");
+        throw new TitleNotFoundError("Nonexistent");
       },
     });
 
