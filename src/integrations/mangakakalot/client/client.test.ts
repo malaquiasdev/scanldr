@@ -10,6 +10,7 @@ import {
   parseChapterListPagination,
   parseSearchResults,
 } from "./parser.ts";
+import { MangakakalotParseError } from "./types.ts";
 
 const fixturesDir = join(import.meta.dir, "../../../../tests/fixtures/mangakakalot");
 
@@ -51,9 +52,33 @@ describe("parseSearchResults", () => {
     expect(results[1]?.id).toBe("naruto-shippuden");
   });
 
-  it("returns empty array when no results", () => {
+  it("returns empty array when panel_story_list present but empty", () => {
     const html = "<html><body><div class='panel_story_list'></div></body></html>";
     expect(parseSearchResults(html)).toEqual([]);
+  });
+
+  it("throws MangakakalotParseError when search container is missing from a live page", () => {
+    // A real page body with no search container = DOM drifted, not "no results"
+    const html =
+      "<html><body><header>Site Header</header><main>Some other content</main></body></html>";
+    expect(() => parseSearchResults(html, "https://mangakakalot.gg/search/story/naruto")).toThrow(
+      MangakakalotParseError,
+    );
+  });
+
+  it("MangakakalotParseError carries the correct url and selector", () => {
+    const url = "https://mangakakalot.gg/search/story/naruto";
+    const html = "<html><body><header>Site Header</header><main>content</main></body></html>";
+    let caught: unknown;
+    try {
+      parseSearchResults(html, url);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MangakakalotParseError);
+    const e = caught as MangakakalotParseError;
+    expect(e.url).toBe(url);
+    expect(e.selector).toContain(".story_item");
   });
 });
 
@@ -89,9 +114,31 @@ describe("parseChapterList", () => {
     expect(chapters[0]?.chapter).toBe("1");
   });
 
-  it("returns empty array when no chapter rows", () => {
-    const html = "<html><body></body></html>";
-    expect(parseChapterList(html, "empty")).toEqual([]);
+  it("returns empty array when chapter rows absent but title present (manga has no releases)", () => {
+    // Title present + no chapter rows = valid empty state
+    const html = "<html><body><div class='manga-info-text'><h1>Test Manga</h1></div></body></html>";
+    expect(parseChapterList(html, "test-manga")).toEqual([]);
+  });
+
+  it("throws MangakakalotParseError when both chapter list and title selectors are missing", () => {
+    const url = "https://mangakakalot.gg/manga/test-manga";
+    const html = "<html><body>404 not found</body></html>";
+    expect(() => parseChapterList(html, "test-manga", url)).toThrow(MangakakalotParseError);
+  });
+
+  it("MangakakalotParseError from chapter list carries url and selector", () => {
+    const url = "https://mangakakalot.gg/manga/test-manga";
+    const html = "<html><body>404 not found</body></html>";
+    let caught: unknown;
+    try {
+      parseChapterList(html, "test-manga", url);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MangakakalotParseError);
+    const e = caught as MangakakalotParseError;
+    expect(e.url).toBe(url);
+    expect(e.selector).toContain(".chapter-list");
   });
 
   it("uses epoch when date is missing", () => {
@@ -122,9 +169,25 @@ describe("parseChapterImages", () => {
     expect(images[2]).toEqual({ url: "https://cdn.example.com/naruto/ch1/page-3.jpg", page: 3 });
   });
 
-  it("returns empty array when no images", () => {
+  it("throws MangakakalotParseError when reader container has no images", () => {
+    const url = "https://mangakakalot.gg/chapter/naruto/chapter-1";
     const html = "<html><body><div class='container-chapter-reader'></div></body></html>";
-    expect(parseChapterImages(html)).toEqual([]);
+    expect(() => parseChapterImages(html, url)).toThrow(MangakakalotParseError);
+  });
+
+  it("MangakakalotParseError from images carries url and selector", () => {
+    const url = "https://mangakakalot.gg/chapter/naruto/chapter-1";
+    const html = "<html><body>404 not found</body></html>";
+    let caught: unknown;
+    try {
+      parseChapterImages(html, url);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MangakakalotParseError);
+    const e = caught as MangakakalotParseError;
+    expect(e.url).toBe(url);
+    expect(e.selector).toContain(".container-chapter-reader");
   });
 
   it("handles src-only images", () => {
@@ -163,7 +226,7 @@ describe("parseChapterListPagination", () => {
     expect(parseChapterListPagination("<html><body></body></html>")).toBeNull();
   });
 
-  it("returns null when no next page link after active page", () => {
+  it("returns null when no next page link after active page (last page)", () => {
     const html = `
       <div class="panel_page_number">
         <a href="/manga/test?page=1">1</a>
@@ -192,11 +255,40 @@ describe("createMangakakalotClient", () => {
 
     it("encodes multi-word title with underscores", async () => {
       const http = makeHttp({
-        "https://mangakakalot.gg/search/story/one_piece": "<html><body></body></html>",
+        "https://mangakakalot.gg/search/story/one_piece":
+          "<html><body><div class='panel_story_list'></div></body></html>",
       });
       const client = createMangakakalotClient({ http, logger: makeLogger() });
       const results = await client.searchManga("One Piece");
       expect(results).toEqual([]);
+    });
+
+    it("propagates CloudflareError from http.get without swallowing", async () => {
+      const { CloudflareError } = await import("@integrations/fallback-http/types.ts");
+      const http: FallbackHttpClient = {
+        get: mock(async () => {
+          throw new CloudflareError("https://mangakakalot.gg/search/story/naruto");
+        }),
+      };
+      const client = createMangakakalotClient({ http, logger: makeLogger() });
+      await expect(client.searchManga("naruto")).rejects.toBeInstanceOf(CloudflareError);
+    });
+
+    it("logs warn and propagates MangakakalotParseError when DOM is broken", async () => {
+      // Broken page: has body content but no search results container
+      const brokenHtml =
+        "<html><body><header>Site Header</header><main>Completely different layout</main></body></html>";
+      const url = "https://mangakakalot.gg/search/story/naruto";
+      const http = makeHttp({ [url]: brokenHtml });
+      const logger = makeLogger();
+      const client = createMangakakalotClient({ http, logger });
+
+      await expect(client.searchManga("naruto")).rejects.toBeInstanceOf(MangakakalotParseError);
+      // @ts-ignore
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ event: "mangakakalot.parse_failed" }),
+        expect.any(String),
+      );
     });
   });
 
@@ -216,6 +308,7 @@ describe("createMangakakalotClient", () => {
     it("follows pagination and concatenates chapters", async () => {
       const page1 = readFixture("manga-paginated.html");
       const page2 = `
+        <div class="manga-info-text"><h1>Bleach</h1></div>
         <div class="chapter-list">
           <div class="row">
             <span><a href="https://mangakakalot.gg/chapter/bleach/chapter-685">Chapter 685</a></span>
@@ -245,6 +338,23 @@ describe("createMangakakalotClient", () => {
       };
       const client = createMangakakalotClient({ http, logger: makeLogger() });
       await expect(client.getChapterList("naruto")).rejects.toBeInstanceOf(CloudflareError);
+    });
+
+    it("logs warn and propagates MangakakalotParseError when DOM is broken", async () => {
+      const brokenHtml = "<html><body>404 not found</body></html>";
+      const url = "https://mangakakalot.gg/manga/test-manga";
+      const http = makeHttp({ [url]: brokenHtml });
+      const logger = makeLogger();
+      const client = createMangakakalotClient({ http, logger });
+
+      await expect(client.getChapterList("test-manga")).rejects.toBeInstanceOf(
+        MangakakalotParseError,
+      );
+      // @ts-ignore
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ event: "mangakakalot.parse_failed" }),
+        expect.any(String),
+      );
     });
   });
 
@@ -279,6 +389,34 @@ describe("createMangakakalotClient", () => {
       // @ts-ignore
       expect(logger.info).toHaveBeenCalledWith(
         expect.objectContaining({ event: "mangakakalot.fetch" }),
+        expect.any(String),
+      );
+    });
+
+    it("propagates CloudflareError from http.get without swallowing", async () => {
+      const { CloudflareError } = await import("@integrations/fallback-http/types.ts");
+      const http: FallbackHttpClient = {
+        get: mock(async () => {
+          throw new CloudflareError("https://mangakakalot.gg/chapter/naruto/chapter-1");
+        }),
+      };
+      const client = createMangakakalotClient({ http, logger: makeLogger() });
+      await expect(client.getChapterImages("chapter/naruto/chapter-1")).rejects.toBeInstanceOf(
+        CloudflareError,
+      );
+    });
+
+    it("logs warn and propagates MangakakalotParseError when reader has no images", async () => {
+      const brokenHtml = "<html><body><div class='container-chapter-reader'></div></body></html>";
+      const url = "https://mangakakalot.gg/chapter/naruto/chapter-1";
+      const http = makeHttp({ [url]: brokenHtml });
+      const logger = makeLogger();
+      const client = createMangakakalotClient({ http, logger });
+
+      await expect(client.getChapterImages(url)).rejects.toBeInstanceOf(MangakakalotParseError);
+      // @ts-ignore
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ event: "mangakakalot.parse_failed" }),
         expect.any(String),
       );
     });
