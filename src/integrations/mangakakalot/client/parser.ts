@@ -4,6 +4,7 @@
 import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 import type { ImageRef } from "@modules/downloader/types.ts";
 import * as cheerio from "cheerio";
+import { MangakakalotParseError } from "./types.ts";
 
 const SELECTORS = {
   // Search results page
@@ -21,6 +22,10 @@ const SELECTORS = {
 
   // Chapter reader page
   chapterReaderImage: ".container-chapter-reader img",
+
+  // Structural site markers used to distinguish DOM drift from no-content pages
+  siteHeader: "header, .header, .navbar, body",
+  paginationPanel: ".panel_page_number",
 } as const;
 
 /** Extracts manga slug from a mangakakalot URL like https://mangakakalot.gg/manga/some-slug */
@@ -71,11 +76,44 @@ function parseUploadDate(raw: string | undefined): string {
   return new Date(0).toISOString();
 }
 
-export function parseSearchResults(html: string): MangaCandidate[] {
+/**
+ * Parses search results from a mangakakalot search page.
+ *
+ * Returns [] on a genuine "no results" page (search container present but empty).
+ * Throws MangakakalotParseError when the search container is absent entirely AND
+ * the page contains structural site markup (body tag present) — this indicates DOM
+ * drift, not an empty search result set.
+ *
+ * Heuristic: if `.story_item` root has zero matches AND `<body>` exists with content,
+ * the search results container structure has changed.
+ */
+export function parseSearchResults(html: string, url = ""): MangaCandidate[] {
   const $ = cheerio.load(html);
   const results: MangaCandidate[] = [];
 
-  $(SELECTORS.searchResultItem).each((_, el) => {
+  const items = $(SELECTORS.searchResultItem);
+
+  // Distinguish "no results" (panel_story_list present but empty) from "DOM changed"
+  // (neither .story_item nor any results panel can be found in a page that has a body).
+  if (items.length === 0) {
+    const hasBody = $("body").length > 0 && $("body").text().trim().length > 0;
+    const hasResultsPanel =
+      $(".panel_story_list").length > 0 ||
+      $(".story_item_right").length > 0 ||
+      $(".panel-search-story").length > 0;
+
+    // If there's a live page (non-empty body) but no results container at all, DOM drifted.
+    if (hasBody && !hasResultsPanel) {
+      throw new MangakakalotParseError(
+        SELECTORS.searchResultItem,
+        url,
+        "search results container missing from page; DOM may have changed",
+      );
+    }
+    return [];
+  }
+
+  items.each((_, el) => {
     const anchor = $(el).find(SELECTORS.searchResultLink).first();
     const href = anchor.attr("href") ?? "";
     const title = anchor.text().trim();
@@ -88,11 +126,32 @@ export function parseSearchResults(html: string): MangaCandidate[] {
   return results;
 }
 
-export function parseChapterList(html: string, mangaSlug: string): ChapterRef[] {
+/**
+ * Parses the chapter list from a manga detail page.
+ *
+ * A manga with one chapter row is valid (return it).
+ * An empty chapter list root with a present title is valid (manga exists, no releases yet).
+ *
+ * Throws MangakakalotParseError only when BOTH the chapter list root AND the manga title
+ * selector are missing — two missing selectors is a reliable signal of DOM drift.
+ */
+export function parseChapterList(html: string, mangaSlug: string, url = ""): ChapterRef[] {
   const $ = cheerio.load(html);
   const chapters: ChapterRef[] = [];
 
-  $(SELECTORS.mangaPageChapterRow).each((_, el) => {
+  const chapterRows = $(SELECTORS.mangaPageChapterRow);
+  const titleEl = $(SELECTORS.mangaPageTitle);
+
+  // Both selectors missing → DOM changed, not an empty chapter list.
+  if (chapterRows.length === 0 && titleEl.length === 0) {
+    throw new MangakakalotParseError(
+      `${SELECTORS.mangaPageChapterRow}, ${SELECTORS.mangaPageTitle}`,
+      url,
+      "neither chapter list nor manga title found on page; DOM may have changed",
+    );
+  }
+
+  chapterRows.each((_, el) => {
     const anchor = $(el).find(SELECTORS.mangaPageChapterLink).first();
     const href = anchor.attr("href") ?? "";
     const text = anchor.text().trim();
@@ -132,33 +191,54 @@ export function parseChapterList(html: string, mangaSlug: string): ChapterRef[] 
   return chapters;
 }
 
-export function parseChapterImages(html: string): ImageRef[] {
+/**
+ * Parses chapter image URLs from a mangakakalot reader page.
+ *
+ * Throws MangakakalotParseError when zero images are found inside the reader container.
+ * A chapter MUST have at least one image by definition — zero images means the parser broke.
+ */
+export function parseChapterImages(html: string, url = ""): ImageRef[] {
   const $ = cheerio.load(html);
   const images: ImageRef[] = [];
 
   $(SELECTORS.chapterReaderImage).each((i, el) => {
     // Prefer data-src (lazy-loaded canonical URL); fall back to src.
-    const url = $(el).attr("data-src") ?? $(el).attr("src") ?? "";
-    if (!url) return;
-    images.push({ url: url.trim(), page: i + 1 });
+    const imgUrl = $(el).attr("data-src") ?? $(el).attr("src") ?? "";
+    if (!imgUrl) return;
+    images.push({ url: imgUrl.trim(), page: i + 1 });
   });
+
+  if (images.length === 0) {
+    throw new MangakakalotParseError(
+      SELECTORS.chapterReaderImage,
+      url,
+      "no images found in chapter reader container; DOM may have changed",
+    );
+  }
 
   return images;
 }
 
 /**
  * Returns the URL of the next chapter-list page, or null if this is the last page.
- * Mangakakalot uses a pagination panel with "Last" link pointing to the final page
- * and numbered page links. We look for the next sequential page link.
+ * Mangakakalot uses a pagination panel with numbered page links and marks the active
+ * page with class `page_select`.
+ *
+ * Algorithm: iterate anchors in order; once we see the active (page_select) anchor,
+ * the very next anchor with an href is the next page. Returns null if no next anchor
+ * follows — normal for the last page.
+ *
+ * DOM shape reference: tests/fixtures/mangakakalot/manga-paginated.html
+ * Active page anchor comes first, immediately followed by the next-page anchor.
  */
 export function parseChapterListPagination(html: string): string | null {
   const $ = cheerio.load(html);
 
-  // Find active page and check if there's a next one.
-  // The pagination panel has .page_select for active and numbered links around it.
   const pagePanel = $(".panel_page_number");
   if (pagePanel.length === 0) return null;
 
+  // We check foundActive BEFORE setting it so that we capture the anchor
+  // that comes AFTER the active one (not the active anchor itself).
   let foundActive = false;
   let nextUrl: string | null = null;
 

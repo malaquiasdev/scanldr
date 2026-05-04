@@ -2,9 +2,7 @@
 // Wraps a FallbackHttpClient (cookie-replay, handles Cloudflare) and returns parsed domain types.
 // Callers are responsible for creating the FallbackHttpClient via createFallbackHttp().
 
-import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
-import type { ImageRef } from "@modules/downloader/types.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import {
   parseChapterImages,
@@ -12,9 +10,12 @@ import {
   parseChapterListPagination,
   parseSearchResults,
 } from "./parser.ts";
+import type { ChapterRef, ImageRef, MangaCandidate, MangakakalotClient } from "./types.ts";
+import { MangakakalotParseError } from "./types.ts";
 
 export type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 export type { ImageRef } from "@modules/downloader/types.ts";
+export type { MangakakalotClient } from "./types.ts";
 export { MangakakalotParseError } from "./types.ts";
 
 const SITE_ROOT = "https://mangakakalot.gg";
@@ -23,12 +24,6 @@ const MANGA_URL = (slug: string) => `${SITE_ROOT}/manga/${slug}`;
 
 /** Maximum pages to follow when paginating a chapter list — guards against misparsed links. */
 const MAX_PAGINATION_PAGES = 20;
-
-export interface MangakakalotClient {
-  searchManga(title: string): Promise<MangaCandidate[]>;
-  getChapterList(slug: string): Promise<ChapterRef[]>;
-  getChapterImages(chapterIdOrUrl: string): Promise<ImageRef[]>;
-}
 
 export function createMangakakalotClient(opts: {
   http: FallbackHttpClient;
@@ -42,13 +37,34 @@ export function createMangakakalotClient(opts: {
     return res.text();
   }
 
+  /** Runs a parser function and wraps MangakakalotParseError with a warn log before re-throwing. */
+  function runParser<T>(url: string, fn: () => T): T {
+    try {
+      return fn();
+    } catch (err) {
+      if (err instanceof MangakakalotParseError) {
+        logger.warn(
+          {
+            event: "mangakakalot.parse_failed",
+            context: "mangakakalot",
+            url,
+            selector: err.selector,
+            err,
+          },
+          "mangakakalot DOM parse failed",
+        );
+      }
+      throw err;
+    }
+  }
+
   async function searchManga(title: string): Promise<MangaCandidate[]> {
     // URL: https://mangakakalot.gg/search/story/<encoded-title>
     // Words separated by underscores per mangakakalot's search convention.
     const encoded = encodeURIComponent(title.toLowerCase().replace(/\s+/g, "_"));
     const url = `${SEARCH_URL}/${encoded}`;
     const html = await fetchHtml(url);
-    return parseSearchResults(html);
+    return runParser(url, () => parseSearchResults(html, url));
   }
 
   async function getChapterList(slug: string): Promise<ChapterRef[]> {
@@ -57,8 +73,9 @@ export function createMangakakalotClient(opts: {
     let pagesFollowed = 0;
 
     while (url !== null && pagesFollowed < MAX_PAGINATION_PAGES) {
-      const html = await fetchHtml(url);
-      const pageChapters = parseChapterList(html, slug);
+      const currentUrl = url;
+      const html = await fetchHtml(currentUrl);
+      const pageChapters = runParser(currentUrl, () => parseChapterList(html, slug, currentUrl));
       allChapters = allChapters.concat(pageChapters);
 
       const nextUrl = parseChapterListPagination(html);
@@ -78,7 +95,7 @@ export function createMangakakalotClient(opts: {
       url = `${SITE_ROOT}/${chapterIdOrUrl}`;
     }
     const html = await fetchHtml(url);
-    return parseChapterImages(html);
+    return runParser(url, () => parseChapterImages(html, url));
   }
 
   return { searchManga, getChapterList, getChapterImages };
