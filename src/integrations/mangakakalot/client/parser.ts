@@ -97,9 +97,16 @@ interface MkChapterApiItem {
   view: number;
 }
 
+interface MkChapterApiPagination {
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
 interface MkChapterApiResponse {
   success: boolean;
-  data: { chapters: MkChapterApiItem[] };
+  data: { chapters: MkChapterApiItem[]; pagination?: MkChapterApiPagination };
 }
 
 function isMkChapterApiItem(v: unknown): v is MkChapterApiItem {
@@ -125,10 +132,16 @@ function isMkChapterApiResponse(v: unknown): v is MkChapterApiResponse {
 /**
  * Parses the chapter list from the mangakakalot JSON API response.
  *
- * The API returns chapters newest-first. Output is sorted ascending by chapter_num.
+ * The API returns chapters newest-first in pages (limit 50 per page).
+ * Output is sorted ascending by chapter_num.
  * Throws MangakakalotParseError when the JSON shape is invalid.
+ *
+ * Returns { chapters, hasMore, limit } so the caller can paginate.
  */
-export function parseChapterListFromApi(json: unknown, mangaSlug: string): ChapterRef[] {
+export function parseChapterListFromApi(
+  json: unknown,
+  mangaSlug: string,
+): { chapters: ChapterRef[]; hasMore: boolean; limit: number } {
   if (!isMkChapterApiResponse(json)) {
     throw new MangakakalotParseError(
       "data.chapters",
@@ -173,7 +186,11 @@ export function parseChapterListFromApi(json: unknown, mangaSlug: string): Chapt
   // API returns newest-first; sort ascending by chapter_num for caller convenience.
   chapters.sort((a, b) => Number(a.chapter) - Number(b.chapter));
 
-  return chapters;
+  const pagination = json.data.pagination;
+  const hasMore = pagination?.has_more === true;
+  const limit = pagination?.limit ?? 50;
+
+  return { chapters, hasMore, limit };
 }
 
 /**

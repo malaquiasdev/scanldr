@@ -17,8 +17,11 @@ export { MangakakalotParseError } from "./types.ts";
 
 const SITE_ROOT = "https://www.mangakakalot.gg";
 const SEARCH_URL = `${SITE_ROOT}/search/story`;
-const CHAPTERS_API_URL = (slug: string) =>
-  `${SITE_ROOT}/api/manga/${encodeURIComponent(slug)}/chapters`;
+const CHAPTERS_API_URL = (slug: string, offset = 0) =>
+  `${SITE_ROOT}/api/manga/${encodeURIComponent(slug)}/chapters?offset=${offset}`;
+
+/** Guard against runaway pagination (e.g. malformed has_more loop). */
+const MAX_API_PAGES = 20;
 
 export function createMangakakalotClient(opts: {
   http: FallbackHttpClient;
@@ -63,30 +66,62 @@ export function createMangakakalotClient(opts: {
   }
 
   async function getChapterList(slug: string): Promise<ChapterRef[]> {
-    const apiUrl = CHAPTERS_API_URL(slug);
-    logger.info(
-      { event: "mangakakalot.fetch", context: "mangakakalot", url: apiUrl },
-      "fetching chapter list from API",
-    );
-    const res = await http.get(apiUrl, { accept: "application/json" });
-    if (!res.ok) {
+    let allChapters: ChapterRef[] = [];
+    let offset = 0;
+    let pagesLoaded = 0;
+
+    while (pagesLoaded < MAX_API_PAGES) {
+      const apiUrl = CHAPTERS_API_URL(slug, offset);
+      logger.info(
+        { event: "mangakakalot.fetch", context: "mangakakalot", url: apiUrl },
+        "fetching chapter list from API",
+      );
+      const res = await http.get(apiUrl, { accept: "application/json" });
+      if (!res.ok) {
+        logger.warn(
+          {
+            event: "mangakakalot.chapters_api_error",
+            context: "mangakakalot",
+            slug,
+            status: res.status,
+          },
+          `chapters API returned HTTP ${res.status}`,
+        );
+        throw new MangakakalotParseError(
+          "data.chapters",
+          apiUrl,
+          `chapters API returned HTTP ${res.status}`,
+        );
+      }
+      const json: unknown = await res.json();
+      const { chapters, hasMore, limit } = runParser(apiUrl, () =>
+        parseChapterListFromApi(json, slug),
+      );
+      allChapters = allChapters.concat(chapters);
+      pagesLoaded++;
+
+      if (!hasMore) break;
+
+      offset += limit;
+    }
+
+    if (pagesLoaded >= MAX_API_PAGES) {
       logger.warn(
         {
-          event: "mangakakalot.chapters_api_error",
+          event: "mangakakalot.pagination_capped",
           context: "mangakakalot",
           slug,
-          status: res.status,
+          cap: MAX_API_PAGES,
         },
-        `chapters API returned HTTP ${res.status}`,
-      );
-      throw new MangakakalotParseError(
-        "data.chapters",
-        apiUrl,
-        `chapters API returned HTTP ${res.status}`,
+        "API pagination cap reached; chapter list may be incomplete",
       );
     }
-    const json: unknown = await res.json();
-    return runParser(apiUrl, () => parseChapterListFromApi(json, slug));
+
+    // Final sort — pages come back newest-first but each page is sorted ascending;
+    // concat order may produce a mis-sorted result across page boundaries.
+    allChapters.sort((a, b) => Number(a.chapter) - Number(b.chapter));
+
+    return allChapters;
   }
 
   async function getChapterImages(chapterIdOrUrl: string): Promise<ImageRef[]> {
