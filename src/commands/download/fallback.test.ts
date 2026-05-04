@@ -3,6 +3,7 @@ import type { ChapterRef, VolumeRef } from "@integrations/_shared/manga.ts";
 import { MissingAuthError } from "@integrations/fallback-http/index.ts";
 import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
 import type { MangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
+import { createMangakakalotClient as mkClient } from "@integrations/mangakakalot/client/index.ts";
 import { openDb, runMigrations } from "@plugins/db/index.ts";
 import { CliError } from "@plugins/errors/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
@@ -602,12 +603,7 @@ describe("makeMangakakalotFetcher sends Referer header", () => {
       },
       mangadexResolve: null,
       createFallbackHttp: async () => mockHttp,
-      createMangakakalotClient: (opts) => {
-        const {
-          createMangakakalotClient: mkClient,
-        } = require("@integrations/mangakakalot/client/index.ts");
-        return mkClient(opts);
-      },
+      createMangakakalotClient: (opts) => mkClient(opts),
       promptSite: async (sites) => {
         const site = sites[0];
         if (!site) throw new Error("no sites");

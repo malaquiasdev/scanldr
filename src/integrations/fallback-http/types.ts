@@ -37,9 +37,11 @@ export interface FallbackHttpOptions {
 export interface FallbackHttpClient {
   /**
    * GET request with cookie replay + UA from the auth session.
-   * Optional `headers` are merged on top of the auto-built cookie + user-agent.
-   * Caller-supplied keys win on conflict (case-sensitive — use lowercase per HTTP/2 convention).
-   * The cookie and user-agent headers are always sent regardless; callers cannot drop them.
+   *
+   * @param url Target URL.
+   * @param headers Optional extra headers (e.g. `referer` for CDN-specific endpoints).
+   *   Keys are lowercased before merge. `cookie` and `user-agent` are always
+   *   re-enforced from the auth session and cannot be overridden by the caller.
    */
   get(url: string, headers?: Record<string, string>): Promise<Response>;
 }
