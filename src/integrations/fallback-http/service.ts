@@ -36,7 +36,6 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
   const now = opts.now ?? Date.now;
 
   // Resolve path once — either from opts or XDG.
-  // resolveAuthPath requires a logger; pass through.
   const path = opts.authPath ?? resolveAuthPath({});
 
   // Read auth.json eagerly — fail fast if missing or corrupt.
