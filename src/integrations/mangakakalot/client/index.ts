@@ -2,7 +2,9 @@
 // Wraps a FallbackHttpClient (cookie-replay, handles Cloudflare) and returns parsed domain types.
 // Callers are responsible for creating the FallbackHttpClient via createFallbackHttp().
 
+import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
+import type { ImageRef } from "@modules/downloader/types.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import {
   parseChapterImages,
@@ -10,7 +12,7 @@ import {
   parseChapterListPagination,
   parseSearchResults,
 } from "./parser.ts";
-import type { ChapterRef, ImageRef, MangaCandidate, MangakakalotClient } from "./types.ts";
+import type { MangakakalotClient } from "./types.ts";
 import { MangakakalotParseError } from "./types.ts";
 
 export type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
@@ -72,10 +74,23 @@ export function createMangakakalotClient(opts: {
     let allChapters: ChapterRef[] = [];
     let pagesFollowed = 0;
 
-    while (url !== null && pagesFollowed < MAX_PAGINATION_PAGES) {
+    while (url !== null) {
+      if (pagesFollowed >= MAX_PAGINATION_PAGES) {
+        logger.warn(
+          {
+            event: "mangakakalot.pagination_capped",
+            context: "mangakakalot",
+            slug,
+            cap: MAX_PAGINATION_PAGES,
+          },
+          "pagination cap reached; chapter list may be incomplete",
+        );
+        break;
+      }
+
       const currentUrl = url;
       const html = await fetchHtml(currentUrl);
-      const pageChapters = runParser(currentUrl, () => parseChapterList(html, slug, currentUrl));
+      const pageChapters = runParser(currentUrl, () => parseChapterList(html, currentUrl));
       allChapters = allChapters.concat(pageChapters);
 
       const nextUrl = parseChapterListPagination(html);

@@ -1,10 +1,8 @@
-// Public types and domain errors for the mangakakalot client.
+// Internal types and domain errors for the mangakakalot client.
+// Public re-exports (ChapterRef, MangaCandidate, ImageRef, MangakakalotClient) live in index.ts.
 
 import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 import type { ImageRef } from "@modules/downloader/types.ts";
-
-export type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
-export type { ImageRef } from "@modules/downloader/types.ts";
 
 export class MangakakalotParseError extends Error {
   override readonly name = "MangakakalotParseError";
