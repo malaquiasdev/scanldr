@@ -8,7 +8,7 @@ import type { ChapterRef, MangaCandidate } from "@integrations/mangadex/client/i
 import type { MangaDexClient } from "@integrations/mangadex/client/index.ts";
 import { parseExternalHost } from "@integrations/mangadex/external-host.ts";
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
-import { downloadVolume } from "@modules/downloader/index.ts";
+import { downloadBundle } from "@modules/downloader/index.ts";
 import type { ChapterInput } from "@modules/downloader/types.ts";
 import { isVolumeFullyDownloaded, recordDownloadedChapters } from "@modules/history/index.ts";
 import type { DownloadRow } from "@modules/history/index.ts";
@@ -16,7 +16,7 @@ import { CliError } from "@plugins/errors/index.ts";
 import { resolveLanguage } from "./language.ts";
 import { parseRangeSet } from "./range.ts";
 import { toSlug } from "./slug.ts";
-import type { DownloadArgs, DownloadContext, ProcessVolumeArgs } from "./types.ts";
+import type { Bundle, DownloadArgs, DownloadContext, ProcessBundleArgs } from "./types.ts";
 
 export type { DownloadArgs, DownloadContext } from "./types.ts";
 export { CliError } from "@plugins/errors/index.ts";
@@ -112,32 +112,93 @@ async function buildChapterInputs(
   return inputs;
 }
 
-/** Per-volume pipeline: history check → external check → build inputs → download → record. */
-async function processVolume(input: ProcessVolumeArgs): Promise<void> {
-  const { volumeToken, volChapters, chosen, slug, language, args, ctx, http } = input;
-  const { logger, db } = ctx;
+/**
+ * Group chapters from the feed into bundles based on args.
+ * --volume: one bundle per requested volume token, all chapters in that volume.
+ * --chapter: one bundle per requested chapter token, one chapter each.
+ */
+function groupChaptersIntoBundles(args: DownloadArgs, chaptersInLang: ChapterRef[]): Bundle[] {
+  if (args.volume !== undefined) {
+    const { values: requestedVolumes } = parseRangeSet(args.volume);
+    const volumeToChapters = new Map<string, ChapterRef[]>();
+    for (const ch of chaptersInLang) {
+      const vol = ch.volume ?? "none";
+      const existing = volumeToChapters.get(vol) ?? [];
+      existing.push(ch);
+      volumeToChapters.set(vol, existing);
+    }
 
-  // history check
+    const bundles: Bundle[] = [];
+    for (const volumeToken of requestedVolumes) {
+      const volChapters = volumeToChapters.get(volumeToken);
+      if (!volChapters || volChapters.length === 0) continue;
+      bundles.push({
+        kind: "volume",
+        bundleNumber: volumeToken,
+        volumeForHistory: volumeToken,
+        chapters: volChapters,
+      });
+    }
+    return bundles;
+  }
+
+  // --chapter mode
+  const { values: requestedChapters } = parseRangeSet(args.chapter as string);
+  const chapterNumToRef = new Map<string, ChapterRef>();
+  for (const ch of chaptersInLang) {
+    const num = ch.chapter ?? "0";
+    if (!chapterNumToRef.has(num)) {
+      chapterNumToRef.set(num, ch);
+    }
+  }
+
+  const bundles: Bundle[] = [];
+  for (const chapterToken of requestedChapters) {
+    const ch = chapterNumToRef.get(chapterToken);
+    if (!ch) continue;
+    bundles.push({
+      kind: "chapter",
+      bundleNumber: chapterToken,
+      // Use the chapter's real volume from MangaDex; null → "none"
+      volumeForHistory: ch.volume ?? "none",
+      chapters: [ch],
+    });
+  }
+  return bundles;
+}
+
+/** Per-bundle pipeline: history check → external check → build inputs → download → record. */
+async function processBundle(input: ProcessBundleArgs): Promise<void> {
+  const { bundle, chosen, slug, language, args, ctx, http } = input;
+  const { logger, db } = ctx;
+  const { kind, bundleNumber, volumeForHistory, chapters } = bundle;
+
+  // history check — use volumeForHistory as the volume key (consistent across volume/chapter mode)
   if (!args.force) {
-    const chapterIdSet = new Set(volChapters.map((c) => c.id));
+    const chapterIdSet = new Set(chapters.map((c) => c.id));
     const fullyDownloaded = isVolumeFullyDownloaded(db, {
       mangaId: chosen.id,
-      volume: volumeToken,
+      volume: volumeForHistory,
       language,
       expectedChapterIds: chapterIdSet,
     });
 
     if (fullyDownloaded) {
       logger.info(
-        { event: "download.volume_skip", context: "download", volume: volumeToken },
-        `skipping volume ${volumeToken}: already in history`,
+        {
+          event: "download.bundle_skip",
+          context: "download",
+          kind,
+          bundleNumber,
+        },
+        `skipping ${kind} ${bundleNumber}: already in history`,
       );
       return;
     }
   }
 
   // external-chapter check
-  for (const ch of volChapters) {
+  for (const ch of chapters) {
     if (ch.externalUrl !== null) {
       const host = parseExternalHost(ch.externalUrl) ?? ch.externalUrl;
       logger.warn(
@@ -157,12 +218,10 @@ async function processVolume(input: ProcessVolumeArgs): Promise<void> {
     }
   }
 
-  const volumeNumber = Number(volumeToken);
-
   let chapterInputs: Awaited<ReturnType<typeof buildChapterInputs>>;
-  let result: Awaited<ReturnType<typeof downloadVolume>>;
+  let result: Awaited<ReturnType<typeof downloadBundle>>;
   try {
-    chapterInputs = await buildChapterInputs(volChapters, http, args.quality, logger);
+    chapterInputs = await buildChapterInputs(chapters, http, args.quality, logger);
 
     if (args.dryRun) {
       const totalPages = chapterInputs.reduce((sum, c) => sum + c.pages.length, 0);
@@ -171,20 +230,22 @@ async function processVolume(input: ProcessVolumeArgs): Promise<void> {
           event: "download.dry_run",
           context: "download",
           slug,
-          volumeNumber,
+          kind,
+          bundleNumber,
           chapters: chapterInputs.length,
           totalPages,
         },
-        `dry-run: would download volume ${volumeToken}`,
+        `dry-run: would download ${kind} ${bundleNumber}`,
       );
       return;
     }
 
-    result = await downloadVolume({
+    result = await downloadBundle({
       outDir: args.outDir,
       format: args.format,
       slug,
-      volumeNumber,
+      kind,
+      bundleNumber,
       chapters: chapterInputs,
       imageConcurrency: args.concurrency,
       delayMs: args.delayMs,
@@ -210,20 +271,21 @@ async function processVolume(input: ProcessVolumeArgs): Promise<void> {
 
   logger.info(
     {
-      event: "download.volume_done",
+      event: "download.bundle_done",
       context: "download",
-      volume: volumeToken,
+      kind,
+      bundleNumber,
       outputPath: result.outputPath,
       byteSize: result.byteSize,
     },
-    `volume ${volumeToken} downloaded`,
+    `${kind} ${bundleNumber} downloaded`,
   );
 
   if (!args.noTrack) {
-    const rows: DownloadRow[] = volChapters.map((ch) => ({
+    const rows: DownloadRow[] = chapters.map((ch) => ({
       mangaId: chosen.id,
       mangaTitle: chosen.title,
-      volume: volumeToken,
+      volume: volumeForHistory,
       chapterId: ch.id,
       chapterNum: ch.chapter ?? "0",
       source: "mangadex",
@@ -235,7 +297,8 @@ async function processVolume(input: ProcessVolumeArgs): Promise<void> {
       {
         event: "download.history_recorded",
         context: "download",
-        volume: volumeToken,
+        kind,
+        bundleNumber,
         rows: rows.length,
       },
       "history recorded",
@@ -251,13 +314,41 @@ export async function runDownload(
 ): Promise<void> {
   const { logger, config } = ctx;
 
-  const { values: requestedVolumes } = parseRangeSet(args.volume);
-
-  if (requestedVolumes.has("none")) {
-    throw new CliError(
-      "--volume none is not yet supported. Use a numeric volume number instead.",
-      2,
+  // Validate: exactly one of volume/chapter must be set
+  if (args.volume !== undefined && args.chapter !== undefined) {
+    logger.warn(
+      { event: "download.mutual_exclusion", context: "download" },
+      "--volume and --chapter are mutually exclusive",
     );
+    throw new CliError("--volume and --chapter are mutually exclusive", 2);
+  }
+
+  if (args.volume === undefined && args.chapter === undefined) {
+    throw new CliError("--volume <range> or --chapter <range> is required", 2);
+  }
+
+  if (args.volume !== undefined) {
+    const { values: requestedVolumes } = parseRangeSet(args.volume);
+    if (requestedVolumes.has("none")) {
+      throw new CliError(
+        "--volume none is not yet supported. Use a numeric volume number instead.",
+        2,
+      );
+    }
+  }
+
+  if (args.chapter !== undefined) {
+    const { values: requestedChapters } = parseRangeSet(args.chapter);
+    if (requestedChapters.has("none")) {
+      logger.warn(
+        { event: "download.chapter_none_unsupported", context: "download" },
+        "--chapter none is not supported",
+      );
+      throw new CliError(
+        "--chapter none is not yet supported. Use a numeric chapter number instead.",
+        2,
+      );
+    }
   }
 
   const chosen = await resolveTitle(client, args.manga, args.nonTty, logger);
@@ -278,27 +369,37 @@ export async function runDownload(
   });
 
   const chaptersInLang = feedChapters.filter((c) => c.translatedLanguage === language);
-  const volumeToChapters = new Map<string, typeof chaptersInLang>();
-  for (const ch of chaptersInLang) {
-    const vol = ch.volume ?? "none";
-    const existing = volumeToChapters.get(vol) ?? [];
-    existing.push(ch);
-    volumeToChapters.set(vol, existing);
-  }
 
   const slug = toSlug(chosen.title, logger);
 
-  for (const volumeToken of requestedVolumes) {
-    const volChapters = volumeToChapters.get(volumeToken);
+  const bundles = groupChaptersIntoBundles(args, chaptersInLang);
 
-    if (!volChapters || volChapters.length === 0) {
-      logger.warn(
-        { event: "download.volume_missing", context: "download", volume: volumeToken },
-        `volume ${volumeToken} not found in feed; skipping`,
-      );
-      continue;
+  // Warn about requested items missing from feed
+  if (args.volume !== undefined) {
+    const { values: requestedVolumes } = parseRangeSet(args.volume);
+    const foundVolumeTokens = new Set(bundles.map((b) => b.bundleNumber));
+    for (const token of requestedVolumes) {
+      if (!foundVolumeTokens.has(token)) {
+        logger.warn(
+          { event: "download.volume_missing", context: "download", volume: token },
+          `volume ${token} not found in feed; skipping`,
+        );
+      }
     }
+  } else if (args.chapter !== undefined) {
+    const { values: requestedChapters } = parseRangeSet(args.chapter);
+    const foundChapterTokens = new Set(bundles.map((b) => b.bundleNumber));
+    for (const token of requestedChapters) {
+      if (!foundChapterTokens.has(token)) {
+        logger.warn(
+          { event: "download.chapter_missing", context: "download", chapter: token },
+          `chapter ${token} not found in feed; skipping`,
+        );
+      }
+    }
+  }
 
-    await processVolume({ volumeToken, volChapters, chosen, slug, language, args, ctx, http });
+  for (const bundle of bundles) {
+    await processBundle({ bundle, chosen, slug, language, args, ctx, http });
   }
 }

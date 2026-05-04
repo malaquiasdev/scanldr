@@ -112,12 +112,8 @@ const handlers: Record<string, Handler> = {
       throw new CliError("--volume and --chapter are mutually exclusive", 2);
     }
 
-    if (dlValues.chapter !== undefined) {
-      throw new NotImplementedError("download --chapter");
-    }
-
-    if (dlValues.volume === undefined) {
-      throw new CliError("--volume <range> is required (--chapter support coming in #15)", 2);
+    if (dlValues.volume === undefined && dlValues.chapter === undefined) {
+      throw new CliError("--volume <range> or --chapter <range> is required", 2);
     }
 
     const rawFormat = dlValues.format;
@@ -150,7 +146,8 @@ const handlers: Record<string, Handler> = {
     await runDownload(
       {
         manga,
-        volume: dlValues.volume as string,
+        volume: typeof dlValues.volume === "string" ? dlValues.volume : undefined,
+        chapter: typeof dlValues.chapter === "string" ? dlValues.chapter : undefined,
         format,
         outDir: typeof dlValues.out === "string" ? dlValues.out : ctx.config.default_out,
         quality,

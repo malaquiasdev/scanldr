@@ -1,2 +1,8 @@
-export { downloadVolume } from "./service.ts";
-export type { ChapterInput, DownloadVolumeInput, DownloadVolumeResult, ImageRef } from "./types.ts";
+export { downloadBundle } from "./service.ts";
+export type {
+  BundleKind,
+  ChapterInput,
+  DownloadBundleInput,
+  DownloadBundleResult,
+  ImageRef,
+} from "./types.ts";

@@ -12,11 +12,15 @@ export interface ChapterInput {
   imageFetcher: (ref: ImageRef) => Promise<Uint8Array>;
 }
 
-export interface DownloadVolumeInput {
+export type BundleKind = "volume" | "chapter";
+
+export interface DownloadBundleInput {
   outDir: string;
   format: "cbz" | "zip";
   slug: string;
-  volumeNumber: number;
+  kind: BundleKind;
+  /** "1", "018", "18.5", "none" — stringly typed for decimals & special tokens */
+  bundleNumber: string;
   chapters: ChapterInput[];
   imageConcurrency: number;
   delayMs: number;
@@ -24,7 +28,7 @@ export interface DownloadVolumeInput {
   logger: Logger;
 }
 
-export interface DownloadVolumeResult {
+export interface DownloadBundleResult {
   chapterIds: string[];
   outputPath: string;
   byteSize: number;
