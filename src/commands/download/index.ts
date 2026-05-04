@@ -451,7 +451,7 @@ export async function runDownload(
   }
 
   // Try MangaDex pipeline (soft failure on title-not-found, language-not-matched)
-  // tryMangaDexPipeline already converts "No manga found" to null internally.
+  // TitleNotFoundError is caught inside and converted to null.
   const mangadexResolve: MangaDexResolveResult | null = await tryMangaDexPipeline(
     args,
     ctx,
