@@ -63,7 +63,7 @@ const handlers: Record<string, Handler> = {
     const { values: listValues, positionals: listPos } = parseArgs({
       args: rest,
       allowPositionals: true,
-      strict: false,
+      strict: true,
       options: {
         volume: { type: "string" },
         chapter: { type: "string" },
@@ -96,7 +96,7 @@ const handlers: Record<string, Handler> = {
     const { values: dlValues, positionals: dlPos } = parseArgs({
       args: rest,
       allowPositionals: true,
-      strict: false,
+      strict: true,
       options: {
         volume: { type: "string" },
         chapter: { type: "string" },
@@ -225,11 +225,44 @@ export function resolveLogConfig(values: {
   return { level, format };
 }
 
-async function main(argv: string[]): Promise<void> {
-  const { positionals, values } = parseArgs({
-    args: argv,
-    allowPositionals: true,
-    strict: false,
+/**
+ * Walk argv to find the first non-flag token (the command name).
+ * Everything before it goes into preArgs (parsed only for global boolean flags).
+ * Everything after it is passed verbatim as postArgs to the handler's own parseArgs.
+ *
+ * This avoids the bug where strict:false at the top level coerces
+ * "--volume 13" into { volume: true } and pushes "13" into positionals.
+ */
+function splitArgv(argv: string[]): {
+  preArgs: string[];
+  command: string | undefined;
+  postArgs: string[];
+} {
+  const preArgs: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const tok = argv[i];
+    if (!tok) {
+      i++;
+      continue;
+    }
+    if (tok.startsWith("-")) {
+      // Only known global boolean flags are expected pre-command; collect them all anyway.
+      preArgs.push(tok);
+    } else {
+      return { preArgs, command: tok, postArgs: argv.slice(i + 1) };
+    }
+  }
+  return { preArgs, command: undefined, postArgs: [] };
+}
+
+export async function main(argv: string[]): Promise<void> {
+  const { preArgs, command, postArgs } = splitArgv(argv);
+
+  // Parse only global boolean flags from the pre-command slice.
+  const { values } = parseArgs({
+    args: preArgs,
+    allowPositionals: false,
+    strict: false, // tolerate unknown flags silently; handlers validate their own slice
     options: {
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
@@ -243,8 +276,6 @@ async function main(argv: string[]): Promise<void> {
     process.stdout.write(`scanldr ${VERSION}\n`);
     return;
   }
-
-  const [command, ...rest] = positionals;
 
   if (!command || command === "help" || values.help) {
     process.stdout.write(USAGE);
@@ -264,7 +295,9 @@ async function main(argv: string[]): Promise<void> {
   const db = openDb(config.db_path);
   runMigrations(db);
 
-  return handler(rest, { logger, db, config });
+  // postArgs is everything after the command — verbatim, so handler's parseArgs
+  // sees the real flag values (e.g. --volume "13" not boolean true).
+  return handler(postArgs, { logger, db, config });
 }
 
 if (import.meta.main) {
