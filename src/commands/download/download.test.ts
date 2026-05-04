@@ -649,7 +649,7 @@ describe("runDownload --chapter — happy path 3-chapter range", () => {
 
     // Assert all 3 archives exist with correct names
     const slug = "test-manga";
-    for (const [num, name] of [
+    for (const [, name] of [
       ["1", "001"],
       ["2", "002"],
       ["3", "003"],
@@ -663,7 +663,6 @@ describe("runDownload --chapter — happy path 3-chapter range", () => {
       const names = Object.keys(entries).sort();
       expect(names).toHaveLength(1);
       expect(names[0]).toBe("0001.jpg");
-      void num; // used above for clarity
     }
 
     // Assert 3 history rows with correct volumes
@@ -745,6 +744,85 @@ describe("runDownload --chapter — null volume chapter", () => {
     const cbzPath = join(tmpDir, "test-manga", "test-manga-chapter-007.cbz");
     const exists = await Bun.file(cbzPath).exists();
     expect(exists).toBe(true);
+  });
+});
+
+describe("runDownload --chapter — duplicate upload tiebreak", () => {
+  test("latest readableAt wins when two uploads share the same chapter number", async () => {
+    // older upload — should be discarded
+    const older = makeChapterRef({
+      id: "ch-old",
+      volume: "1",
+      chapter: "1",
+      readableAt: "2023-01-01T00:00:00Z",
+    });
+    // newer upload — should win
+    const newer = makeChapterRef({
+      id: "ch-new",
+      volume: "1",
+      chapter: "1",
+      readableAt: "2024-06-01T00:00:00Z",
+    });
+
+    const client = makeClient({
+      aggregateVolumes: async () => [makeVolumeRef("1", ["ch-old", "ch-new"])],
+      // Feed returns older first to verify feed-order independence
+      feedChapters: async () => [older, newer],
+    });
+
+    const http: MangaDexHttpClient = {
+      get: async (path: string) => {
+        if (path.startsWith("/at-home/server/")) {
+          return {
+            baseUrl: "https://example.com",
+            chapter: { hash: "abc", data: ["page1.jpg"], dataSaver: [] },
+          };
+        }
+        throw new Error(`Unexpected: ${path}`);
+      },
+    } as unknown as MangaDexHttpClient;
+
+    await withMockedImageFetch(async () => {
+      await runDownload(baseArgs({ volume: undefined, chapter: "1" }), baseCtx(), client, http);
+    });
+
+    // Only one bundle should be recorded, and it must be the newer upload
+    const history = listHistory(db);
+    expect(history).toHaveLength(1);
+    expect(history[0]?.chapterId).toBe("ch-new");
+  });
+
+  test("chapter with null chapter number is excluded from --chapter lookup", async () => {
+    const nullCh = makeChapterRef({ id: "ch-null", volume: "1", chapter: null });
+    // Also include a real chapter to confirm the feed is processed normally
+    const realCh = makeChapterRef({ id: "ch-real", volume: "1", chapter: "2" });
+
+    const client = makeClient({
+      aggregateVolumes: async () => [makeVolumeRef("1", ["ch-null", "ch-real"])],
+      feedChapters: async () => [nullCh, realCh],
+    });
+
+    const http: MangaDexHttpClient = {
+      get: async (path: string) => {
+        if (path.startsWith("/at-home/server/")) {
+          return {
+            baseUrl: "https://example.com",
+            chapter: { hash: "abc", data: ["page1.jpg"], dataSaver: [] },
+          };
+        }
+        throw new Error(`Unexpected: ${path}`);
+      },
+    } as unknown as MangaDexHttpClient;
+
+    await withMockedImageFetch(async () => {
+      // --chapter 2 should match realCh, null-chapter entry must not interfere
+      await runDownload(baseArgs({ volume: undefined, chapter: "2" }), baseCtx(), client, http);
+    });
+
+    const history = listHistory(db);
+    // Only the real chapter should be recorded; null-chapter entry is excluded from lookup
+    expect(history).toHaveLength(1);
+    expect(history[0]?.chapterId).toBe("ch-real");
   });
 });
 

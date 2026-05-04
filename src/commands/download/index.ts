@@ -115,7 +115,14 @@ async function buildChapterInputs(
 /**
  * Group chapters from the feed into bundles based on args.
  * --volume: one bundle per requested volume token, all chapters in that volume.
+ *   Volume mode keeps ALL uploads for a given volume (including multiple scanlation
+ *   group versions of the same chapter number), which may produce larger .cbz files
+ *   but preserves every available translation.
  * --chapter: one bundle per requested chapter token, one chapter each.
+ *   Tiebreak rule: when multiple uploads exist for the same chapter number (different
+ *   scanlation groups), the one with the latest `readableAt` wins — newer scanlation
+ *   is typically higher quality. Chapters with chapter === null are excluded from the
+ *   lookup map; they are not addressable via --chapter.
  */
 function groupChaptersIntoBundles(args: DownloadArgs, chaptersInLang: ChapterRef[]): Bundle[] {
   if (args.volume !== undefined) {
@@ -142,12 +149,15 @@ function groupChaptersIntoBundles(args: DownloadArgs, chaptersInLang: ChapterRef
     return bundles;
   }
 
-  // --chapter mode
+  // --chapter mode: deduplicate by chapter number, latest readableAt wins.
+  // Chapters with chapter === null are skipped (not addressable by number).
   const { values: requestedChapters } = parseRangeSet(args.chapter as string);
   const chapterNumToRef = new Map<string, ChapterRef>();
   for (const ch of chaptersInLang) {
-    const num = ch.chapter ?? "0";
-    if (!chapterNumToRef.has(num)) {
+    if (ch.chapter === null) continue;
+    const num = ch.chapter;
+    const existing = chapterNumToRef.get(num);
+    if (!existing || ch.readableAt > existing.readableAt) {
       chapterNumToRef.set(num, ch);
     }
   }
@@ -324,12 +334,22 @@ export async function runDownload(
   }
 
   if (args.volume === undefined && args.chapter === undefined) {
+    logger.warn(
+      { event: "download.no_flag_set", context: "download" },
+      "--volume or --chapter is required",
+    );
     throw new CliError("--volume <range> or --chapter <range> is required", 2);
   }
 
+  // Parse requested tokens once; reused for none-check and missing-in-feed warning below.
+  // At this point exactly one of volume/chapter is defined (validated above).
+  const requestedTokens =
+    args.volume !== undefined
+      ? parseRangeSet(args.volume).values
+      : parseRangeSet(args.chapter as string).values;
+
   if (args.volume !== undefined) {
-    const { values: requestedVolumes } = parseRangeSet(args.volume);
-    if (requestedVolumes.has("none")) {
+    if (requestedTokens.has("none")) {
       logger.warn(
         { event: "download.volume_none_unsupported", context: "download" },
         "--volume none is not supported",
@@ -342,8 +362,7 @@ export async function runDownload(
   }
 
   if (args.chapter !== undefined) {
-    const { values: requestedChapters } = parseRangeSet(args.chapter);
-    if (requestedChapters.has("none")) {
+    if (requestedTokens.has("none")) {
       logger.warn(
         { event: "download.chapter_none_unsupported", context: "download" },
         "--chapter none is not supported",
@@ -378,23 +397,16 @@ export async function runDownload(
 
   const bundles = groupChaptersIntoBundles(args, chaptersInLang);
 
-  // Warn about requested items missing from feed
-  if (args.volume !== undefined) {
-    const { values: requestedVolumes } = parseRangeSet(args.volume);
-    const foundVolumeTokens = new Set(bundles.map((b) => b.bundleNumber));
-    for (const token of requestedVolumes) {
-      if (!foundVolumeTokens.has(token)) {
+  // Warn about requested items missing from feed (reuses requestedTokens parsed above)
+  const foundBundleTokens = new Set(bundles.map((b) => b.bundleNumber));
+  for (const token of requestedTokens) {
+    if (!foundBundleTokens.has(token)) {
+      if (args.volume !== undefined) {
         logger.warn(
           { event: "download.volume_missing", context: "download", volume: token },
           `volume ${token} not found in feed; skipping`,
         );
-      }
-    }
-  } else if (args.chapter !== undefined) {
-    const { values: requestedChapters } = parseRangeSet(args.chapter);
-    const foundChapterTokens = new Set(bundles.map((b) => b.bundleNumber));
-    for (const token of requestedChapters) {
-      if (!foundChapterTokens.has(token)) {
+      } else {
         logger.warn(
           { event: "download.chapter_missing", context: "download", chapter: token },
           `chapter ${token} not found in feed; skipping`,
