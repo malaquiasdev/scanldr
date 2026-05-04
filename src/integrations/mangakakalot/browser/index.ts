@@ -131,6 +131,21 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
         { event: "auth.no_challenge", context: "browser" },
         "Page loaded with real site content — skipping cf_clearance poll.",
       );
+
+      // GA / tracking cookies are set by JS that runs on "load", not on
+      // "domcontentloaded". Without them, Cloudflare's fingerprint check on
+      // protected endpoints (e.g. /search/…) returns 403 even when the
+      // homepage itself is public. Wait for the full load event so those
+      // cookies have time to land before we extract the session.
+      try {
+        await page.waitForLoadState("load", { timeout: 10_000 });
+      } catch {
+        // "load" may never fire if a tracking pixel hangs — proceed anyway.
+        logger.warn(
+          { event: "auth.load_timeout", context: "browser" },
+          "page load did not complete within 10s; proceeding with whatever cookies are set",
+        );
+      }
     } else {
       logger.info(
         { event: "auth.waiting", context: "browser" },
