@@ -87,7 +87,7 @@ function parseUploadDate(raw: string | undefined): string {
  * Heuristic: if `.story_item` root has zero matches AND `<body>` exists with content,
  * the search results container structure has changed.
  */
-export function parseSearchResults(html: string, url = ""): MangaCandidate[] {
+export function parseSearchResults(html: string, url: string): MangaCandidate[] {
   const $ = cheerio.load(html);
   const results: MangaCandidate[] = [];
 
@@ -135,7 +135,7 @@ export function parseSearchResults(html: string, url = ""): MangaCandidate[] {
  * Throws MangakakalotParseError only when BOTH the chapter list root AND the manga title
  * selector are missing — two missing selectors is a reliable signal of DOM drift.
  */
-export function parseChapterList(html: string, mangaSlug: string, url = ""): ChapterRef[] {
+export function parseChapterList(html: string, url: string): ChapterRef[] {
   const $ = cheerio.load(html);
   const chapters: ChapterRef[] = [];
 
@@ -184,8 +184,6 @@ export function parseChapterList(html: string, mangaSlug: string, url = ""): Cha
       readableAt,
       externalUrl: null,
     });
-
-    void mangaSlug; // available if needed for future logging; not used in output
   });
 
   return chapters;
@@ -197,7 +195,7 @@ export function parseChapterList(html: string, mangaSlug: string, url = ""): Cha
  * Throws MangakakalotParseError when zero images are found inside the reader container.
  * A chapter MUST have at least one image by definition — zero images means the parser broke.
  */
-export function parseChapterImages(html: string, url = ""): ImageRef[] {
+export function parseChapterImages(html: string, url: string): ImageRef[] {
   const $ = cheerio.load(html);
   const images: ImageRef[] = [];
 
