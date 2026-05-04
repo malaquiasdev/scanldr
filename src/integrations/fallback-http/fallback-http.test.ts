@@ -320,6 +320,39 @@ test("permanent 5xx exhausts all attempts and throws with 3 retry warns", async 
   );
   // 3 retry warns (before attempts 2, 3, 4).
   expect(retryWarns).toHaveLength(3);
+
+  // P2 #4: Assert structured payload on each retry warn.
+  const expectedUrl = "https://example.com/";
+  expect(retryWarns[0]).toMatchObject({
+    fields: {
+      event: "fallback_http.retry",
+      context: "fallback-http",
+      attempt: 1,
+      status: 500,
+      url: expectedUrl,
+      waitMs: expect.any(Number),
+    },
+  });
+  expect(retryWarns[1]).toMatchObject({
+    fields: {
+      event: "fallback_http.retry",
+      context: "fallback-http",
+      attempt: 2,
+      status: 500,
+      url: expectedUrl,
+      waitMs: expect.any(Number),
+    },
+  });
+  expect(retryWarns[2]).toMatchObject({
+    fields: {
+      event: "fallback_http.retry",
+      context: "fallback-http",
+      attempt: 3,
+      status: 500,
+      url: expectedUrl,
+      waitMs: expect.any(Number),
+    },
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -440,4 +473,190 @@ test("concurrent gets serialize so 1 req/s ceiling holds globally", async () => 
   // The second fetch must have started at least 1000ms after the first.
   const gap = (fetchTimestamps[1] ?? 0) - (fetchTimestamps[0] ?? 0);
   expect(gap).toBeGreaterThanOrEqual(1000);
+});
+
+// ---------------------------------------------------------------------------
+// Test 13 (P2 #3): Three concurrent gets serialize with ≥1000ms gaps
+// ---------------------------------------------------------------------------
+
+test("three concurrent gets serialize through the throttle (≥1000ms gaps)", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let mockTime = 0;
+  const fetchTimestamps: number[] = [];
+
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchTimestamps.push(mockTime);
+      return makeFakeResponse(200);
+    };
+
+  const fakeSleep = async (ms: number) => {
+    mockTime += ms;
+  };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: fakeSleep,
+    now: () => mockTime,
+  });
+
+  // Fire three requests concurrently.
+  await Promise.all([
+    client.get("https://example.com/a"),
+    client.get("https://example.com/b"),
+    client.get("https://example.com/c"),
+  ]);
+
+  expect(fetchTimestamps).toHaveLength(3);
+
+  const t1 = fetchTimestamps[0] ?? 0;
+  const t2 = fetchTimestamps[1] ?? 0;
+  const t3 = fetchTimestamps[2] ?? 0;
+
+  expect(t1).toBeLessThan(t2);
+  expect(t2).toBeLessThan(t3);
+  expect(t2 - t1).toBeGreaterThanOrEqual(1000);
+  expect(t3 - t2).toBeGreaterThanOrEqual(1000);
+});
+
+// ---------------------------------------------------------------------------
+// Test 14 (P2 #2): 400 — returned to caller, no retry
+// ---------------------------------------------------------------------------
+
+test("400 — returned to caller, no retry", async () => {
+  const { logger, calls } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let fetchCount = 0;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return makeFakeResponse(400);
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  const res = await client.get("https://example.com/bad-request");
+  expect(res.status).toBe(400);
+  expect(fetchCount).toBe(1);
+  expect(calls.filter((c) => c.fields.event === "fallback_http.retry")).toHaveLength(0);
+});
+
+// ---------------------------------------------------------------------------
+// Test 15 (P2 #2): 401 — returned to caller, no retry
+// ---------------------------------------------------------------------------
+
+test("401 — returned to caller, no retry", async () => {
+  const { logger, calls } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let fetchCount = 0;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return makeFakeResponse(401);
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  const res = await client.get("https://example.com/unauthorized");
+  expect(res.status).toBe(401);
+  expect(fetchCount).toBe(1);
+  expect(calls.filter((c) => c.fields.event === "fallback_http.retry")).toHaveLength(0);
+});
+
+// ---------------------------------------------------------------------------
+// Test 16 (P2 #2): 429 — returned to caller, no retry, no rate-limit handling
+// ---------------------------------------------------------------------------
+
+test("429 — returned to caller, no retry, no special handling", async () => {
+  const { logger, calls } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let fetchCount = 0;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      // Include Retry-After header to prove we don't parse it.
+      return new Response(null, {
+        status: 429,
+        headers: { "Retry-After": "60", "x-ratelimit-retry-after": "60" },
+      });
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  const res = await client.get("https://example.com/rate-limited");
+  expect(res.status).toBe(429);
+  // Exactly one fetch — no retry logic fires.
+  expect(fetchCount).toBe(1);
+  // No retry warns and no rate-limit event.
+  expect(calls.filter((c) => c.fields.event === "fallback_http.retry")).toHaveLength(0);
+  // The sleep injector was never called with a rate-limit derived value.
+  // (sleep is async ()=>{} above — if it were called we'd still pass, but
+  //  fetchCount===1 already proves no retry path was taken.)
+});
+
+// ---------------------------------------------------------------------------
+// Test 17 (P2 #1): Empty cookies {} — valid session, Cookie header omitted
+// ---------------------------------------------------------------------------
+
+test("empty cookies {} — get omits Cookie header, sends User-Agent, no throw", async () => {
+  const { logger, calls } = makeLogger();
+  const emptyCookiesSession = {
+    cookies: {},
+    userAgent: "Mozilla/5.0 TestUA",
+    savedAt: 1700000000000,
+  };
+  const path = await writeAuth(tmpDir, emptyCookiesSession);
+
+  const capturedHeaders: Record<string, string> = {};
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> = async (
+    _url,
+    init,
+  ) => {
+    Object.assign(capturedHeaders, init?.headers as Record<string, string>);
+    return makeFakeResponse(200);
+  };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  const res = await client.get("https://example.com/page");
+  expect(res.status).toBe(200);
+
+  // User-Agent is present.
+  expect(capturedHeaders["user-agent"]).toBe(emptyCookiesSession.userAgent);
+  // Cookie header must NOT be present (not even as empty string).
+  expect("cookie" in capturedHeaders).toBe(false);
+
+  // No warn or error emitted.
+  expect(calls.filter((c) => c.level === "warn" || c.level === "error")).toHaveLength(0);
 });

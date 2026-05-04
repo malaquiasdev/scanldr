@@ -37,11 +37,7 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
 
   // Resolve path once — either from opts or XDG.
   // resolveAuthPath requires a logger; pass through.
-  const path =
-    opts.authPath ??
-    resolveAuthPath({
-      logger,
-    });
+  const path = opts.authPath ?? resolveAuthPath({});
 
   // Read auth.json eagerly — fail fast if missing or corrupt.
   let raw: string;
@@ -81,9 +77,14 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
   );
 
   // Build cookie header string once — session is immutable for process lifetime.
-  const cookieHeader = Object.entries(session.cookies)
-    .map(([k, v]) => `${k}=${v}`)
-    .join("; ");
+  // cookieHeader is undefined (not "") when cookies is empty so the header is
+  // omitted entirely from the request — sending "Cookie: " confuses some servers.
+  const cookieHeader =
+    Object.keys(session.cookies).length > 0
+      ? Object.entries(session.cookies)
+          .map(([k, v]) => `${k}=${v}`)
+          .join("; ")
+      : undefined;
 
   const userAgent = session.userAgent;
 
@@ -114,18 +115,18 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
     }
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      // Throttle is per-fetch (per attempt), not per dispatch.
+      // Retries already exceed the 1s window via exponential backoff, so
+      // marking each attempt keeps the throttle conservative and correct.
       lastRequestAt = now();
 
       let res: Response | undefined;
       let fetchError: unknown;
 
       try {
-        res = await fetchFn(url, {
-          headers: {
-            cookie: cookieHeader,
-            "user-agent": userAgent,
-          },
-        });
+        const headers: Record<string, string> = { "user-agent": userAgent };
+        if (cookieHeader !== undefined) headers.cookie = cookieHeader;
+        res = await fetchFn(url, { headers });
       } catch (err) {
         fetchError = err;
       }

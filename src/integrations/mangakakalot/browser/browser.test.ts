@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AuthError, pageHasRealContent, pollForClearance, resolveAuthPath } from "./index.ts";
-import type { CookieLike, RunAuthOptions } from "./types.ts";
+import { resolveAuthPath } from "@plugins/auth-path/index.ts";
+import { AuthError, pageHasRealContent, pollForClearance } from "./index.ts";
+import type { CookieLike } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // pageHasRealContent — CF challenge detection
@@ -64,24 +65,14 @@ describe("AuthError", () => {
 // resolveAuthPath — XDG layout
 // ---------------------------------------------------------------------------
 
-const noopLogger: RunAuthOptions["logger"] = {
-  error: () => {},
-  warn: () => {},
-  info: () => {},
-};
-
 describe("resolveAuthPath", () => {
   test("uses explicit dataHome when provided", () => {
-    const p = resolveAuthPath({
-      logger: noopLogger,
-      dataHome: "/tmp/explicit-data",
-    });
+    const p = resolveAuthPath({ dataHome: "/tmp/explicit-data" });
     expect(p).toBe(join("/tmp/explicit-data", "scanldr", "auth.json"));
   });
 
   test("dataHome wins over $XDG_DATA_HOME and home", () => {
     const p = resolveAuthPath({
-      logger: noopLogger,
       dataHome: "/tmp/explicit",
       env: { XDG_DATA_HOME: "/tmp/xdg" } as NodeJS.ProcessEnv,
       home: "/tmp/home",
@@ -91,7 +82,6 @@ describe("resolveAuthPath", () => {
 
   test("falls back to $XDG_DATA_HOME when set", () => {
     const p = resolveAuthPath({
-      logger: noopLogger,
       env: { XDG_DATA_HOME: "/tmp/xdg" } as NodeJS.ProcessEnv,
       home: "/tmp/ignored-home",
     });
@@ -100,7 +90,6 @@ describe("resolveAuthPath", () => {
 
   test("falls back to home/.local/share when XDG_DATA_HOME is empty", () => {
     const p = resolveAuthPath({
-      logger: noopLogger,
       env: { XDG_DATA_HOME: "" } as NodeJS.ProcessEnv,
       home: "/tmp/home",
     });
@@ -109,7 +98,6 @@ describe("resolveAuthPath", () => {
 
   test("falls back to home/.local/share when XDG_DATA_HOME is unset", () => {
     const p = resolveAuthPath({
-      logger: noopLogger,
       env: {} as NodeJS.ProcessEnv,
       home: "/tmp/home",
     });
@@ -117,19 +105,12 @@ describe("resolveAuthPath", () => {
   });
 
   test("never returns a path under cwd (security P2 — was previously CWD/.scanldr-auth.json)", () => {
-    const p = resolveAuthPath({
-      logger: noopLogger,
-      env: {} as NodeJS.ProcessEnv,
-      home: "/tmp/home",
-    });
+    const p = resolveAuthPath({ env: {} as NodeJS.ProcessEnv, home: "/tmp/home" });
     expect(p.startsWith(process.cwd())).toBe(false);
   });
 
   test("filename is auth.json (not the legacy .scanldr-auth.json)", () => {
-    const p = resolveAuthPath({
-      logger: noopLogger,
-      dataHome: "/tmp/d",
-    });
+    const p = resolveAuthPath({ dataHome: "/tmp/d" });
     expect(p.endsWith("/scanldr/auth.json")).toBe(true);
     expect(p.includes(".scanldr-auth.json")).toBe(false);
   });
@@ -234,7 +215,7 @@ describe("session persistence (mode 0600 + atomic write)", () => {
 
   test("writeFile with mode 0o600 produces a 0600 file", async () => {
     const { mkdir, writeFile } = await import("node:fs/promises");
-    const path = resolveAuthPath({ logger: noopLogger, dataHome: tmpDir });
+    const path = resolveAuthPath({ dataHome: tmpDir });
     const dir = path.substring(0, path.lastIndexOf("/"));
 
     await mkdir(dir, { recursive: true, mode: 0o700 });

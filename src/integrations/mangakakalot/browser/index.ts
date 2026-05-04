@@ -13,8 +13,6 @@ import type { AuthSession, PollForClearanceOptions, RunAuthOptions } from "./typ
 
 export { AuthError } from "./types.ts";
 export type { AuthSession, PollForClearanceOptions, RunAuthOptions } from "./types.ts";
-// Re-export so existing callers importing resolveAuthPath from here continue to work.
-export { resolveAuthPath } from "@plugins/auth-path/index.ts";
 
 const SITE_ROOT = "https://mangakakalot.gg";
 const CF_COOKIE_TIMEOUT_MS = 120_000;
