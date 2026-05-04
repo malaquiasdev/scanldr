@@ -660,3 +660,84 @@ test("empty cookies {} — get omits Cookie header, sends User-Agent, no throw",
   // No warn or error emitted.
   expect(calls.filter((c) => c.level === "warn" || c.level === "error")).toHaveLength(0);
 });
+
+// ---------------------------------------------------------------------------
+// Test 18: Optional extra headers are merged; cookie/user-agent cannot be overridden
+// ---------------------------------------------------------------------------
+
+test("optional extra headers are merged; cookie and user-agent cannot be overridden by caller", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  const capturedHeaders: Record<string, string> = {};
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> = async (
+    _url,
+    init,
+  ) => {
+    Object.assign(capturedHeaders, init?.headers as Record<string, string>);
+    return makeFakeResponse(200);
+  };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  await client.get("https://example.com/page", {
+    referer: "https://www.mangakakalot.gg/",
+    accept: "application/json",
+    // Attempt to override auth headers — should be silently ignored.
+    cookie: "attacker=evil",
+    "user-agent": "AttackerUA",
+  });
+
+  // Extra headers were merged.
+  expect(capturedHeaders.referer).toBe("https://www.mangakakalot.gg/");
+  expect(capturedHeaders.accept).toBe("application/json");
+
+  // Auth headers were NOT overridden.
+  const cookieParts = new Set((capturedHeaders.cookie ?? "").split("; "));
+  expect(cookieParts).toContain("cf_clearance=abc123");
+  expect(cookieParts).not.toContain("attacker=evil");
+  expect(capturedHeaders["user-agent"]).toBe(VALID_SESSION.userAgent);
+  expect(capturedHeaders["user-agent"]).not.toBe("AttackerUA");
+});
+
+// Test 18b: Capitalized header key (Cookie:) is also rejected — k.toLowerCase() guard
+// ---------------------------------------------------------------------------
+
+test("capitalized Cookie header from caller does not override auto-built cookie", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  const capturedHeaders: Record<string, string> = {};
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> = async (
+    _url,
+    init,
+  ) => {
+    Object.assign(capturedHeaders, init?.headers as Record<string, string>);
+    return makeFakeResponse(200);
+  };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  await client.get("https://example.com/page", {
+    // Capitalized key — the toLowerCase() guard in service.ts must block this too.
+    Cookie: "attacker=evil",
+  });
+
+  // Auto-built cookie must still be present.
+  const cookieParts = new Set((capturedHeaders.cookie ?? "").split("; "));
+  expect(cookieParts).toContain("cf_clearance=abc123");
+  // The attacker's value must not appear in the outgoing cookie header.
+  expect(cookieParts).not.toContain("attacker=evil");
+});

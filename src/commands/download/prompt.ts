@@ -1,17 +1,8 @@
 import { createInterface } from "node:readline";
 import { CliError } from "@plugins/errors/index.ts";
-import type { Logger } from "@plugins/logger/index.ts";
+import type { NumericChoiceOptions } from "./types.ts";
 
-export interface NumericChoiceOptions {
-  /** The header line shown above the numbered list. */
-  header: string;
-  /** The items to enumerate. */
-  items: ReadonlyArray<{ display: string }>;
-  /** Logger for warn-before-throw on invalid input. */
-  logger: Logger;
-  /** Optional context label for the warn payload (e.g. "download.candidate"). */
-  event?: string;
-}
+export type { NumericChoiceOptions } from "./types.ts";
 
 /**
  * Interactive numeric picker. Reads from process.stdin / writes to process.stderr.

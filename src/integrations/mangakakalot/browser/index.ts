@@ -14,7 +14,7 @@ import type { AuthSession, PollForClearanceOptions, RunAuthOptions } from "./typ
 export { AuthError } from "./types.ts";
 export type { AuthSession, PollForClearanceOptions, RunAuthOptions } from "./types.ts";
 
-const SITE_ROOT = "https://mangakakalot.gg";
+const SITE_ROOT = "https://www.mangakakalot.gg";
 const CF_COOKIE_TIMEOUT_MS = 120_000;
 const CF_COOKIE_INTERVAL_MS = 1_000;
 const VERIFY_TIMEOUT_MS = 15_000;

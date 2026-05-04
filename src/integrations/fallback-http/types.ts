@@ -35,5 +35,13 @@ export interface FallbackHttpOptions {
 }
 
 export interface FallbackHttpClient {
-  get(url: string): Promise<Response>;
+  /**
+   * GET request with cookie replay + UA from the auth session.
+   *
+   * @param url Target URL.
+   * @param headers Optional extra headers (e.g. `referer` for CDN-specific endpoints).
+   *   Keys are lowercased before merge. `cookie` and `user-agent` are always
+   *   re-enforced from the auth session and cannot be overridden by the caller.
+   */
+  get(url: string, headers?: Record<string, string>): Promise<Response>;
 }

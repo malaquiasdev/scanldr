@@ -131,7 +131,8 @@ function makeMangakakalotFetcher(
       { event: "mangakakalot.image_fetch", context: "mangakakalot", url: ref.url },
       "fetching image from mangakakalot",
     );
-    const res = await http.get(ref.url);
+    // 2xstorage.com CDN requires a Referer header to return 200; omitting it yields 403.
+    const res = await http.get(ref.url, { referer: "https://www.mangakakalot.gg/" });
     if (!res.ok) {
       throw new Error(`mangakakalot image fetch failed: HTTP ${res.status} for ${ref.url}`);
     }
