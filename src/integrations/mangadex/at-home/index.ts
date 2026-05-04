@@ -91,7 +91,7 @@ async function sendReport(
 }
 
 /**
- * Factory returning an imageFetcher compatible with DownloadVolumeInput.imageFetcher.
+ * Factory returning an imageFetcher compatible with ChapterInput.imageFetcher.
  * chapterId is required to re-fetch a fresh CDN URL on each retry.
  */
 export function mangadexImageFetcher(
