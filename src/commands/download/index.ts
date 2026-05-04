@@ -19,7 +19,6 @@ import type { DownloadArgs, DownloadContext } from "./types.ts";
 
 export type { DownloadArgs, DownloadContext } from "./types.ts";
 export { CliError } from "@plugins/errors/index.ts";
-export { toSlug } from "./slug.ts";
 
 /** Prompt user to pick one from a list of candidates with titles */
 function promptCandidatePick(candidates: { title: string }[]): Promise<number> {
@@ -103,17 +102,20 @@ async function buildChapterInputs(
   return inputs;
 }
 
+interface ProcessVolumeArgs {
+  volumeToken: string;
+  volChapters: ChapterRef[];
+  chosen: MangaCandidate;
+  slug: string;
+  language: string;
+  args: DownloadArgs;
+  ctx: DownloadContext;
+  http: MangaDexHttpClient;
+}
+
 /** Per-volume pipeline: history check → external check → build inputs → download → record. */
-async function processVolume(
-  volumeToken: string,
-  volChapters: ChapterRef[],
-  chosen: MangaCandidate,
-  slug: string,
-  language: string,
-  args: DownloadArgs,
-  ctx: DownloadContext,
-  http: MangaDexHttpClient,
-): Promise<void> {
+async function processVolume(input: ProcessVolumeArgs): Promise<void> {
+  const { volumeToken, volChapters, chosen, slug, language, args, ctx, http } = input;
   const { logger, db } = ctx;
 
   // history check
@@ -234,7 +236,6 @@ export async function runDownload(
 ): Promise<void> {
   const { logger, config } = ctx;
 
-  // 1. Parse range
   const { values: requestedVolumes } = parseRangeSet(args.volume);
 
   if (requestedVolumes.has("none")) {
@@ -244,15 +245,13 @@ export async function runDownload(
     );
   }
 
-  // 2. Resolve title → manga ID
   const chosen = await resolveTitle(client, args.manga, args.nonTty, logger);
 
   const preferred = config.preferred_languages;
 
-  // 3. Aggregate volumes (early discovery)
+  // aggregateVolumes primes the MangaDex aggregate cache used by feedChapters
   await client.aggregateVolumes(chosen.id, preferred);
 
-  // 4. Fetch chapters and resolve language
   const feedChapters = await client.feedChapters(chosen.id, preferred);
   const availableLanguages = [...new Set(feedChapters.map((c) => c.translatedLanguage))];
 
@@ -263,7 +262,6 @@ export async function runDownload(
     logger,
   });
 
-  // 5. Group chapters by volume label
   const chaptersInLang = feedChapters.filter((c) => c.translatedLanguage === language);
   const volumeToChapters = new Map<string, typeof chaptersInLang>();
   for (const ch of chaptersInLang) {
@@ -275,7 +273,6 @@ export async function runDownload(
 
   const slug = toSlug(chosen.title, logger);
 
-  // 6. Process each requested volume
   for (const volumeToken of requestedVolumes) {
     const volChapters = volumeToChapters.get(volumeToken);
 
@@ -287,6 +284,6 @@ export async function runDownload(
       continue;
     }
 
-    await processVolume(volumeToken, volChapters, chosen, slug, language, args, ctx, http);
+    await processVolume({ volumeToken, volChapters, chosen, slug, language, args, ctx, http });
   }
 }

@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterAll, describe, expect, mock, test } from "bun:test";
 import { CliError } from "@plugins/errors/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { resolveLanguage } from "./language.ts";
@@ -84,62 +84,66 @@ describe("resolveLanguage", () => {
     }
   });
 
-  test("TTY: user picks valid index → returns matching language", async () => {
-    mock.module("node:readline", () => ({
-      createInterface: () => ({
-        once: (event: string, cb: (line: string) => void) => {
-          if (event === "line") cb("2");
-        },
-        close: () => {},
-      }),
-    }));
+  describe("TTY readline mock", () => {
+    afterAll(() => mock.restore());
 
-    const result = await resolveLanguage({
-      preferred: ["ja"],
-      available: ["en", "pt-BR"],
-      nonTty: false,
-      logger: noopLogger,
+    test("user picks valid index → returns matching language", async () => {
+      mock.module("node:readline", () => ({
+        createInterface: () => ({
+          once: (event: string, cb: (line: string) => void) => {
+            if (event === "line") cb("2");
+          },
+          close: () => {},
+        }),
+      }));
+
+      const result = await resolveLanguage({
+        preferred: ["ja"],
+        available: ["en", "pt-BR"],
+        nonTty: false,
+        logger: noopLogger,
+      });
+      expect(result).toBe("pt-BR");
     });
-    expect(result).toBe("pt-BR");
-  });
 
-  test("TTY: user enters out-of-range index → throws CliError", async () => {
-    mock.module("node:readline", () => ({
-      createInterface: () => ({
-        once: (event: string, cb: (line: string) => void) => {
-          if (event === "line") cb("99");
-        },
-        close: () => {},
-      }),
-    }));
+    test("user enters out-of-range index → throws CliError", async () => {
+      mock.module("node:readline", () => ({
+        createInterface: () => ({
+          once: (event: string, cb: (line: string) => void) => {
+            if (event === "line") cb("99");
+          },
+          close: () => {},
+        }),
+      }));
 
-    await expect(
-      resolveLanguage({
-        preferred: ["ja"],
-        available: ["en", "pt-BR"],
-        nonTty: false,
-        logger: noopLogger,
-      }),
-    ).rejects.toBeInstanceOf(CliError);
-  });
+      await expect(
+        resolveLanguage({
+          preferred: ["ja"],
+          available: ["en", "pt-BR"],
+          nonTty: false,
+          logger: noopLogger,
+        }),
+      ).rejects.toBeInstanceOf(CliError);
+    });
 
-  test("TTY: user enters non-numeric input → throws CliError", async () => {
-    mock.module("node:readline", () => ({
-      createInterface: () => ({
-        once: (event: string, cb: (line: string) => void) => {
-          if (event === "line") cb("abc");
-        },
-        close: () => {},
-      }),
-    }));
+    test("user enters non-numeric input → throws CliError", async () => {
+      mock.module("node:readline", () => ({
+        createInterface: () => ({
+          once: (event: string, cb: (line: string) => void) => {
+            if (event === "line") cb("abc");
+          },
+          close: () => {},
+        }),
+      }));
 
-    await expect(
-      resolveLanguage({
-        preferred: ["ja"],
-        available: ["en", "pt-BR"],
-        nonTty: false,
-        logger: noopLogger,
-      }),
-    ).rejects.toBeInstanceOf(CliError);
+      await expect(
+        resolveLanguage({
+          preferred: ["ja"],
+          available: ["en", "pt-BR"],
+          nonTty: false,
+          logger: noopLogger,
+        }),
+      ).rejects.toBeInstanceOf(CliError);
+    });
   });
 });
