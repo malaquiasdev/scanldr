@@ -5,6 +5,17 @@ import type { Config } from "@plugins/config/index.ts";
 import type { Db } from "@plugins/db/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 
+export interface NumericChoiceOptions {
+  /** The header line shown above the numbered list. */
+  header: string;
+  /** The items to enumerate. */
+  items: ReadonlyArray<{ display: string }>;
+  /** Logger for warn-before-throw on invalid input. */
+  logger: Logger;
+  /** Optional context label for the warn payload (e.g. "download.candidate"). */
+  event?: string;
+}
+
 export interface ParsedRange {
   /** Resolved tokens. Numeric tokens stored as strings; special token "none". */
   values: Set<string>;

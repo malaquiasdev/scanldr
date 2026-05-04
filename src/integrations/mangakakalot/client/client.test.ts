@@ -25,15 +25,18 @@ function makeLogger(): Logger {
   } as unknown as Logger;
 }
 
-function makeHttp(responses: Record<string, { body: string; type?: string }>): FallbackHttpClient {
+function makeHttp(
+  responses: Record<string, { body?: string; type?: string; status?: number }>,
+): FallbackHttpClient {
   return {
     get: mock(async (url: string) => {
       // strip query params for matching since tests don't include offset
       const baseUrl = url.split("?")[0] ?? url;
       const entry = responses[url] ?? responses[baseUrl];
       if (entry === undefined) throw new Error(`Unexpected URL in test: ${url}`);
-      return new Response(entry.body, {
-        status: 200,
+      const status = entry.status ?? 200;
+      return new Response(entry.body ?? "", {
+        status,
         headers: { "content-type": entry.type ?? "text/html" },
       });
     }),
@@ -443,6 +446,23 @@ describe("createMangakakalotClient", () => {
       };
       const client = createMangakakalotClient({ http, logger: makeLogger() });
       await expect(client.getChapterList("naruto")).rejects.toBeInstanceOf(CloudflareError);
+    });
+
+    it("non-200 from chapters API logs warn and throws MangakakalotParseError", async () => {
+      const http = makeHttp({
+        "https://www.mangakakalot.gg/api/manga/dandadan/chapters": { status: 503 },
+      });
+      const logger = makeLogger();
+      const client = createMangakakalotClient({ http, logger });
+
+      await expect(client.getChapterList("dandadan")).rejects.toBeInstanceOf(
+        MangakakalotParseError,
+      );
+      // @ts-ignore
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ event: "mangakakalot.chapters_api_error", status: 503 }),
+        expect.any(String),
+      );
     });
 
     it("throws MangakakalotParseError when API returns invalid JSON shape", async () => {

@@ -6,7 +6,7 @@ import { downloadBundle } from "@modules/downloader/index.ts";
 import type { ChapterInput, ImageRef } from "@modules/downloader/types.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { unzipSync } from "fflate";
-import { padBundleNumber } from "./helpers.ts";
+import { detectExtFromBytes, padBundleNumber } from "./helpers.ts";
 
 const noopLogger: Logger = {
   error: (_f, _m) => {},
@@ -36,6 +36,36 @@ function makeJpeg(seed: number, size = 64): Uint8Array {
   buf[0] = 0xff;
   buf[1] = 0xd8;
   buf.fill(seed & 0xff, 2);
+  return buf;
+}
+
+function makeWebP(size = 32): Uint8Array {
+  const buf = new Uint8Array(Math.max(size, 12));
+  // RIFF at 0-3
+  buf[0] = 0x52;
+  buf[1] = 0x49;
+  buf[2] = 0x46;
+  buf[3] = 0x46;
+  // file size at 4-7 (arbitrary)
+  buf[4] = 0x00;
+  buf[5] = 0x00;
+  buf[6] = 0x00;
+  buf[7] = 0x00;
+  // WEBP at 8-11
+  buf[8] = 0x57;
+  buf[9] = 0x45;
+  buf[10] = 0x42;
+  buf[11] = 0x50;
+  return buf;
+}
+
+function makeGif(size = 16): Uint8Array {
+  const buf = new Uint8Array(Math.max(size, 4));
+  // GIF8
+  buf[0] = 0x47;
+  buf[1] = 0x49;
+  buf[2] = 0x46;
+  buf[3] = 0x38;
   return buf;
 }
 
@@ -446,5 +476,67 @@ describe("downloadBundle — extension detection from bytes", () => {
     for (const name of names) {
       expect(name).toMatch(/\.jpg$/);
     }
+  });
+
+  test("detects WebP from RIFF+WEBP magic bytes", async () => {
+    const result = await downloadBundle({
+      outDir,
+      format: "cbz",
+      slug: "ext-webp",
+      kind: "volume",
+      bundleNumber: "1",
+      chapters: [makeChapter("c1", 1, 2, async (_ref) => makeWebP())],
+      imageConcurrency: 1,
+      delayMs: 0,
+      dryRun: false,
+      logger: noopLogger,
+    });
+
+    const raw = await readFile(result.outputPath);
+    const entries = unzipSync(raw);
+    const names = Object.keys(entries);
+    for (const name of names) {
+      expect(name).toMatch(/\.webp$/);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectExtFromBytes — unit tests
+// ---------------------------------------------------------------------------
+
+describe("detectExtFromBytes", () => {
+  test("returns .png for PNG magic bytes", () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00]);
+    expect(detectExtFromBytes(bytes)).toBe(".png");
+  });
+
+  test("returns .jpg for JPEG magic bytes (FF D8 FF)", () => {
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00]);
+    expect(detectExtFromBytes(bytes)).toBe(".jpg");
+  });
+
+  test("returns .webp for RIFF+WEBP magic bytes", () => {
+    expect(detectExtFromBytes(makeWebP())).toBe(".webp");
+  });
+
+  test("returns null for RIFF bytes without WEBP marker (insufficient length)", () => {
+    // Only 11 bytes — can't check bytes[8..11] fully
+    const bytes = new Uint8Array([
+      0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42,
+    ]);
+    expect(detectExtFromBytes(bytes)).toBe(null);
+  });
+
+  test("returns .gif for GIF8 magic bytes", () => {
+    expect(detectExtFromBytes(makeGif())).toBe(".gif");
+  });
+
+  test("returns null for fewer than 4 bytes", () => {
+    expect(detectExtFromBytes(new Uint8Array([0x89, 0x50]))).toBe(null);
+  });
+
+  test("returns null for random bytes", () => {
+    expect(detectExtFromBytes(new Uint8Array([0x00, 0x01, 0x02, 0x03]))).toBe(null);
   });
 });

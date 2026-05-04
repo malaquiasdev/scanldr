@@ -4,7 +4,11 @@
 import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 import type { ImageRef } from "@modules/downloader/types.ts";
 import * as cheerio from "cheerio";
-import { MangakakalotParseError } from "./types.ts";
+import {
+  MangakakalotParseError,
+  type MkChapterApiItem,
+  type MkChapterApiResponse,
+} from "./types.ts";
 
 const SELECTORS = {
   // Search results page
@@ -83,30 +87,6 @@ export function parseSearchResults(html: string, url: string): MangaCandidate[] 
   });
 
   return results;
-}
-
-// ---------------------------------------------------------------------------
-// JSON API types (chapter list endpoint)
-// ---------------------------------------------------------------------------
-
-interface MkChapterApiItem {
-  chapter_name: string;
-  chapter_slug: string;
-  chapter_num: number;
-  updated_at: string;
-  view: number;
-}
-
-interface MkChapterApiPagination {
-  total: number;
-  limit: number;
-  offset: number;
-  has_more: boolean;
-}
-
-interface MkChapterApiResponse {
-  success: boolean;
-  data: { chapters: MkChapterApiItem[]; pagination?: MkChapterApiPagination };
 }
 
 function isMkChapterApiItem(v: unknown): v is MkChapterApiItem {
