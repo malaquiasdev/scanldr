@@ -4,7 +4,6 @@
 
 import { createInterface } from "node:readline";
 import type { ChapterRef, VolumeRef } from "@integrations/_shared/manga.ts";
-import { MissingAuthError } from "@integrations/fallback-http/index.ts";
 import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
 import type { createMangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
 import { downloadBundle } from "@modules/downloader/index.ts";
@@ -28,6 +27,10 @@ export type {
   FallbackSiteOption,
   MangaDexResolveResult,
 } from "./fallback-types.ts";
+
+// mangakakalot is EN-only by design (ADR-002 per-site strategy).
+// History rows from this source always carry language: "en".
+const MANGAKAKALOT_LANGUAGE = "en";
 
 // ---------------------------------------------------------------------------
 // isFallbackEligible
@@ -283,23 +286,10 @@ export async function runFallbackDownload(opts: {
     ? await _promptFallbackSite(sites)
     : await promptFallbackSite(sites, args.nonTty, logger);
 
-  // Bootstrap fallback HTTP + mangakakalot client (createFallbackHttp is async — reads auth.json)
-  let fallbackHttp: FallbackHttpClient;
-  try {
-    fallbackHttp = await mkFallbackHttp({ logger });
-  } catch (err) {
-    if (err instanceof MissingAuthError) {
-      logger.warn(
-        { event: "download.fallback_missing_auth", context: "download", err },
-        "missing auth.json for fallback site",
-      );
-      throw new CliError(
-        `${err.message} Run \`scanldr auth\` to capture a session before using fallback sites.`,
-        2,
-      );
-    }
-    throw err;
-  }
+  // Bootstrap fallback HTTP + mangakakalot client (createFallbackHttp is async — reads auth.json).
+  // MissingAuthError and CloudflareError propagate as-is so the entry point can handle them
+  // with their typed messages (the user needs to see the original message).
+  const fallbackHttp: FallbackHttpClient = await mkFallbackHttp({ logger });
 
   const mkClient = mkClientFactory({ http: fallbackHttp, logger });
 
@@ -398,7 +388,7 @@ async function processFallbackBundle(opts: {
     const fullyDownloaded = isVolumeFullyDownloaded(db, {
       mangaId,
       volume: volumeForHistory,
-      language: "en",
+      language: MANGAKAKALOT_LANGUAGE,
       expectedChapterIds: chapterIdSet,
     });
 
@@ -474,7 +464,7 @@ async function processFallbackBundle(opts: {
       chapterId: ch.id,
       chapterNum: ch.chapter ?? "0",
       source: site,
-      language: "en",
+      language: MANGAKAKALOT_LANGUAGE,
       downloadedAt: Date.now(),
     }));
     recordDownloadedChapters(db, rows);

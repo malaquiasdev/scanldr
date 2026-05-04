@@ -455,21 +455,12 @@ export async function runDownload(
   }
 
   // Try MangaDex pipeline (soft failure on title-not-found, language-not-matched)
-  let mangadexResolve: MangaDexResolveResult | null = null;
-  try {
-    mangadexResolve = await tryMangaDexPipeline(args, ctx, client);
-  } catch (err) {
-    // "No manga found" from resolveTitleToId is a soft failure → fallback
-    if (err instanceof Error && err.message.startsWith("No manga found")) {
-      logger.info(
-        { event: "download.mangadex_title_not_found", context: "download", title: args.manga },
-        "title not found on MangaDex; attempting fallback",
-      );
-      mangadexResolve = null;
-    } else {
-      throw err;
-    }
-  }
+  // tryMangaDexPipeline already converts "No manga found" to null internally.
+  const mangadexResolve: MangaDexResolveResult | null = await tryMangaDexPipeline(
+    args,
+    ctx,
+    client,
+  );
 
   const eligibility = isFallbackEligible(mangadexResolve);
 

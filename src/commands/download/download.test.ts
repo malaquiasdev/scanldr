@@ -1018,6 +1018,16 @@ describe("fallback — title not on MangaDex, mangakakalot has it", () => {
     const cbzPath = join(tmpDir, "dandadan", "dandadan-chapter-001.cbz");
     expect(await Bun.file(cbzPath).exists()).toBe(true);
 
+    // Verify the .cbz contents came from mangakakalot (MK_PNG_BYTES sentinel)
+    const raw = await Bun.file(cbzPath).arrayBuffer();
+    const entries = unzipSync(new Uint8Array(raw));
+    const entryNames = Object.keys(entries);
+    expect(entryNames).toHaveLength(1);
+    // Filename follows zero-pad pattern 0001.<ext>
+    expect(entryNames[0]).toMatch(/^0001\.\w+$/);
+    // Bytes match the sentinel MK_PNG_BYTES from the mock fetcher
+    expect(entries[entryNames[0] as string]).toEqual(MK_PNG_BYTES);
+
     const history = listHistory(db);
     expect(history.length).toBe(1);
     expect(history[0]).toMatchObject({

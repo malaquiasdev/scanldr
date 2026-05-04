@@ -1,9 +1,18 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, mock, test } from "bun:test";
 import type { ChapterRef, VolumeRef } from "@integrations/_shared/manga.ts";
+import { MissingAuthError } from "@integrations/fallback-http/index.ts";
+import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
+import type { MangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
+import { openDb, runMigrations } from "@plugins/db/index.ts";
 import { CliError } from "@plugins/errors/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import type { FallbackSiteOption, MangaDexResolveResult } from "./fallback-types.ts";
-import { buildFallbackBundles, isFallbackEligible, promptFallbackSite } from "./fallback.ts";
+import {
+  buildFallbackBundles,
+  isFallbackEligible,
+  promptFallbackSite,
+  runFallbackDownload,
+} from "./fallback.ts";
 import type { DownloadArgs } from "./types.ts";
 
 const noopLogger: Logger = {
@@ -289,5 +298,229 @@ describe("buildFallbackBundles — chapter mode", () => {
 
     expect(bundles).toHaveLength(0);
     expect(warnEvents).toContain("download.fallback_chapter_missing");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildFallbackBundles — total-zero-match path (P2 #1)
+// ---------------------------------------------------------------------------
+
+describe("buildFallbackBundles — total zero match for volume", () => {
+  test("returns [] and warns for each missing chapter when mangakakalot has none of the MangaDex chapters", () => {
+    const mangadexVolumes = [makeVolumeRef("3", ["md-ch18", "md-ch19", "md-ch20", "md-ch21"])];
+    const mangadexChapters: ChapterRef[] = [
+      makeChapterRef({ id: "md-ch18", chapter: "18", volume: "3" }),
+      makeChapterRef({ id: "md-ch19", chapter: "19", volume: "3" }),
+      makeChapterRef({ id: "md-ch20", chapter: "20", volume: "3" }),
+      makeChapterRef({ id: "md-ch21", chapter: "21", volume: "3" }),
+    ];
+    // mangakakalot has NONE of ch18-21
+    const mkChapters: ChapterRef[] = [makeChapterRef({ id: "mk-99", chapter: "99", volume: null })];
+
+    const warnEvents: Array<{ event: string; missing?: unknown }> = [];
+    const spyLogger: Logger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          const o = obj as Record<string, unknown>;
+          warnEvents.push({ event: o.event as string, missing: o.missing });
+        }
+      },
+      error: () => {},
+    };
+
+    const bundles = buildFallbackBundles({
+      args: baseArgs({ volume: "3" }),
+      requestedTokens: new Set(["3"]),
+      mangadexVolumes,
+      mangadexChapters,
+      mkChapters,
+      logger: spyLogger,
+    });
+
+    expect(bundles).toHaveLength(0);
+    // The warn fires once with all missing chapters listed (partial-match path)
+    const missingWarn = warnEvents.find((e) => e.event === "download.fallback_chapters_missing");
+    expect(missingWarn).toBeDefined();
+    expect(missingWarn?.missing).toEqual(expect.arrayContaining(["18", "19", "20", "21"]));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runFallbackDownload — MissingAuthError propagation (P2 #2)
+// ---------------------------------------------------------------------------
+
+describe("runFallbackDownload — MissingAuthError propagates unwrapped", () => {
+  test("MissingAuthError from createFallbackHttp is not wrapped as CliError", async () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+
+    const authError = new MissingAuthError("/nonexistent/auth.json");
+
+    const err = await runFallbackDownload({
+      args: {
+        manga: "Test",
+        volume: undefined,
+        chapter: "1",
+        format: "cbz",
+        outDir: "/tmp",
+        quality: "data",
+        concurrency: 1,
+        delayMs: 0,
+        force: false,
+        noTrack: false,
+        dryRun: false,
+        nonTty: false,
+      },
+      ctx: {
+        logger: noopLogger,
+        config: {
+          preferred_languages: ["en"],
+          download_quality: "data",
+          default_format: "cbz",
+          default_out: "/tmp",
+          image_concurrency: 1,
+          chapter_delay_ms: 0,
+          db_path: ":memory:",
+        },
+        db,
+      },
+      mangadexResolve: null,
+      createFallbackHttp: async () => {
+        throw authError;
+      },
+      createMangakakalotClient: () => {
+        throw new Error("should not be called");
+      },
+      // biome-ignore lint/style/noNonNullAssertion: test stub
+      _promptFallbackSite: async (sites) => sites[0]!,
+    }).catch((e) => e);
+
+    db.close();
+
+    expect(err).toBeInstanceOf(MissingAuthError);
+    expect(err).not.toBeInstanceOf(CliError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runFallbackDownload — search returns zero results (P3 #2)
+// ---------------------------------------------------------------------------
+
+describe("runFallbackDownload — searchManga returns empty", () => {
+  test("throws CliError with title not found message when search returns []", async () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+
+    const fakeFallbackHttp: FallbackHttpClient = {
+      get: async () => new Response(new Uint8Array([]), { status: 200 }),
+    };
+
+    const mkClientNoResults: MangakakalotClient = {
+      searchManga: async () => [],
+      getChapterList: async () => [],
+      getChapterImages: async () => [],
+    };
+
+    const warnEvents: string[] = [];
+    const spyLogger: Logger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          warnEvents.push((obj as Record<string, unknown>).event as string);
+        }
+      },
+      error: () => {},
+    };
+
+    const err = await runFallbackDownload({
+      args: {
+        manga: "Nonexistent Manga",
+        volume: undefined,
+        chapter: "1",
+        format: "cbz",
+        outDir: "/tmp",
+        quality: "data",
+        concurrency: 1,
+        delayMs: 0,
+        force: false,
+        noTrack: false,
+        dryRun: false,
+        nonTty: false,
+      },
+      ctx: {
+        logger: spyLogger,
+        config: {
+          preferred_languages: ["en"],
+          download_quality: "data",
+          default_format: "cbz",
+          default_out: "/tmp",
+          image_concurrency: 1,
+          chapter_delay_ms: 0,
+          db_path: ":memory:",
+        },
+        db,
+      },
+      mangadexResolve: null,
+      createFallbackHttp: async () => fakeFallbackHttp,
+      createMangakakalotClient: () => mkClientNoResults,
+      // biome-ignore lint/style/noNonNullAssertion: test stub
+      _promptFallbackSite: async (sites) => sites[0]!,
+    }).catch((e) => e);
+
+    db.close();
+
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).message).toContain("Nonexistent Manga");
+    expect(warnEvents).toContain("download.fallback_not_found");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// promptFallbackSite — TTY readline mock (P3 #3)
+// ---------------------------------------------------------------------------
+
+describe("promptFallbackSite — TTY readline mock", () => {
+  afterAll(() => mock.restore());
+
+  test("valid input '1' returns the single site", async () => {
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (event: string, cb: (line: string) => void) => {
+          if (event === "line") cb("1");
+        },
+        close: () => {},
+      }),
+    }));
+
+    const result = await promptFallbackSite(SITES, false, noopLogger);
+    // biome-ignore lint/style/noNonNullAssertion: SITES[0] always defined
+    expect(result).toEqual(SITES[0]!);
+  });
+
+  test("out-of-range input '99' → throws CliError", async () => {
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (event: string, cb: (line: string) => void) => {
+          if (event === "line") cb("99");
+        },
+        close: () => {},
+      }),
+    }));
+
+    await expect(promptFallbackSite(SITES, false, noopLogger)).rejects.toBeInstanceOf(CliError);
+  });
+
+  test("non-numeric input 'abc' → throws CliError", async () => {
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (event: string, cb: (line: string) => void) => {
+          if (event === "line") cb("abc");
+        },
+        close: () => {},
+      }),
+    }));
+
+    await expect(promptFallbackSite(SITES, false, noopLogger)).rejects.toBeInstanceOf(CliError);
   });
 });

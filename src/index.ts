@@ -2,6 +2,7 @@
 import { parseArgs } from "node:util";
 import { runDownload } from "@commands/download/index.ts";
 import { runList } from "@commands/list/index.ts";
+import { CloudflareError, MissingAuthError } from "@integrations/fallback-http/index.ts";
 import { createMangaDexClient } from "@integrations/mangadex/client/index.ts";
 import { createMangaDexHttp } from "@integrations/mangadex/http/index.ts";
 import { AuthError, runAuth } from "@integrations/mangakakalot/browser/index.ts";
@@ -301,6 +302,14 @@ if (import.meta.main) {
       process.exit(2);
     }
     if (err instanceof AuthError) {
+      process.stderr.write(`${err.message}\n`);
+      process.exit(1);
+    }
+    if (err instanceof MissingAuthError) {
+      process.stderr.write(`${err.message}\n`);
+      process.exit(1);
+    }
+    if (err instanceof CloudflareError) {
       process.stderr.write(`${err.message}\n`);
       process.exit(1);
     }
