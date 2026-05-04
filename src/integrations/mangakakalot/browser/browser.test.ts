@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveAuthPath } from "@plugins/auth-path/index.ts";
-import { AuthError, pageHasRealContent, pollForClearance } from "./index.ts";
+import { AuthError, buildVerifyHeaders, pageHasRealContent, pollForClearance } from "./index.ts";
 import type { CookieLike } from "./types.ts";
 
 // ---------------------------------------------------------------------------
@@ -193,6 +193,39 @@ describe("pollForClearance", () => {
         intervalMs: 10,
       }),
     ).rejects.toBe(browserClosedError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildVerifyHeaders — verify-fetch header construction
+// ---------------------------------------------------------------------------
+
+describe("buildVerifyHeaders", () => {
+  test("omits Cookie header when cookies map is empty", () => {
+    const headers = buildVerifyHeaders({}, "Mozilla/5.0");
+    expect("cookie" in headers).toBe(false);
+    expect(headers["user-agent"]).toBe("Mozilla/5.0");
+  });
+
+  test("includes Cookie header when cookies map is non-empty", () => {
+    const headers = buildVerifyHeaders({ _ga: "GA1.1.123", cf_clearance: "abc" }, "Mozilla/5.0");
+    expect(headers.cookie).toBeDefined();
+    expect(headers.cookie).toContain("_ga=GA1.1.123");
+    expect(headers.cookie).toContain("cf_clearance=abc");
+    expect(headers["user-agent"]).toBe("Mozilla/5.0");
+  });
+
+  test("single cookie produces correct k=v format with no trailing separator", () => {
+    const headers = buildVerifyHeaders({ token: "xyz" }, "ua");
+    expect(headers.cookie).toBe("token=xyz");
+  });
+
+  test("multiple cookies are joined by '; '", () => {
+    const headers = buildVerifyHeaders({ a: "1", b: "2" }, "ua");
+    // Order depends on Object.entries — just verify both are present and separator exists
+    expect(headers.cookie).toMatch(/a=1/);
+    expect(headers.cookie).toMatch(/b=2/);
+    expect(headers.cookie).toContain("; ");
   });
 });
 

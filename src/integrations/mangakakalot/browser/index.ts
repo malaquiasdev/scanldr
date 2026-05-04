@@ -55,6 +55,27 @@ export async function pollForClearance(opts: PollForClearanceOptions): Promise<v
 }
 
 /**
+ * Builds the headers object for the session-verify fetch.
+ * Omits the Cookie header when `cookies` is empty so the request is sent
+ * with no Cookie header at all — matching FallbackHttpClient behaviour (#21).
+ * Exported for unit tests.
+ */
+export function buildVerifyHeaders(
+  cookies: Record<string, string>,
+  userAgent: string,
+): Record<string, string> {
+  const cookieHeader = Object.entries(cookies)
+    .map(([k, v]) => `${k}=${v}`)
+    .join("; ");
+
+  const headers: Record<string, string> = { "user-agent": userAgent };
+  if (cookieHeader.length > 0) {
+    headers.cookie = cookieHeader;
+  }
+  return headers;
+}
+
+/**
  * Runs the interactive auth flow:
  * 1. Opens headful Chromium.
  * 2. Navigates to SITE_ROOT.
@@ -144,22 +165,14 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
       cookies[c.name] = c.value;
     }
 
-    // Guard: if the no-challenge path produced no cookies, the session is invalid.
-    if (Object.keys(cookies).length === 0) {
-      throw new AuthError(
-        "No cookies captured after page load. Session cannot be saved — re-run scanldr auth.",
-      );
-    }
-
     logger.info(
       { event: "auth.challenge_resolved", context: "browser" },
       "Challenge resolved. Verifying session…",
     );
 
     // Verify: plain fetch with captured cookies + UA must return 200.
-    const cookieHeader = Object.entries(cookies)
-      .map(([k, v]) => `${k}=${v}`)
-      .join("; ");
+    // The verify step is the spec'd source of truth (ADR/issue #40); no second gate needed.
+    const verifyHeaders = buildVerifyHeaders(cookies, userAgent);
 
     const controller = new AbortController();
     const verifyTimer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
@@ -167,10 +180,7 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
     let verifyOk = false;
     try {
       const res = await fetch(SITE_ROOT, {
-        headers: {
-          cookie: cookieHeader,
-          "user-agent": userAgent,
-        },
+        headers: verifyHeaders,
         signal: controller.signal,
       });
       verifyOk = res.ok;
@@ -195,6 +205,13 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
       encoding: "utf8",
       mode: 0o600,
     });
+
+    if (Object.keys(cookies).length === 0) {
+      logger.info(
+        { event: "auth.saved_no_cookies", context: "browser" },
+        "Session saved with no cookies — site is public; only User-Agent is being persisted.",
+      );
+    }
 
     logger.info(
       { event: "auth.saved", context: "browser", path: outPath },
