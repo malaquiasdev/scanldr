@@ -4,8 +4,9 @@
 // Per ADR-001: no stealth — cookie replay is the strategy.
 
 import { mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+// resolveAuthPath lives in @plugins/auth-path — shared with fallback-http and future integrations.
+import { resolveAuthPath } from "@plugins/auth-path/index.ts";
 import { chromium } from "playwright";
 import { AuthError } from "./types.ts";
 import type { AuthSession, PollForClearanceOptions, RunAuthOptions } from "./types.ts";
@@ -13,31 +14,10 @@ import type { AuthSession, PollForClearanceOptions, RunAuthOptions } from "./typ
 export { AuthError } from "./types.ts";
 export type { AuthSession, PollForClearanceOptions, RunAuthOptions } from "./types.ts";
 
-const AUTH_FILENAME = "auth.json";
-const APP_DIR = "scanldr";
 const SITE_ROOT = "https://mangakakalot.gg";
 const CF_COOKIE_TIMEOUT_MS = 120_000;
 const CF_COOKIE_INTERVAL_MS = 1_000;
 const VERIFY_TIMEOUT_MS = 15_000;
-
-/**
- * Resolves the absolute path where the auth session is persisted.
- *
- * Order:
- * 1. `opts.dataHome` (test override) → `<dataHome>/scanldr/auth.json`
- * 2. `$XDG_DATA_HOME/scanldr/auth.json`
- * 3. `<home>/.local/share/scanldr/auth.json`
- */
-export function resolveAuthPath(opts: RunAuthOptions): string {
-  const env = opts.env ?? process.env;
-  const home = opts.home ?? homedir();
-  const base =
-    opts.dataHome ??
-    (env.XDG_DATA_HOME && env.XDG_DATA_HOME.length > 0
-      ? env.XDG_DATA_HOME
-      : join(home, ".local", "share"));
-  return join(base, APP_DIR, AUTH_FILENAME);
-}
 
 const SITE_TITLE_MARKER = "MangaKakalot";
 
