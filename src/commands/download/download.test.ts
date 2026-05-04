@@ -597,6 +597,18 @@ describe("runDownload — range parsing", () => {
       runDownload(baseArgs({ volume: "none" }), baseCtx(), makeClient(), makeFullHttpClient()),
     ).rejects.toBeInstanceOf(CliError);
   });
+
+  test("--chapter none throws CliError (exit-code 2)", async () => {
+    const err = await runDownload(
+      baseArgs({ volume: undefined, chapter: "none" }),
+      baseCtx(),
+      makeClient(),
+      makeFullHttpClient(),
+    ).catch((e) => e);
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).exitCode).toBe(2);
+    expect((err as CliError).message).toMatch(/not yet supported/);
+  });
 });
 
 // ---------------------------------------------------------------------------

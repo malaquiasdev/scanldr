@@ -330,6 +330,10 @@ export async function runDownload(
   if (args.volume !== undefined) {
     const { values: requestedVolumes } = parseRangeSet(args.volume);
     if (requestedVolumes.has("none")) {
+      logger.warn(
+        { event: "download.volume_none_unsupported", context: "download" },
+        "--volume none is not supported",
+      );
       throw new CliError(
         "--volume none is not yet supported. Use a numeric volume number instead.",
         2,

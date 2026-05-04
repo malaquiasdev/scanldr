@@ -8,15 +8,20 @@ export function detectExtFromBytes(bytes: Uint8Array): string | null {
 }
 
 /**
- * Pads only the integer part of a bundle number to `width` digits.
- * Preserves the decimal portion unchanged.
- * Non-numeric tokens (e.g. "none") pass through unchanged.
+ * Pads the integer portion of a numeric token to `width` digits.
+ * Special tokens like "none" pass through unchanged.
+ *
+ * Contract: `value` must be a non-empty string of digits, optionally followed by
+ * `.<digits>`, OR the literal "none". Other shapes (empty string, leading dot,
+ * negative sign) are not supported and may produce undefined output.
+ * The range parser guarantees this contract for all legitimate callers.
  *
  * Examples:
- *   "1"    → "001"
- *   "18.5" → "018.5"
- *   "103"  → "103"
- *   "none" → "none"
+ *   ("1", 3)    → "001"
+ *   ("103", 3)  → "103"
+ *   ("18.5", 3) → "018.5"
+ *   ("1.25", 3) → "001.25"
+ *   ("none", 3) → "none"
  */
 export function padBundleNumber(value: string, width: number): string {
   const dotIdx = value.indexOf(".");

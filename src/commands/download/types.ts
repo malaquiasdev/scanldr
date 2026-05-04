@@ -40,17 +40,6 @@ export interface DownloadContext {
   db: Db;
 }
 
-export interface ProcessVolumeArgs {
-  volumeToken: string;
-  volChapters: ChapterRef[];
-  chosen: MangaCandidate;
-  slug: string;
-  language: string;
-  args: DownloadArgs;
-  ctx: DownloadContext;
-  http: MangaDexHttpClient;
-}
-
 export interface Bundle {
   kind: BundleKind;
   /** Used for the archive filename (e.g. "001", "018.5") */
