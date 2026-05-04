@@ -23,6 +23,10 @@ export async function resolveLanguage(input: ResolveLanguageInput): Promise<stri
   const { preferred, available, nonTty, logger } = input;
 
   if (available.length === 0) {
+    logger.warn(
+      { event: "download.no_chapters", context: "download", preferred },
+      "chapter feed returned no languages; manga may have only metadata",
+    );
     throw new CliError(
       'No chapters available for this manga in any language. Try `scanldr list "<manga>"` to verify.',
       2,
@@ -40,6 +44,10 @@ export async function resolveLanguage(input: ResolveLanguageInput): Promise<stri
   }
 
   if (nonTty) {
+    logger.warn(
+      { event: "download.no_preferred_language", context: "download", preferred, available },
+      "no preferred language matches available chapters; failing because non-TTY",
+    );
     throw new CliError(
       `no preferred language available (preferred: ${preferred.join(", ")}; available: ${available.join(", ")}); set preferred_languages in scanldr.json`,
       2,

@@ -69,6 +69,27 @@ describe("resolveLanguage", () => {
     });
   });
 
+  test("empty available emits logger.warn with download.no_chapters event before throwing", async () => {
+    let warnEvent: string | undefined;
+    const spyLogger: Logger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          warnEvent = (obj as Record<string, unknown>).event as string;
+        }
+      },
+      error: () => {},
+    };
+
+    try {
+      await resolveLanguage({ preferred: ["en"], available: [], nonTty: true, logger: spyLogger });
+    } catch {
+      // expected
+    }
+
+    expect(warnEvent).toBe("download.no_chapters");
+  });
+
   test("no match + nonTty error message is actionable", async () => {
     try {
       await resolveLanguage({
@@ -82,6 +103,32 @@ describe("resolveLanguage", () => {
       expect(err).toBeInstanceOf(CliError);
       expect((err as CliError).message).toContain("preferred_languages");
     }
+  });
+
+  test("no match + nonTty emits logger.warn with download.no_preferred_language event before throwing", async () => {
+    let warnEvent: string | undefined;
+    const spyLogger: Logger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          warnEvent = (obj as Record<string, unknown>).event as string;
+        }
+      },
+      error: () => {},
+    };
+
+    try {
+      await resolveLanguage({
+        preferred: ["ja"],
+        available: ["en"],
+        nonTty: true,
+        logger: spyLogger,
+      });
+    } catch {
+      // expected
+    }
+
+    expect(warnEvent).toBe("download.no_preferred_language");
   });
 
   describe("TTY readline mock", () => {

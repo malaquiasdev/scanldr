@@ -6,6 +6,7 @@ import {
 } from "@integrations/mangadex/at-home/index.ts";
 import type { ChapterRef, MangaCandidate } from "@integrations/mangadex/client/index.ts";
 import type { MangaDexClient } from "@integrations/mangadex/client/index.ts";
+import { parseExternalHost } from "@integrations/mangadex/external-host.ts";
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
 import { downloadVolume } from "@modules/downloader/index.ts";
 import type { ChapterInput } from "@modules/downloader/types.ts";
@@ -15,7 +16,7 @@ import { CliError } from "@plugins/errors/index.ts";
 import { resolveLanguage } from "./language.ts";
 import { parseRangeSet } from "./range.ts";
 import { toSlug } from "./slug.ts";
-import type { DownloadArgs, DownloadContext } from "./types.ts";
+import type { DownloadArgs, DownloadContext, ProcessVolumeArgs } from "./types.ts";
 
 export type { DownloadArgs, DownloadContext } from "./types.ts";
 export { CliError } from "@plugins/errors/index.ts";
@@ -56,6 +57,15 @@ async function resolveTitle(
   if (candidates.length > 1) {
     if (nonTty) {
       const list = candidates.map((c, i) => `  [${i + 1}] ${c.title}`).join("\n");
+      logger.warn(
+        {
+          event: "download.ambiguous_title",
+          context: "download",
+          manga,
+          candidateCount: candidates.length,
+        },
+        "multiple candidates found in non-TTY mode; cannot prompt user",
+      );
       throw new CliError(
         `Multiple results found for "${manga}". Re-run in a terminal to pick one:\n${list}`,
         2,
@@ -102,17 +112,6 @@ async function buildChapterInputs(
   return inputs;
 }
 
-interface ProcessVolumeArgs {
-  volumeToken: string;
-  volChapters: ChapterRef[];
-  chosen: MangaCandidate;
-  slug: string;
-  language: string;
-  args: DownloadArgs;
-  ctx: DownloadContext;
-  http: MangaDexHttpClient;
-}
-
 /** Per-volume pipeline: history check → external check → build inputs → download → record. */
 async function processVolume(input: ProcessVolumeArgs): Promise<void> {
   const { volumeToken, volChapters, chosen, slug, language, args, ctx, http } = input;
@@ -140,13 +139,17 @@ async function processVolume(input: ProcessVolumeArgs): Promise<void> {
   // external-chapter check
   for (const ch of volChapters) {
     if (ch.externalUrl !== null) {
-      const host = (() => {
-        try {
-          return new URL(ch.externalUrl).hostname;
-        } catch {
-          return ch.externalUrl;
-        }
-      })();
+      const host = parseExternalHost(ch.externalUrl) ?? ch.externalUrl;
+      logger.warn(
+        {
+          event: "download.external_chapter",
+          context: "download",
+          chapterId: ch.id,
+          externalUrl: ch.externalUrl,
+          host,
+        },
+        "chapter is partner-hosted; refusing download",
+      );
       throw new CliError(
         `Chapter ${ch.chapter ?? ch.id} is hosted externally on ${host}. scanldr cannot download partner-hosted chapters. Open: ${ch.externalUrl}`,
         2,
@@ -155,26 +158,28 @@ async function processVolume(input: ProcessVolumeArgs): Promise<void> {
   }
 
   const volumeNumber = Number(volumeToken);
-  const chapterInputs = await buildChapterInputs(volChapters, http, args.quality, logger);
 
-  if (args.dryRun) {
-    const totalPages = chapterInputs.reduce((sum, c) => sum + c.pages.length, 0);
-    logger.info(
-      {
-        event: "download.dry_run",
-        context: "download",
-        slug,
-        volumeNumber,
-        chapters: chapterInputs.length,
-        totalPages,
-      },
-      `dry-run: would download volume ${volumeToken}`,
-    );
-    return;
-  }
-
+  let chapterInputs: Awaited<ReturnType<typeof buildChapterInputs>>;
   let result: Awaited<ReturnType<typeof downloadVolume>>;
   try {
+    chapterInputs = await buildChapterInputs(volChapters, http, args.quality, logger);
+
+    if (args.dryRun) {
+      const totalPages = chapterInputs.reduce((sum, c) => sum + c.pages.length, 0);
+      logger.info(
+        {
+          event: "download.dry_run",
+          context: "download",
+          slug,
+          volumeNumber,
+          chapters: chapterInputs.length,
+          totalPages,
+        },
+        `dry-run: would download volume ${volumeToken}`,
+      );
+      return;
+    }
+
     result = await downloadVolume({
       outDir: args.outDir,
       format: args.format,
@@ -188,6 +193,16 @@ async function processVolume(input: ProcessVolumeArgs): Promise<void> {
     });
   } catch (err) {
     if (err instanceof AtHomeError && err.status === 404) {
+      logger.warn(
+        {
+          event: "download.at_home_404",
+          context: "download",
+          chapterId: err.chapterId,
+          status: err.status,
+          err,
+        },
+        "at-home server returned 404; surfacing as user-facing CliError",
+      );
       throw new CliError(err.message, 2);
     }
     throw err;

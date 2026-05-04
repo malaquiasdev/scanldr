@@ -1,3 +1,5 @@
+import type { ChapterRef, MangaCandidate } from "@integrations/mangadex/client/index.ts";
+import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
 import type { Config } from "@plugins/config/index.ts";
 import type { Db } from "@plugins/db/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
@@ -32,4 +34,15 @@ export interface DownloadContext {
   logger: Logger;
   config: Config;
   db: Db;
+}
+
+export interface ProcessVolumeArgs {
+  volumeToken: string;
+  volChapters: ChapterRef[];
+  chosen: MangaCandidate;
+  slug: string;
+  language: string;
+  args: DownloadArgs;
+  ctx: DownloadContext;
+  http: MangaDexHttpClient;
 }

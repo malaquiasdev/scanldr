@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { AtHomeError } from "@integrations/mangadex/at-home/index.ts";
 import type { MangaDexClient } from "@integrations/mangadex/client/index.ts";
 import type { ChapterRef, MangaCandidate, VolumeRef } from "@integrations/mangadex/client/index.ts";
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
@@ -315,6 +316,44 @@ describe("runDownload — external chapter", () => {
       expect((err as CliError).message).toContain(extUrl);
     }
   });
+
+  test("emits logger.warn with download.external_chapter event before throwing", async () => {
+    const extUrl = "https://mangaplus.shueisha.co.jp/viewer/789";
+    const externalChapter = makeChapterRef({
+      id: "ch-ext-warn",
+      volume: "1",
+      chapter: "3",
+      externalUrl: extUrl,
+    });
+
+    const clientWithExternal = makeClient({
+      feedChapters: async () => [externalChapter],
+    });
+
+    let warnEvent: string | undefined;
+    const spyLogger: Logger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          warnEvent = (obj as Record<string, unknown>).event as string;
+        }
+      },
+      error: () => {},
+    };
+
+    try {
+      await runDownload(
+        baseArgs(),
+        { ...baseCtx(), logger: spyLogger },
+        clientWithExternal,
+        makeFullHttpClient(),
+      );
+    } catch {
+      // expected
+    }
+
+    expect(warnEvent).toBe("download.external_chapter");
+  });
 });
 
 describe("runDownload — volume not in feed", () => {
@@ -470,6 +509,79 @@ describe("runDownload — multi-chapter volume", () => {
     const history = listHistory(db);
     expect(history).toHaveLength(2);
     expect(history.map((r) => r.chapterId).sort()).toEqual(["ch-1", "ch-2"]);
+  });
+});
+
+describe("runDownload — at-home 404", () => {
+  test("emits logger.warn with download.at_home_404 event before throwing CliError", async () => {
+    // HTTP client that throws AtHomeError 404 on at-home server call
+    const atHome404Http: MangaDexHttpClient = {
+      get: async (path: string) => {
+        if (path.startsWith("/at-home/server/")) {
+          throw new AtHomeError("ch-1", 404, "at-home server returned 404 for chapter ch-1");
+        }
+        throw new Error(`Unexpected: ${path}`);
+      },
+    } as unknown as MangaDexHttpClient;
+
+    const warnEvents: string[] = [];
+    const spyLogger: Logger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          warnEvents.push((obj as Record<string, unknown>).event as string);
+        }
+      },
+      error: () => {},
+    };
+
+    try {
+      await runDownload(
+        baseArgs(),
+        { ...baseCtx(), logger: spyLogger },
+        makeClient(),
+        atHome404Http,
+      );
+    } catch {
+      // expected CliError
+    }
+
+    expect(warnEvents).toContain("download.at_home_404");
+  });
+});
+
+describe("runDownload — ambiguous title non-TTY", () => {
+  test("emits logger.warn with download.ambiguous_title event before throwing", async () => {
+    const multiClient = makeClient({
+      resolveTitleToId: async () => [
+        makeCandidate({ id: "id-1", title: "Manga A" }),
+        makeCandidate({ id: "id-2", title: "Manga B" }),
+      ],
+    });
+
+    let warnEvent: string | undefined;
+    const spyLogger: Logger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          warnEvent = (obj as Record<string, unknown>).event as string;
+        }
+      },
+      error: () => {},
+    };
+
+    try {
+      await runDownload(
+        baseArgs({ nonTty: true }),
+        { ...baseCtx(), logger: spyLogger },
+        multiClient,
+        makeFullHttpClient(),
+      );
+    } catch {
+      // expected CliError
+    }
+
+    expect(warnEvent).toBe("download.ambiguous_title");
   });
 });
 

@@ -6,11 +6,10 @@ import { createMangaDexClient } from "@integrations/mangadex/client/index.ts";
 import { createMangaDexHttp } from "@integrations/mangadex/http/index.ts";
 import { AuthError, runAuth } from "@integrations/mangakakalot/browser/index.ts";
 import { loadConfig } from "@plugins/config/index.ts";
-import type { Config } from "@plugins/config/index.ts";
 import { openDb, runMigrations } from "@plugins/db/index.ts";
-import type { Db } from "@plugins/db/index.ts";
 import { CliError } from "@plugins/errors/index.ts";
-import { type LogFormat, type LogLevel, type Logger, createLogger } from "@plugins/logger/index.ts";
+import { type LogFormat, type LogLevel, createLogger } from "@plugins/logger/index.ts";
+import type { Handler } from "./cli/types.ts";
 
 const VERSION = "0.0.0";
 
@@ -46,14 +45,6 @@ class NotImplementedError extends Error {
     this.name = "NotImplementedError";
   }
 }
-
-interface HandlerContext {
-  logger: Logger;
-  db: Db;
-  config: Config;
-}
-
-type Handler = (rest: string[], ctx: HandlerContext) => Promise<void> | void;
 
 const handlers: Record<string, Handler> = {
   auth: async (_rest, ctx) => {
