@@ -2,16 +2,22 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
 import { AtHomeError } from "@integrations/mangadex/at-home/index.ts";
 import type { MangaDexClient } from "@integrations/mangadex/client/index.ts";
+import { TitleNotFoundError } from "@integrations/mangadex/client/index.ts";
 import type { ChapterRef, MangaCandidate, VolumeRef } from "@integrations/mangadex/client/index.ts";
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
+import type { MangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
+import type { ImageRef } from "@modules/downloader/types.ts";
 import { listHistory } from "@modules/history/index.ts";
 import { openDb, runMigrations } from "@plugins/db/index.ts";
 import type { Db } from "@plugins/db/index.ts";
 import { CliError } from "@plugins/errors/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { unzipSync } from "fflate";
+import type { MangaDexResolveResult } from "./fallback-types.ts";
+import { runFallbackDownload } from "./fallback.ts";
 import { runDownload } from "./index.ts";
 import type { DownloadArgs, DownloadContext } from "./types.ts";
 
@@ -278,7 +284,11 @@ describe("runDownload — force", () => {
 });
 
 describe("runDownload — external chapter", () => {
-  test("throws CliError for external chapters", async () => {
+  // When ALL chapters in the chosen language are external, runDownload now routes to the
+  // fallback path (reason: all_external) per ADR-002. In non-TTY mode the fallback prompt
+  // throws a CliError pointing at interactive use + auth setup.
+
+  test("throws CliError when all chapters are external (non-TTY)", async () => {
     const externalChapter = makeChapterRef({
       id: "ch-ext",
       volume: "1",
@@ -295,13 +305,12 @@ describe("runDownload — external chapter", () => {
     ).rejects.toBeInstanceOf(CliError);
   });
 
-  test("CliError message contains the external URL", async () => {
-    const extUrl = "https://mangaplus.shueisha.co.jp/viewer/456";
+  test("CliError from fallback non-TTY path mentions auth", async () => {
     const externalChapter = makeChapterRef({
       id: "ch-ext",
       volume: "1",
       chapter: "2",
-      externalUrl: extUrl,
+      externalUrl: "https://mangaplus.shueisha.co.jp/viewer/456",
     });
 
     const clientWithExternal = makeClient({
@@ -313,31 +322,32 @@ describe("runDownload — external chapter", () => {
       throw new Error("expected to throw");
     } catch (err) {
       expect(err).toBeInstanceOf(CliError);
-      expect((err as CliError).message).toContain(extUrl);
+      // Now routes via fallback path → non-TTY → "auth" hint in message
+      expect((err as CliError).message).toContain("auth");
     }
   });
 
-  test("emits logger.warn with download.external_chapter event before throwing", async () => {
-    const extUrl = "https://mangaplus.shueisha.co.jp/viewer/789";
+  test("emits fallback_triggered event when all chapters are external", async () => {
     const externalChapter = makeChapterRef({
       id: "ch-ext-warn",
       volume: "1",
       chapter: "3",
-      externalUrl: extUrl,
+      externalUrl: "https://mangaplus.shueisha.co.jp/viewer/789",
     });
 
     const clientWithExternal = makeClient({
       feedChapters: async () => [externalChapter],
     });
 
-    let warnEvent: string | undefined;
+    let triggeredEvent: string | undefined;
     const spyLogger: Logger = {
-      info: () => {},
-      warn: (obj: unknown) => {
+      info: (obj: unknown) => {
         if (typeof obj === "object" && obj !== null && "event" in obj) {
-          warnEvent = (obj as Record<string, unknown>).event as string;
+          const e = (obj as Record<string, unknown>).event as string;
+          if (e === "download.fallback_triggered") triggeredEvent = e;
         }
       },
+      warn: () => {},
       error: () => {},
     };
 
@@ -352,7 +362,38 @@ describe("runDownload — external chapter", () => {
       // expected
     }
 
-    expect(warnEvent).toBe("download.external_chapter");
+    expect(triggeredEvent).toBe("download.fallback_triggered");
+  });
+
+  test("mixed external+normal chapters still refuse via processBundle external check", async () => {
+    // Only ONE chapter is external, another is normal — not all_external → MangaDex path
+    // → processBundle sees the external chapter and throws with the URL in the message
+    const normalCh = makeChapterRef({ id: "ch-ok", volume: "1", chapter: "1" });
+    const externalCh = makeChapterRef({
+      id: "ch-ext",
+      volume: "1",
+      chapter: "2",
+      externalUrl: "https://mangaplus.shueisha.co.jp/viewer/999",
+    });
+
+    const clientMixed = makeClient({
+      feedChapters: async () => [normalCh, externalCh],
+    });
+
+    // Request vol 1 which includes both — processBundle will hit ch-ok first (fine)
+    // then ch-ext → throws with external URL
+    // Actually volumes are filtered per chapter, so both chapters are in vol 1
+    let errorMsg = "";
+    try {
+      await withMockedImageFetch(async () => {
+        await runDownload(baseArgs(), baseCtx(), clientMixed, makeFullHttpClient());
+      });
+    } catch (err) {
+      errorMsg = (err as Error).message;
+    }
+
+    // processBundle external check fires
+    expect(errorMsg).toContain("mangaplus.shueisha.co.jp");
   });
 });
 
@@ -839,8 +880,10 @@ describe("runDownload — mutual exclusion", () => {
   });
 });
 
-describe("runDownload --chapter — external chapter refused", () => {
-  test("external chapter in --chapter mode throws CliError", async () => {
+describe("runDownload --chapter — external chapter routes to fallback", () => {
+  // When all chapters in feed are external (in --chapter mode the feed still has externalUrl set),
+  // isFallbackEligible returns all_external and we route to fallback.
+  test("external chapter in --chapter mode throws CliError (via fallback non-TTY)", async () => {
     const extUrl = "https://mangaplus.shueisha.co.jp/viewer/999";
     const ch = makeChapterRef({ id: "ch-ext", volume: "1", chapter: "5", externalUrl: extUrl });
     const client = makeClient({
@@ -848,6 +891,7 @@ describe("runDownload --chapter — external chapter refused", () => {
       feedChapters: async () => [ch],
     });
 
+    // All chapters are external → fallback → non-TTY → CliError
     await expect(
       runDownload(
         baseArgs({ volume: undefined, chapter: "5" }),
@@ -858,7 +902,7 @@ describe("runDownload --chapter — external chapter refused", () => {
     ).rejects.toBeInstanceOf(CliError);
   });
 
-  test("external chapter warn event emitted before throw in --chapter mode", async () => {
+  test("fallback_triggered event emitted in --chapter mode when all external", async () => {
     const extUrl = "https://mangaplus.shueisha.co.jp/viewer/999";
     const ch = makeChapterRef({ id: "ch-ext", volume: "1", chapter: "5", externalUrl: extUrl });
     const client = makeClient({
@@ -866,14 +910,15 @@ describe("runDownload --chapter — external chapter refused", () => {
       feedChapters: async () => [ch],
     });
 
-    let warnEvent: string | undefined;
+    let triggeredEvent: string | undefined;
     const spyLogger: Logger = {
-      info: () => {},
-      warn: (obj: unknown) => {
+      info: (obj: unknown) => {
         if (typeof obj === "object" && obj !== null && "event" in obj) {
-          warnEvent = (obj as Record<string, unknown>).event as string;
+          const e = (obj as Record<string, unknown>).event as string;
+          if (e === "download.fallback_triggered") triggeredEvent = e;
         }
       },
+      warn: () => {},
       error: () => {},
     };
 
@@ -888,6 +933,287 @@ describe("runDownload --chapter — external chapter refused", () => {
       // expected
     }
 
-    expect(warnEvent).toBe("download.external_chapter");
+    expect(triggeredEvent).toBe("download.fallback_triggered");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fallback integration helpers
+// ---------------------------------------------------------------------------
+
+/** Minimal 1×1 PNG bytes — distinct from JPEG_BYTES so we can assert source */
+const MK_PNG_BYTES = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+  0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+  0x00, 0x00, 0x02, 0x00, 0x01, 0xe2, 0x21, 0xbc, 0x33, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+  0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+
+function makeMkChapterRef(overrides: Partial<ChapterRef> & { id: string }): ChapterRef {
+  return {
+    volume: null,
+    chapter: "1",
+    title: null,
+    translatedLanguage: "en",
+    scanlationGroup: null,
+    readableAt: "2024-01-01T00:00:00Z",
+    externalUrl: null,
+    ...overrides,
+  };
+}
+
+function makeFallbackHttp(): FallbackHttpClient {
+  return {
+    get: async (_url: string) =>
+      new Response(MK_PNG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
+  };
+}
+
+function makeMkClient(overrides?: Partial<MangakakalotClient>): MangakakalotClient {
+  const ch1 = makeMkChapterRef({ id: "mk-ch-1", chapter: "1" });
+  return {
+    searchManga: async () => [
+      { id: "dandadan", title: "Dandadan", originalLanguage: "ja", year: 2021 },
+    ],
+    getChapterList: async () => [ch1],
+    getChapterImages: async (_id: string): Promise<ImageRef[]> => [
+      { url: "https://cdn.mangakakalot.gg/img/1.png", page: 1 },
+    ],
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Fallback integration tests
+// ---------------------------------------------------------------------------
+
+describe("fallback — title not on MangaDex, mangakakalot has it", () => {
+  test("produces .cbz and records history with source=mangakakalot", async () => {
+    const ch1 = makeMkChapterRef({ id: "mk-ch-1", chapter: "1" });
+    const mkClient: MangakakalotClient = {
+      searchManga: async () => [
+        { id: "dandadan", title: "Dandadan", originalLanguage: "ja", year: 2021 },
+      ],
+      getChapterList: async () => [ch1],
+      getChapterImages: async (_id: string): Promise<ImageRef[]> => [
+        { url: "https://cdn.mk.gg/img/1.png", page: 1 },
+      ],
+    };
+
+    const fallbackHttp = makeFallbackHttp();
+
+    await runFallbackDownload({
+      args: baseArgs({ manga: "Dandadan", volume: undefined, chapter: "1" }),
+      ctx: baseCtx(),
+      mangadexResolve: null,
+      createFallbackHttp: async () => fallbackHttp,
+      createMangakakalotClient: () => mkClient,
+      // biome-ignore lint/style/noNonNullAssertion: test stub — sites always has 1 entry
+      promptSite: async (sites) => sites[0]!,
+    });
+
+    const cbzPath = join(tmpDir, "dandadan", "dandadan-chapter-001.cbz");
+    expect(await Bun.file(cbzPath).exists()).toBe(true);
+
+    // Verify the .cbz contents came from mangakakalot (MK_PNG_BYTES sentinel)
+    const raw = await Bun.file(cbzPath).arrayBuffer();
+    const entries = unzipSync(new Uint8Array(raw));
+    const entryNames = Object.keys(entries);
+    expect(entryNames).toHaveLength(1);
+    // Filename follows zero-pad pattern 0001.<ext>
+    expect(entryNames[0]).toMatch(/^0001\.\w+$/);
+    // Bytes match the sentinel MK_PNG_BYTES from the mock fetcher
+    expect(entries[entryNames[0] as string]).toEqual(MK_PNG_BYTES);
+
+    const history = listHistory(db);
+    expect(history.length).toBe(1);
+    expect(history[0]).toMatchObject({
+      mangaId: "dandadan",
+      mangaTitle: "Dandadan",
+      chapterId: "mk-ch-1",
+      chapterNum: "1",
+      source: "mangakakalot",
+      language: "en",
+    });
+  });
+});
+
+describe("fallback — MangaDex aggregate reused for volume mode", () => {
+  test("vol3 = ch18-21 from MangaDex maps to mangakakalot ch18-21, one archive produced", async () => {
+    const mangadexResolve: MangaDexResolveResult = {
+      candidate: {
+        id: "md-manga-id",
+        title: "Witch Hat Atelier",
+        originalLanguage: "ja",
+        year: 2016,
+      },
+      volumes: [{ volume: "3", numeric: 3, chapterIds: ["md-18", "md-19", "md-20", "md-21"] }],
+      chaptersInLang: [
+        makeMkChapterRef({ id: "md-18", chapter: "18", translatedLanguage: "en" }),
+        makeMkChapterRef({ id: "md-19", chapter: "19", translatedLanguage: "en" }),
+        makeMkChapterRef({ id: "md-20", chapter: "20", translatedLanguage: "en" }),
+        makeMkChapterRef({ id: "md-21", chapter: "21", translatedLanguage: "en" }),
+      ],
+      language: null,
+    };
+
+    const mkClient: MangakakalotClient = {
+      searchManga: async () => [
+        { id: "witch-hat", title: "Witch Hat Atelier", originalLanguage: "ja", year: 2016 },
+      ],
+      getChapterList: async () => [
+        makeMkChapterRef({ id: "mk-18", chapter: "18" }),
+        makeMkChapterRef({ id: "mk-19", chapter: "19" }),
+        makeMkChapterRef({ id: "mk-20", chapter: "20" }),
+        makeMkChapterRef({ id: "mk-21", chapter: "21" }),
+      ],
+      getChapterImages: async (_id: string): Promise<ImageRef[]> => [
+        { url: "https://cdn.mk.gg/img/1.png", page: 1 },
+      ],
+    };
+
+    const fallbackHttp = makeFallbackHttp();
+
+    await runFallbackDownload({
+      args: baseArgs({ manga: "Witch Hat Atelier", volume: "3" }),
+      ctx: baseCtx(),
+      mangadexResolve,
+      createFallbackHttp: async () => fallbackHttp,
+      createMangakakalotClient: () => mkClient,
+      // biome-ignore lint/style/noNonNullAssertion: test stub — sites always has 1 entry
+      promptSite: async (sites) => sites[0]!,
+    });
+
+    const cbzPath = join(tmpDir, "witch-hat-atelier", "witch-hat-atelier-volume-003.cbz");
+    expect(await Bun.file(cbzPath).exists()).toBe(true);
+
+    const history = listHistory(db);
+    expect(history.length).toBe(4);
+    expect(history.every((r) => r.source === "mangakakalot")).toBe(true);
+    expect(history.every((r) => r.volume === "3")).toBe(true);
+  });
+});
+
+describe("fallback — all MangaDex chapters external (Dandadan/MangaPlus scenario)", () => {
+  test("triggers fallback with reason=all_external, non-TTY → CliError with auth hint", async () => {
+    const externalCh = makeChapterRef({
+      id: "ch-ext",
+      volume: "1",
+      chapter: "1",
+      externalUrl: "https://mangaplus.shueisha.co.jp/viewer/1",
+    });
+
+    const clientAllExternal = makeClient({ feedChapters: async () => [externalCh] });
+
+    let fallbackReason: string | undefined;
+    const spyLogger: Logger = {
+      info: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          const o = obj as Record<string, unknown>;
+          if (o.event === "download.fallback_triggered") {
+            fallbackReason = o.reason as string;
+          }
+        }
+      },
+      warn: () => {},
+      error: () => {},
+    };
+
+    const err = await runDownload(
+      baseArgs({ nonTty: true }),
+      { ...baseCtx(), logger: spyLogger },
+      clientAllExternal,
+      makeFullHttpClient(),
+    ).catch((e) => e);
+
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).message).toContain("auth");
+    expect(fallbackReason).toBe("all_external");
+  });
+});
+
+describe("fallback — non-TTY with title_not_found → CliError", () => {
+  test("throws CliError pointing at auth and interactive use (--chapter mode)", async () => {
+    const clientNoResults = makeClient({
+      resolveTitleToId: async () => {
+        throw new TitleNotFoundError("Nonexistent");
+      },
+    });
+
+    // --volume with no MangaDex aggregate → hits "--chapter" error before "auth" error
+    // Use --chapter to reach the site-picker prompt which requires TTY
+    const err = await runDownload(
+      baseArgs({ nonTty: true, volume: undefined, chapter: "1" }),
+      baseCtx(),
+      clientNoResults,
+      makeFullHttpClient(),
+    ).catch((e) => e);
+
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).message).toContain("auth");
+  });
+
+  test("throws CliError with --chapter hint when title_not_found in --volume mode", async () => {
+    const clientNoResults = makeClient({
+      resolveTitleToId: async () => {
+        throw new TitleNotFoundError("Nonexistent");
+      },
+    });
+
+    // --volume mode + no MangaDex resolve → volume metadata check fires first
+    const err = await runDownload(
+      baseArgs({ nonTty: true, volume: "1" }),
+      baseCtx(),
+      clientNoResults,
+      makeFullHttpClient(),
+    ).catch((e) => e);
+
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).message).toContain("--chapter");
+  });
+});
+
+describe("fallback — volume mode without MangaDex aggregate", () => {
+  test("mangadexResolve null + volume → CliError with --chapter hint", async () => {
+    const fallbackHttp = makeFallbackHttp();
+    const mkClient = makeMkClient();
+
+    const err = await runFallbackDownload({
+      args: baseArgs({ volume: "1" }),
+      ctx: baseCtx(),
+      mangadexResolve: null,
+      createFallbackHttp: async () => fallbackHttp,
+      createMangakakalotClient: () => mkClient,
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).message).toContain("--chapter");
+  });
+
+  test("mangadexResolve with empty volumes + volume mode → CliError with --chapter hint", async () => {
+    const fallbackHttp = makeFallbackHttp();
+    const mkClient = makeMkClient();
+
+    const resolve: MangaDexResolveResult = {
+      candidate: { id: "md-id", title: "Test", originalLanguage: "ja", year: 2020 },
+      volumes: [],
+      chaptersInLang: [],
+      language: null,
+    };
+
+    const err = await runFallbackDownload({
+      args: baseArgs({ volume: "1" }),
+      ctx: baseCtx(),
+      mangadexResolve: resolve,
+      createFallbackHttp: async () => fallbackHttp,
+      createMangakakalotClient: () => mkClient,
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).message).toContain("--chapter");
   });
 });

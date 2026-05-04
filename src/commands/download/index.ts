@@ -1,4 +1,4 @@
-import { createInterface } from "node:readline";
+import { createFallbackHttp } from "@integrations/fallback-http/index.ts";
 import {
   AtHomeError,
   getAtHomeServer,
@@ -6,14 +6,18 @@ import {
 } from "@integrations/mangadex/at-home/index.ts";
 import type { ChapterRef, MangaCandidate } from "@integrations/mangadex/client/index.ts";
 import type { MangaDexClient } from "@integrations/mangadex/client/index.ts";
+import { TitleNotFoundError } from "@integrations/mangadex/client/index.ts";
 import { parseExternalHost } from "@integrations/mangadex/external-host.ts";
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
+import { createMangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
 import { downloadBundle } from "@modules/downloader/index.ts";
 import type { ChapterInput } from "@modules/downloader/types.ts";
 import { isVolumeFullyDownloaded, recordDownloadedChapters } from "@modules/history/index.ts";
 import type { DownloadRow } from "@modules/history/index.ts";
 import { CliError } from "@plugins/errors/index.ts";
-import { resolveLanguage } from "./language.ts";
+import type { MangaDexResolveResult } from "./fallback-types.ts";
+import { isFallbackEligible, runFallbackDownload } from "./fallback.ts";
+import { promptNumericChoice } from "./prompt.ts";
 import { parseRangeSet } from "./range.ts";
 import { toSlug } from "./slug.ts";
 import type { Bundle, DownloadArgs, DownloadContext, ProcessBundleArgs } from "./types.ts";
@@ -22,20 +26,15 @@ export type { DownloadArgs, DownloadContext } from "./types.ts";
 export { CliError } from "@plugins/errors/index.ts";
 
 /** Prompt user to pick one from a list of candidates with titles */
-function promptCandidatePick(candidates: { title: string }[]): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const rl = createInterface({ input: process.stdin, output: process.stderr });
-    const list = candidates.map((c, i) => `  [${i + 1}] ${c.title}`).join("\n");
-    process.stderr.write(`Multiple results found:\n${list}\nPick one: `);
-    rl.once("line", (line) => {
-      rl.close();
-      const n = Number.parseInt(line.trim(), 10);
-      if (Number.isNaN(n) || n < 1 || n > candidates.length) {
-        reject(new CliError(`Invalid selection: "${line.trim()}"`, 2));
-      } else {
-        resolve(n - 1);
-      }
-    });
+function promptCandidatePick(
+  candidates: { title: string }[],
+  logger: DownloadContext["logger"],
+): Promise<number> {
+  return promptNumericChoice({
+    header: "Multiple results found:",
+    items: candidates.map((c) => ({ display: c.title })),
+    logger,
+    event: "download.invalid_selection",
   });
 }
 
@@ -71,7 +70,7 @@ async function resolveTitle(
         2,
       );
     }
-    chosenIndex = await promptCandidatePick(candidates);
+    chosenIndex = await promptCandidatePick(candidates, logger);
   }
 
   const chosen = candidates[chosenIndex];
@@ -115,14 +114,7 @@ async function buildChapterInputs(
 /**
  * Group chapters from the feed into bundles based on args.
  * --volume: one bundle per requested volume token, all chapters in that volume.
- *   Volume mode keeps ALL uploads for a given volume (including multiple scanlation
- *   group versions of the same chapter number), which may produce larger .cbz files
- *   but preserves every available translation.
- * --chapter: one bundle per requested chapter token, one chapter each.
- *   Tiebreak rule: when multiple uploads exist for the same chapter number (different
- *   scanlation groups), the one with the latest `readableAt` wins — newer scanlation
- *   is typically higher quality. Chapters with chapter === null are excluded from the
- *   lookup map; they are not addressable via --chapter.
+ * --chapter: one bundle per requested chapter token, tiebreak: latest readableAt wins.
  */
 function groupChaptersIntoBundles(args: DownloadArgs, chaptersInLang: ChapterRef[]): Bundle[] {
   if (args.volume !== undefined) {
@@ -149,8 +141,6 @@ function groupChaptersIntoBundles(args: DownloadArgs, chaptersInLang: ChapterRef
     return bundles;
   }
 
-  // --chapter mode: deduplicate by chapter number, latest readableAt wins.
-  // Chapters with chapter === null are skipped (not addressable by number).
   const { values: requestedChapters } = parseRangeSet(args.chapter as string);
   const chapterNumToRef = new Map<string, ChapterRef>();
   for (const ch of chaptersInLang) {
@@ -169,7 +159,6 @@ function groupChaptersIntoBundles(args: DownloadArgs, chaptersInLang: ChapterRef
     bundles.push({
       kind: "chapter",
       bundleNumber: chapterToken,
-      // Use the chapter's real volume from MangaDex; null → "none"
       volumeForHistory: ch.volume ?? "none",
       chapters: [ch],
     });
@@ -183,7 +172,6 @@ async function processBundle(input: ProcessBundleArgs): Promise<void> {
   const { logger, db } = ctx;
   const { kind, bundleNumber, volumeForHistory, chapters } = bundle;
 
-  // history check — use volumeForHistory as the volume key (consistent across volume/chapter mode)
   if (!args.force) {
     const chapterIdSet = new Set(chapters.map((c) => c.id));
     const fullyDownloaded = isVolumeFullyDownloaded(db, {
@@ -207,7 +195,6 @@ async function processBundle(input: ProcessBundleArgs): Promise<void> {
     }
   }
 
-  // external-chapter check
   for (const ch of chapters) {
     if (ch.externalUrl !== null) {
       const host = parseExternalHost(ch.externalUrl) ?? ch.externalUrl;
@@ -316,88 +303,80 @@ async function processBundle(input: ProcessBundleArgs): Promise<void> {
   }
 }
 
-export async function runDownload(
+/**
+ * Attempt the MangaDex pipeline.
+ * Returns null when the title resolves to zero candidates (soft failure).
+ * Returns MangaDexResolveResult with language: null when no chapters in preferred languages.
+ * Throws on hard failures (network errors, etc.).
+ */
+async function tryMangaDexPipeline(
   args: DownloadArgs,
   ctx: DownloadContext,
   client: MangaDexClient,
-  http: MangaDexHttpClient,
-): Promise<void> {
+): Promise<MangaDexResolveResult | null> {
   const { logger, config } = ctx;
+  const preferred = config.preferred_languages;
 
-  // Validate: exactly one of volume/chapter must be set
-  if (args.volume !== undefined && args.chapter !== undefined) {
-    logger.warn(
-      { event: "download.mutual_exclusion", context: "download" },
-      "--volume and --chapter are mutually exclusive",
-    );
-    throw new CliError("--volume and --chapter are mutually exclusive", 2);
+  let candidate: MangaCandidate;
+  try {
+    candidate = await resolveTitle(client, args.manga, args.nonTty, logger);
+  } catch (err) {
+    if (err instanceof TitleNotFoundError) {
+      return null;
+    }
+    // CliError from resolveTitle (ambiguous title non-TTY, etc.) — propagate
+    throw err;
   }
 
-  if (args.volume === undefined && args.chapter === undefined) {
-    logger.warn(
-      { event: "download.no_flag_set", context: "download" },
-      "--volume or --chapter is required",
-    );
-    throw new CliError("--volume <range> or --chapter <range> is required", 2);
+  const volumes = await client.aggregateVolumes(candidate.id, preferred);
+  const feedChapters = await client.feedChapters(candidate.id, preferred);
+  const availableLanguages = [...new Set(feedChapters.map((c) => c.translatedLanguage))];
+
+  // Soft language resolution — return null language instead of throwing
+  let language: string | null = null;
+  for (const lang of preferred) {
+    if (availableLanguages.includes(lang)) {
+      language = lang;
+      break;
+    }
   }
 
-  // Parse requested tokens once; reused for none-check and missing-in-feed warning below.
-  // At this point exactly one of volume/chapter is defined (validated above).
+  const chaptersInLang = language
+    ? feedChapters.filter((c) => c.translatedLanguage === language)
+    : [];
+
+  return { candidate, volumes, chaptersInLang, language };
+}
+
+/** MangaDex-only download path (original logic, factored out). */
+async function runMangaDexDownload(
+  args: DownloadArgs,
+  ctx: DownloadContext,
+  http: MangaDexHttpClient,
+  resolve: MangaDexResolveResult,
+): Promise<void> {
+  const { logger } = ctx;
+  const { candidate: chosen, chaptersInLang } = resolve;
+
+  // language is guaranteed non-null here: isFallbackEligible returns eligible when
+  // chaptersInLang is empty (language null) so we only reach this function when
+  // chaptersInLang is non-empty (language non-null).
+  const language = resolve.language as string;
+
+  logger.info(
+    { event: "download.language_resolved", context: "download", language },
+    "language resolved from preferences",
+  );
+
+  const slug = toSlug(chosen.title, logger);
+
   const requestedTokens =
     args.volume !== undefined
       ? parseRangeSet(args.volume).values
       : parseRangeSet(args.chapter as string).values;
 
-  if (args.volume !== undefined) {
-    if (requestedTokens.has("none")) {
-      logger.warn(
-        { event: "download.volume_none_unsupported", context: "download" },
-        "--volume none is not supported",
-      );
-      throw new CliError(
-        "--volume none is not yet supported. Use a numeric volume number instead.",
-        2,
-      );
-    }
-  }
-
-  if (args.chapter !== undefined) {
-    if (requestedTokens.has("none")) {
-      logger.warn(
-        { event: "download.chapter_none_unsupported", context: "download" },
-        "--chapter none is not supported",
-      );
-      throw new CliError(
-        "--chapter none is not yet supported. Use a numeric chapter number instead.",
-        2,
-      );
-    }
-  }
-
-  const chosen = await resolveTitle(client, args.manga, args.nonTty, logger);
-
-  const preferred = config.preferred_languages;
-
-  // aggregateVolumes primes the MangaDex aggregate cache used by feedChapters
-  await client.aggregateVolumes(chosen.id, preferred);
-
-  const feedChapters = await client.feedChapters(chosen.id, preferred);
-  const availableLanguages = [...new Set(feedChapters.map((c) => c.translatedLanguage))];
-
-  const language = await resolveLanguage({
-    preferred,
-    available: availableLanguages,
-    nonTty: args.nonTty,
-    logger,
-  });
-
-  const chaptersInLang = feedChapters.filter((c) => c.translatedLanguage === language);
-
-  const slug = toSlug(chosen.title, logger);
-
   const bundles = groupChaptersIntoBundles(args, chaptersInLang);
 
-  // Warn about requested items missing from feed (reuses requestedTokens parsed above)
   const foundBundleTokens = new Set(bundles.map((b) => b.bundleNumber));
   for (const token of requestedTokens) {
     if (!foundBundleTokens.has(token)) {
@@ -418,4 +397,89 @@ export async function runDownload(
   for (const bundle of bundles) {
     await processBundle({ bundle, chosen, slug, language, args, ctx, http });
   }
+}
+
+export async function runDownload(
+  args: DownloadArgs,
+  ctx: DownloadContext,
+  client: MangaDexClient,
+  http: MangaDexHttpClient,
+): Promise<void> {
+  const { logger } = ctx;
+
+  if (args.volume !== undefined && args.chapter !== undefined) {
+    logger.warn(
+      { event: "download.mutual_exclusion", context: "download" },
+      "--volume and --chapter are mutually exclusive",
+    );
+    throw new CliError("--volume and --chapter are mutually exclusive", 2);
+  }
+
+  if (args.volume === undefined && args.chapter === undefined) {
+    logger.warn(
+      { event: "download.no_flag_set", context: "download" },
+      "--volume or --chapter is required",
+    );
+    throw new CliError("--volume <range> or --chapter <range> is required", 2);
+  }
+
+  const requestedTokens =
+    args.volume !== undefined
+      ? parseRangeSet(args.volume).values
+      : parseRangeSet(args.chapter as string).values;
+
+  if (args.volume !== undefined && requestedTokens.has("none")) {
+    logger.warn(
+      { event: "download.volume_none_unsupported", context: "download" },
+      "--volume none is not supported",
+    );
+    throw new CliError(
+      "--volume none is not yet supported. Use a numeric volume number instead.",
+      2,
+    );
+  }
+
+  if (args.chapter !== undefined && requestedTokens.has("none")) {
+    logger.warn(
+      { event: "download.chapter_none_unsupported", context: "download" },
+      "--chapter none is not supported",
+    );
+    throw new CliError(
+      "--chapter none is not yet supported. Use a numeric chapter number instead.",
+      2,
+    );
+  }
+
+  // Try MangaDex pipeline (soft failure on title-not-found, language-not-matched)
+  // TitleNotFoundError is caught inside and converted to null.
+  const mangadexResolve: MangaDexResolveResult | null = await tryMangaDexPipeline(
+    args,
+    ctx,
+    client,
+  );
+
+  const eligibility = isFallbackEligible(mangadexResolve);
+
+  if (eligibility.eligible) {
+    logger.info(
+      {
+        event: "download.fallback_triggered",
+        context: "download",
+        reason: eligibility.reason,
+        title: args.manga,
+      },
+      `MangaDex unavailable for "${args.manga}" (reason: ${eligibility.reason}); offering fallback`,
+    );
+    return runFallbackDownload({
+      args,
+      ctx,
+      mangadexResolve,
+      createFallbackHttp,
+      createMangakakalotClient,
+    });
+  }
+
+  // MangaDex path — mangadexResolve is non-null here (isFallbackEligible returned false)
+  // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null when !eligibility.eligible
+  await runMangaDexDownload(args, ctx, http, mangadexResolve!);
 }

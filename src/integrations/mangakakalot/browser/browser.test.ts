@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveAuthPath } from "@plugins/auth-path/index.ts";
-import { AuthError, pageHasRealContent, pollForClearance } from "./index.ts";
+import { AuthError, buildVerifyHeaders, pageHasRealContent, pollForClearance } from "./index.ts";
 import type { CookieLike } from "./types.ts";
 
 // ---------------------------------------------------------------------------
@@ -193,6 +193,187 @@ describe("pollForClearance", () => {
         intervalMs: 10,
       }),
     ).rejects.toBe(browserClosedError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildVerifyHeaders — verify-fetch header construction
+// ---------------------------------------------------------------------------
+
+describe("buildVerifyHeaders", () => {
+  test("omits Cookie header when cookies map is empty", () => {
+    const headers = buildVerifyHeaders({}, "Mozilla/5.0");
+    expect("cookie" in headers).toBe(false);
+    expect(headers["user-agent"]).toBe("Mozilla/5.0");
+  });
+
+  test("includes Cookie header when cookies map is non-empty", () => {
+    const headers = buildVerifyHeaders({ _ga: "GA1.1.123", cf_clearance: "abc" }, "Mozilla/5.0");
+    expect(headers.cookie).toBeDefined();
+    expect(headers.cookie).toContain("_ga=GA1.1.123");
+    expect(headers.cookie).toContain("cf_clearance=abc");
+    expect(headers["user-agent"]).toBe("Mozilla/5.0");
+  });
+
+  test("single cookie produces correct k=v format with no trailing separator", () => {
+    const headers = buildVerifyHeaders({ token: "xyz" }, "ua");
+    expect(headers.cookie).toBe("token=xyz");
+  });
+
+  test("multiple cookies are joined by '; '", () => {
+    const headers = buildVerifyHeaders({ a: "1", b: "2" }, "ua");
+    // Order depends on Object.entries — just verify both are present and separator exists
+    expect(headers.cookie).toMatch(/a=1/);
+    expect(headers.cookie).toMatch(/b=2/);
+    expect(headers.cookie).toContain("; ");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runAuth — no-challenge path: waitForLoadState ordering
+//
+// These tests use a minimal Playwright-shaped mock. They cannot launch
+// Chromium, so they only exercise the observable ordering of mock calls.
+// ---------------------------------------------------------------------------
+
+import { runAuth } from "./index.ts";
+import type { RunAuthOptions } from "./types.ts";
+
+describe("runAuth no-challenge path — waitForLoadState ordering", () => {
+  // Build a minimal mock that simulates the no-challenge path.
+  // Returns call log so tests can assert ordering.
+  function buildMocks(opts: {
+    cookiesAfterLoad?: Array<{ name: string; value: string }>;
+    loadRejects?: boolean;
+  }) {
+    const callLog: string[] = [];
+    const { cookiesAfterLoad = [{ name: "_ga", value: "GA1.1.1" }], loadRejects = false } = opts;
+
+    let loadStateCalled = false;
+
+    const page = {
+      goto: async () => {},
+      title: async () => "MangaKakalot - Read Manga Online",
+      evaluate: async () => "Mozilla/5.0 (mock)",
+      waitForLoadState: async (_state: string, _opts?: unknown) => {
+        callLog.push("waitForLoadState");
+        loadStateCalled = true;
+        if (loadRejects) throw new Error("timeout");
+      },
+    };
+
+    const context = {
+      newPage: async () => page,
+      cookies: async (_url?: string) => {
+        callLog.push("cookies");
+        // Return cookies only after waitForLoadState has been called — simulates
+        // the real-world race where GA cookies appear after "load".
+        return loadStateCalled ? cookiesAfterLoad : [];
+      },
+    };
+
+    const browser = {
+      on: (_event: string, _cb: () => void) => {},
+      newContext: async () => context,
+      close: async () => {},
+    };
+
+    return { browser, callLog };
+  }
+
+  // Patch chromium.launch so runAuth uses our mock browser.
+  // We import "playwright" at the module level in index.ts, so we monkey-patch
+  // the module object directly — Bun supports this for in-process mocking.
+  async function withMockBrowser(browser: unknown, fn: () => Promise<void>): Promise<void> {
+    const playwright = await import("playwright");
+    const original = playwright.chromium.launch;
+    // @ts-expect-error — intentional monkey-patch for test isolation
+    playwright.chromium.launch = async () => browser;
+    try {
+      await fn();
+    } finally {
+      playwright.chromium.launch = original;
+    }
+  }
+
+  function buildOpts(tmpDataHome: string): RunAuthOptions {
+    return {
+      dataHome: tmpDataHome,
+      logger: {
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+        debug: () => {},
+        // pino minimal shape
+        child: () => ({}) as never,
+      } as unknown as RunAuthOptions["logger"],
+    };
+  }
+
+  test("waitForLoadState('load') is called before context.cookies() on no-challenge path", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "scanldr-auth-order-"));
+    try {
+      const { browser, callLog } = buildMocks({});
+
+      // Stub fetch to simulate a successful verify.
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async () => ({ ok: true }) as Response) as unknown as typeof fetch;
+
+      try {
+        await withMockBrowser(browser, () => runAuth(buildOpts(tmpDir)));
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+
+      const waitIdx = callLog.indexOf("waitForLoadState");
+      const cookiesIdx = callLog.indexOf("cookies");
+      expect(waitIdx).toBeGreaterThanOrEqual(0);
+      expect(cookiesIdx).toBeGreaterThanOrEqual(0);
+      expect(waitIdx).toBeLessThan(cookiesIdx);
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test("load timeout falls through: warn fires, cookies still extracted, session saved", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "scanldr-auth-timeout-"));
+    const warnEvents: string[] = [];
+    try {
+      const { browser } = buildMocks({ loadRejects: true });
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async () => ({ ok: true }) as Response) as unknown as typeof fetch;
+
+      let warnFired = false;
+      const opts: RunAuthOptions = {
+        ...buildOpts(tmpDir),
+        logger: {
+          info: () => {},
+          warn: (fields: Record<string, unknown>) => {
+            if (fields.event === "auth.load_timeout") warnFired = true;
+            warnEvents.push(String(fields.event));
+          },
+          error: () => {},
+          debug: () => {},
+          child: () => ({}) as never,
+        } as unknown as RunAuthOptions["logger"],
+      };
+
+      try {
+        await withMockBrowser(browser, () => runAuth(opts));
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+
+      expect(warnFired).toBe(true);
+      // Session file should exist despite timeout.
+      const sessionPath = resolveAuthPath({ dataHome: tmpDir });
+      const raw = await readFile(sessionPath, "utf8");
+      const parsed = JSON.parse(raw) as { userAgent: string };
+      expect(parsed.userAgent).toBe("Mozilla/5.0 (mock)");
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
   });
 });
 

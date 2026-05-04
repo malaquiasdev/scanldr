@@ -1,5 +1,6 @@
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
 import { parseAggregate, parseChapterFeed, parseMangaList } from "./parser.ts";
+import { TitleNotFoundError } from "./types.ts";
 import type {
   ChapterRef,
   MangaCandidate,
@@ -11,6 +12,7 @@ import type {
 } from "./types.ts";
 
 export type { ChapterRef, MangaCandidate, MangaDexClient, VolumeRef } from "./types.ts";
+export { TitleNotFoundError } from "./types.ts";
 
 export function createMangaDexClient(http: MangaDexHttpClient): MangaDexClient {
   async function searchManga(title: string, lang?: string): Promise<MangaCandidate[]> {
@@ -50,7 +52,7 @@ export function createMangaDexClient(http: MangaDexHttpClient): MangaDexClient {
   async function resolveTitleToId(title: string): Promise<MangaCandidate[]> {
     const candidates = await searchManga(title);
     if (candidates.length === 0) {
-      throw new Error(`No manga found for title: "${title}"`);
+      throw new TitleNotFoundError(title);
     }
     return candidates;
   }
