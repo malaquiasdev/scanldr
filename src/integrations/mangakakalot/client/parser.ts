@@ -9,26 +9,16 @@ import { MangakakalotParseError } from "./types.ts";
 const SELECTORS = {
   // Search results page
   searchResultItem: ".story_item",
-  searchResultTitle: ".story_name a",
   searchResultLink: ".story_name a",
 
-  // Manga detail page
-  mangaPageTitle: ".manga-info-text h1",
-  mangaPageChapterRow: ".chapter-list .row",
-  mangaPageChapterLink: "a",
-  mangaPageChapterDate: "span[title]",
-  mangaPageNextPage:
-    ".panel_page_number .page_select a.page_last, .panel_page_number a.page_select",
-
-  // Chapter reader page
+  // Chapter reader page — confirmed against real HTML (2026-05-03)
   chapterReaderImage: ".container-chapter-reader img",
 
   // Structural site markers used to distinguish DOM drift from no-content pages
   siteHeader: "header, .header, .navbar, body",
-  paginationPanel: ".panel_page_number",
 } as const;
 
-/** Extracts manga slug from a mangakakalot URL like https://mangakakalot.gg/manga/some-slug */
+/** Extracts manga slug from a mangakakalot URL like https://www.mangakakalot.gg/manga/some-slug */
 function slugFromUrl(url: string): string {
   try {
     const parsed = new URL(url);
@@ -43,37 +33,6 @@ function slugFromUrl(url: string): string {
   } catch {
     return url;
   }
-}
-
-/** Parses chapter number from link text like "Chapter 1.5 : Some Title" or from URL path. */
-function parseChapterNumber(text: string, href: string): string {
-  // Try URL first: /chapter/<manga>/chapter-1.5
-  const urlMatch = href.match(/chapter-(\d+(?:\.\d+)?)/i);
-  if (urlMatch?.[1]) return urlMatch[1];
-  // Try text: "Chapter 1.5" or "Vol.3 Chapter 1.5"
-  const textMatch = text.match(/chapter[\s:]+(\d+(?:\.\d+)?)/i);
-  if (textMatch?.[1]) return textMatch[1];
-  return "0";
-}
-
-/** Strips the leading chapter number/label from link text to get the chapter title. */
-function parseChapterTitle(text: string): string | null {
-  // "Chapter 1 : Some Title" → "Some Title"
-  const m = text.match(/chapter[\s\d.]+[:\-]?\s*(.+)/i);
-  const candidate = m?.[1]?.trim() ?? null;
-  return candidate && candidate.length > 0 ? candidate : null;
-}
-
-/**
- * Parses upload date from a span[title] attribute.
- * Attribute may be "Dec 25, 2023 00:00" or just a date.
- * Returns ISO string (UTC). Falls back to epoch if unparseable.
- */
-function parseUploadDate(raw: string | undefined): string {
-  if (!raw) return new Date(0).toISOString();
-  const parsed = new Date(raw);
-  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
-  return new Date(0).toISOString();
 }
 
 /**
@@ -126,65 +85,93 @@ export function parseSearchResults(html: string, url: string): MangaCandidate[] 
   return results;
 }
 
+// ---------------------------------------------------------------------------
+// JSON API types (chapter list endpoint)
+// ---------------------------------------------------------------------------
+
+interface MkChapterApiItem {
+  chapter_name: string;
+  chapter_slug: string;
+  chapter_num: number;
+  updated_at: string;
+  view: number;
+}
+
+interface MkChapterApiResponse {
+  success: boolean;
+  data: { chapters: MkChapterApiItem[] };
+}
+
+function isMkChapterApiItem(v: unknown): v is MkChapterApiItem {
+  if (!v || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o.chapter_name === "string" &&
+    typeof o.chapter_slug === "string" &&
+    typeof o.chapter_num === "number" &&
+    typeof o.updated_at === "string"
+  );
+}
+
+function isMkChapterApiResponse(v: unknown): v is MkChapterApiResponse {
+  if (!v || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  if (o.success !== true) return false;
+  if (!o.data || typeof o.data !== "object") return false;
+  const data = o.data as Record<string, unknown>;
+  return Array.isArray(data.chapters);
+}
+
 /**
- * Parses the chapter list from a manga detail page.
+ * Parses the chapter list from the mangakakalot JSON API response.
  *
- * A manga with one chapter row is valid (return it).
- * An empty chapter list root with a present title is valid (manga exists, no releases yet).
- *
- * Throws MangakakalotParseError only when BOTH the chapter list root AND the manga title
- * selector are missing — two missing selectors is a reliable signal of DOM drift.
+ * The API returns chapters newest-first. Output is sorted ascending by chapter_num.
+ * Throws MangakakalotParseError when the JSON shape is invalid.
  */
-export function parseChapterList(html: string, url: string): ChapterRef[] {
-  const $ = cheerio.load(html);
-  const chapters: ChapterRef[] = [];
-
-  const chapterRows = $(SELECTORS.mangaPageChapterRow);
-  const titleEl = $(SELECTORS.mangaPageTitle);
-
-  // Both selectors missing → DOM changed, not an empty chapter list.
-  if (chapterRows.length === 0 && titleEl.length === 0) {
+export function parseChapterListFromApi(json: unknown, mangaSlug: string): ChapterRef[] {
+  if (!isMkChapterApiResponse(json)) {
     throw new MangakakalotParseError(
-      `${SELECTORS.mangaPageChapterRow}, ${SELECTORS.mangaPageTitle}`,
-      url,
-      "neither chapter list nor manga title found on page; DOM may have changed",
+      "data.chapters",
+      `https://www.mangakakalot.gg/api/manga/${mangaSlug}/chapters`,
+      "invalid API response shape; expected { success: true, data: { chapters: [...] } }",
     );
   }
 
-  chapterRows.each((_, el) => {
-    const anchor = $(el).find(SELECTORS.mangaPageChapterLink).first();
-    const href = anchor.attr("href") ?? "";
-    const text = anchor.text().trim();
-    const dateSpan = $(el).find(SELECTORS.mangaPageChapterDate).first();
-    const rawDate = dateSpan.attr("title") ?? dateSpan.text().trim();
+  const items = json.data.chapters;
+  const chapters: ChapterRef[] = [];
 
-    if (!href) return;
-
-    // Use the chapter-specific slug from URL as the id to keep it unique.
-    // e.g. https://mangakakalot.gg/chapter/manga-slug/chapter-1 → "chapter/manga-slug/chapter-1"
-    let id: string;
-    try {
-      const parsed = new URL(href);
-      id = parsed.pathname.replace(/^\//, "");
-    } catch {
-      id = href;
+  for (const item of items) {
+    if (!isMkChapterApiItem(item)) {
+      throw new MangakakalotParseError(
+        "data.chapters[*]",
+        `https://www.mangakakalot.gg/api/manga/${mangaSlug}/chapters`,
+        `chapter item missing required fields: ${JSON.stringify(item)}`,
+      );
     }
 
-    const chapterNum = parseChapterNumber(text, href);
-    const title = parseChapterTitle(text);
-    const readableAt = parseUploadDate(rawDate);
+    // id is a composite URL-path segment: "<mangaSlug>/<chapter-slug>"
+    // getChapterImages receives this and reconstructs the reader URL as
+    //   SITE_ROOT/manga/<mangaSlug>/<chapter-slug>
+    const id = `${mangaSlug}/${item.chapter_slug}`;
+
+    // Strip the leading "Chapter NUM" label if present, leaving only the subtitle.
+    const rawTitle = item.chapter_name.replace(/^chapter[\s\d.]+[:\-]?\s*/i, "").trim();
+    const title = rawTitle.length > 0 ? rawTitle : null;
 
     chapters.push({
       id,
       volume: null,
-      chapter: chapterNum,
+      chapter: String(item.chapter_num),
       title,
       translatedLanguage: "en",
       scanlationGroup: null,
-      readableAt,
+      readableAt: item.updated_at,
       externalUrl: null,
     });
-  });
+  }
+
+  // API returns newest-first; sort ascending by chapter_num for caller convenience.
+  chapters.sort((a, b) => Number(a.chapter) - Number(b.chapter));
 
   return chapters;
 }
@@ -215,41 +202,4 @@ export function parseChapterImages(html: string, url: string): ImageRef[] {
   }
 
   return images;
-}
-
-/**
- * Returns the URL of the next chapter-list page, or null if this is the last page.
- * Mangakakalot uses a pagination panel with numbered page links and marks the active
- * page with class `page_select`.
- *
- * Algorithm: iterate anchors in order; once we see the active (page_select) anchor,
- * the very next anchor with an href is the next page. Returns null if no next anchor
- * follows — normal for the last page.
- *
- * DOM shape reference: tests/fixtures/mangakakalot/manga-paginated.html
- * Active page anchor comes first, immediately followed by the next-page anchor.
- */
-export function parseChapterListPagination(html: string): string | null {
-  const $ = cheerio.load(html);
-
-  const pagePanel = $(".panel_page_number");
-  if (pagePanel.length === 0) return null;
-
-  // We check foundActive BEFORE setting it so that we capture the anchor
-  // that comes AFTER the active one (not the active anchor itself).
-  let foundActive = false;
-  let nextUrl: string | null = null;
-
-  pagePanel.find("a").each((_, el) => {
-    const href = $(el).attr("href");
-    if (!href) return;
-    if (foundActive && !nextUrl) {
-      nextUrl = href;
-    }
-    if ($(el).hasClass("page_select")) {
-      foundActive = true;
-    }
-  });
-
-  return nextUrl;
 }

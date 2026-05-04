@@ -92,9 +92,9 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
   // Pending chain for sequential dispatch (satisfies concurrency test #12).
   let chain: Promise<void> = Promise.resolve();
 
-  async function get(url: string): Promise<Response> {
+  async function get(url: string, extraHeaders?: Record<string, string>): Promise<Response> {
     // Enqueue behind prior requests — enforces 1 req/s globally.
-    const result = chain.then(() => dispatch(url));
+    const result = chain.then(() => dispatch(url, extraHeaders));
     // Swallow errors on chain to prevent unhandled rejection bleed between calls.
     chain = result.then(
       () => {},
@@ -103,7 +103,7 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
     return result;
   }
 
-  async function dispatch(url: string): Promise<Response> {
+  async function dispatch(url: string, extraHeaders?: Record<string, string>): Promise<Response> {
     // Throttle: sleep if last request was < 1000ms ago.
     if (lastRequestAt !== null) {
       const elapsed = now() - lastRequestAt;
@@ -122,8 +122,19 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
       let fetchError: unknown;
 
       try {
+        // Build base headers; merge caller extras on top (caller wins on conflict).
         const headers: Record<string, string> = { "user-agent": userAgent };
         if (cookieHeader !== undefined) headers.cookie = cookieHeader;
+        // Caller-supplied headers are merged AFTER base headers so they take precedence,
+        // EXCEPT we always re-enforce cookie and user-agent (security invariant).
+        if (extraHeaders) {
+          for (const [k, v] of Object.entries(extraHeaders)) {
+            const key = k.toLowerCase();
+            // Prevent callers from dropping the auth headers.
+            if (key === "cookie" || key === "user-agent") continue;
+            headers[key] = v;
+          }
+        }
         res = await fetchFn(url, { headers });
       } catch (err) {
         fetchError = err;
@@ -177,5 +188,5 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
     throw new Error("invariant: retry loop exited without returning or throwing");
   }
 
-  return { get };
+  return { get: (url, headers) => get(url, headers) };
 }

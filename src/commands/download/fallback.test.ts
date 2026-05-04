@@ -524,3 +524,97 @@ describe("promptFallbackSite — TTY readline mock", () => {
     await expect(promptFallbackSite(SITES, false, noopLogger)).rejects.toBeInstanceOf(CliError);
   });
 });
+
+// ---------------------------------------------------------------------------
+// makeMangakakalotFetcher — Referer header
+// ---------------------------------------------------------------------------
+
+describe("makeMangakakalotFetcher sends Referer header", () => {
+  test("image fetch passes referer: https://www.mangakakalot.gg/ to http.get", async () => {
+    // Access the fetcher indirectly via runFallbackDownload by observing http.get calls.
+    // We capture the headers passed to http.get for the image URL.
+    let capturedHeaders: Record<string, string> | undefined;
+
+    const imageUrl = "https://img-r1.2xstorage.com/dandadan/1/0.webp";
+    const searchHtml = `<html><body>
+      <div class="panel_story_list">
+        <div class="story_item">
+          <div class="story_name"><a href="https://www.mangakakalot.gg/manga/test-manga">Test Manga</a></div>
+        </div>
+      </div>
+    </body></html>`;
+    const chapterHtml = `<div class="container-chapter-reader"><img src="${imageUrl}" /></div>`;
+    const chaptersJson = JSON.stringify({
+      success: true,
+      data: {
+        chapters: [
+          {
+            chapter_name: "Chapter 1",
+            chapter_slug: "chapter-1",
+            chapter_num: 1,
+            updated_at: "2024-01-01T00:00:00.000000Z",
+            view: 0,
+          },
+        ],
+      },
+    });
+
+    const mockHttp: FallbackHttpClient = {
+      get: mock(async (url: string, headers?: Record<string, string>) => {
+        if (url === imageUrl) {
+          capturedHeaders = headers;
+          return new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 });
+        }
+        if (url.includes("/api/manga/")) {
+          return new Response(chaptersJson, {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (url.includes("/search/")) {
+          return new Response(searchHtml, {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          });
+        }
+        // Chapter reader
+        return new Response(chapterHtml, { status: 200, headers: { "content-type": "text/html" } });
+      }),
+    };
+
+    const db = openDb(":memory:");
+    runMigrations(db);
+
+    await runFallbackDownload({
+      args: baseArgs({ volume: undefined, chapter: "1", noTrack: true, dryRun: false }),
+      ctx: {
+        logger: noopLogger,
+        config: {
+          preferred_languages: ["en"],
+          download_quality: "data",
+          default_format: "cbz",
+          default_out: "/tmp",
+          image_concurrency: 1,
+          chapter_delay_ms: 0,
+          db_path: ":memory:",
+        },
+        db,
+      },
+      mangadexResolve: null,
+      createFallbackHttp: async () => mockHttp,
+      createMangakakalotClient: (opts) => {
+        const {
+          createMangakakalotClient: mkClient,
+        } = require("@integrations/mangakakalot/client/index.ts");
+        return mkClient(opts);
+      },
+      promptSite: async (sites) => {
+        const site = sites[0];
+        if (!site) throw new Error("no sites");
+        return site;
+      },
+    });
+
+    expect(capturedHeaders?.referer).toBe("https://www.mangakakalot.gg/");
+  });
+});
