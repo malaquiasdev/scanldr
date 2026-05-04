@@ -85,10 +85,12 @@ describe("download: required-flag validation", () => {
     expect(r.stderr).toMatch(/mutually exclusive/i);
   });
 
-  test("--chapter alone → exit 2 (not yet implemented)", async () => {
+  test("--chapter alone → exits (now implemented; exits non-zero only on network/resolve error)", async () => {
+    // --chapter is now implemented. In non-TTY mode with no network, it will try to resolve the manga
+    // and fail at the MangaDex API level. We just assert mutual exclusion no longer triggers.
     const r = await run(["download", "Dandadan", "--chapter", "5", "--non-tty"]);
-    expect(r.exitCode).toBe(2);
-    expect(r.stderr).toMatch(/--chapter/i);
+    // Must NOT be a mutual-exclusion error
+    expect(r.stderr).not.toMatch(/mutually exclusive/i);
   });
 
   test("missing manga positional → exit 2 with usage", async () => {

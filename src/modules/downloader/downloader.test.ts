@@ -2,10 +2,11 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { downloadVolume } from "@modules/downloader/index.ts";
+import { downloadBundle } from "@modules/downloader/index.ts";
 import type { ChapterInput, ImageRef } from "@modules/downloader/types.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { unzipSync } from "fflate";
+import { padBundleNumber } from "./helpers.ts";
 
 const noopLogger: Logger = {
   error: (_f, _m) => {},
@@ -78,16 +79,29 @@ afterEach(async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Archive structure
+// padBundleNumber unit tests
 // ---------------------------------------------------------------------------
 
-describe("downloadVolume — archive structure", () => {
+describe("padBundleNumber", () => {
+  test('"1" → "001"', () => expect(padBundleNumber("1", 3)).toBe("001"));
+  test('"103" → "103"', () => expect(padBundleNumber("103", 3)).toBe("103"));
+  test('"18.5" → "018.5"', () => expect(padBundleNumber("18.5", 3)).toBe("018.5"));
+  test('"1.25" → "001.25"', () => expect(padBundleNumber("1.25", 3)).toBe("001.25"));
+  test('"none" → "none"', () => expect(padBundleNumber("none", 3)).toBe("none"));
+});
+
+// ---------------------------------------------------------------------------
+// Archive structure — volume
+// ---------------------------------------------------------------------------
+
+describe("downloadBundle — volume archive structure", () => {
   test("produces correct filename and directory layout", async () => {
-    const result = await downloadVolume({
+    const result = await downloadBundle({
       outDir,
       format: "cbz",
       slug: "witch-hat-atelier",
-      volumeNumber: 3,
+      kind: "volume",
+      bundleNumber: "3",
       chapters: [makeChapter("ch-018", 18, 2), makeChapter("ch-019", 19, 1)],
       imageConcurrency: 2,
       delayMs: 0,
@@ -107,11 +121,12 @@ describe("downloadVolume — archive structure", () => {
   });
 
   test("three-digit volume zero-padding", async () => {
-    const result = await downloadVolume({
+    const result = await downloadBundle({
       outDir,
       format: "cbz",
       slug: "test-manga",
-      volumeNumber: 1,
+      kind: "volume",
+      bundleNumber: "1",
       chapters: [makeChapter("ch-001", 1, 1)],
       imageConcurrency: 1,
       delayMs: 0,
@@ -123,11 +138,12 @@ describe("downloadVolume — archive structure", () => {
   });
 
   test("volume 103 pads correctly", async () => {
-    const result = await downloadVolume({
+    const result = await downloadBundle({
       outDir,
       format: "cbz",
       slug: "test",
-      volumeNumber: 103,
+      kind: "volume",
+      bundleNumber: "103",
       chapters: [makeChapter("c1", 1, 1)],
       imageConcurrency: 1,
       delayMs: 0,
@@ -139,17 +155,56 @@ describe("downloadVolume — archive structure", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Archive structure — chapter
+// ---------------------------------------------------------------------------
+
+describe("downloadBundle — chapter archive structure", () => {
+  test("chapter kind generates correct filename", async () => {
+    const result = await downloadBundle({
+      outDir,
+      format: "cbz",
+      slug: "one-piece",
+      kind: "chapter",
+      bundleNumber: "1",
+      chapters: [makeChapter("ch-001", 1, 2)],
+      imageConcurrency: 1,
+      delayMs: 0,
+      dryRun: false,
+      logger: noopLogger,
+    });
+    expect(result.outputPath).toContain("one-piece-chapter-001.cbz");
+  });
+
+  test("decimal chapter number is padded correctly", async () => {
+    const result = await downloadBundle({
+      outDir,
+      format: "cbz",
+      slug: "test-manga",
+      kind: "chapter",
+      bundleNumber: "18.5",
+      chapters: [makeChapter("ch-018-5", 18, 1)],
+      imageConcurrency: 1,
+      delayMs: 0,
+      dryRun: false,
+      logger: noopLogger,
+    });
+    expect(result.outputPath).toContain("test-manga-chapter-018.5.cbz");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Page order invariant
 // ---------------------------------------------------------------------------
 
-describe("downloadVolume — page ordering", () => {
+describe("downloadBundle — page ordering", () => {
   test("pages are sorted across chapters in ascending order", async () => {
     // Two chapters with 3 pages each. Chapters passed out-of-order to verify sorting.
-    const result = await downloadVolume({
+    const result = await downloadBundle({
       outDir,
       format: "cbz",
       slug: "sorted-manga",
-      volumeNumber: 1,
+      kind: "volume",
+      bundleNumber: "1",
       chapters: [
         makeChapter("ch-002", 2, 3), // chapter 2 first in input
         makeChapter("ch-001", 1, 3), // chapter 1 second in input
@@ -169,11 +224,12 @@ describe("downloadVolume — page ordering", () => {
   });
 
   test("single chapter pages numbered from 0001", async () => {
-    const result = await downloadVolume({
+    const result = await downloadBundle({
       outDir,
       format: "cbz",
       slug: "single-ch",
-      volumeNumber: 1,
+      kind: "volume",
+      bundleNumber: "1",
       chapters: [makeChapter("ch-1", 1, 5)],
       imageConcurrency: 2,
       delayMs: 0,
@@ -193,7 +249,7 @@ describe("downloadVolume — page ordering", () => {
 // Concurrency limit
 // ---------------------------------------------------------------------------
 
-describe("downloadVolume — concurrency limit", () => {
+describe("downloadBundle — concurrency limit", () => {
   test("never exceeds imageConcurrency in-flight fetches", async () => {
     const limit = 3;
     let inFlight = 0;
@@ -209,11 +265,12 @@ describe("downloadVolume — concurrency limit", () => {
     };
 
     const pages = 12; // 12 pages, concurrency 3 → max in-flight must be ≤ 3
-    await downloadVolume({
+    await downloadBundle({
       outDir,
       format: "cbz",
       slug: "concurrency-test",
-      volumeNumber: 1,
+      kind: "volume",
+      bundleNumber: "1",
       chapters: [makeChapter("ch-1", 1, pages, fetcher)],
       imageConcurrency: limit,
       delayMs: 0,
@@ -230,7 +287,7 @@ describe("downloadVolume — concurrency limit", () => {
 // Dry-run
 // ---------------------------------------------------------------------------
 
-describe("downloadVolume — dry-run", () => {
+describe("downloadBundle — dry-run", () => {
   test("returns planned path with [dry-run] prefix", async () => {
     let fetchCalled = false;
     const fetcher = async (_ref: ImageRef): Promise<Uint8Array> => {
@@ -238,11 +295,12 @@ describe("downloadVolume — dry-run", () => {
       return makePng(1);
     };
 
-    const result = await downloadVolume({
+    const result = await downloadBundle({
       outDir,
       format: "cbz",
       slug: "dry-test",
-      volumeNumber: 5,
+      kind: "volume",
+      bundleNumber: "5",
       chapters: [makeChapter("ch-050", 50, 3, fetcher)],
       imageConcurrency: 2,
       delayMs: 0,
@@ -258,11 +316,12 @@ describe("downloadVolume — dry-run", () => {
   });
 
   test("dry-run does not write any files", async () => {
-    await downloadVolume({
+    await downloadBundle({
       outDir,
       format: "cbz",
       slug: "no-files",
-      volumeNumber: 1,
+      kind: "volume",
+      bundleNumber: "1",
       chapters: [makeChapter("c1", 1, 2)],
       imageConcurrency: 1,
       delayMs: 0,
@@ -281,7 +340,7 @@ describe("downloadVolume — dry-run", () => {
 // Interruption simulation — .temp file, no final file
 // ---------------------------------------------------------------------------
 
-describe("downloadVolume — interruption simulation", () => {
+describe("downloadBundle — interruption simulation", () => {
   test("partial failure leaves no final .cbz when fetcher throws mid-stream", async () => {
     let callCount = 0;
     const fetcher = async (_ref: ImageRef): Promise<Uint8Array> => {
@@ -291,11 +350,12 @@ describe("downloadVolume — interruption simulation", () => {
     };
 
     await expect(
-      downloadVolume({
+      downloadBundle({
         outDir,
         format: "cbz",
         slug: "interrupted",
-        volumeNumber: 1,
+        kind: "volume",
+        bundleNumber: "1",
         chapters: [makeChapter("ch-1", 1, 5, fetcher)],
         imageConcurrency: 1,
         delayMs: 0,
@@ -315,13 +375,14 @@ describe("downloadVolume — interruption simulation", () => {
 // chapterIds in result
 // ---------------------------------------------------------------------------
 
-describe("downloadVolume — result metadata", () => {
+describe("downloadBundle — result metadata", () => {
   test("chapterIds preserves input order", async () => {
-    const result = await downloadVolume({
+    const result = await downloadBundle({
       outDir,
       format: "cbz",
       slug: "meta-test",
-      volumeNumber: 1,
+      kind: "volume",
+      bundleNumber: "1",
       chapters: [
         makeChapter("z-chapter", 3, 1),
         makeChapter("a-chapter", 1, 1),
@@ -342,13 +403,14 @@ describe("downloadVolume — result metadata", () => {
 // PNG magic detection (no explicit content-type)
 // ---------------------------------------------------------------------------
 
-describe("downloadVolume — extension detection from bytes", () => {
+describe("downloadBundle — extension detection from bytes", () => {
   test("detects PNG from magic bytes when fetcher returns PNG data", async () => {
-    const result = await downloadVolume({
+    const result = await downloadBundle({
       outDir,
       format: "cbz",
       slug: "ext-detect",
-      volumeNumber: 1,
+      kind: "volume",
+      bundleNumber: "1",
       chapters: [makeChapter("c1", 1, 3, async (_ref) => makePng(1))],
       imageConcurrency: 1,
       delayMs: 0,
@@ -365,11 +427,12 @@ describe("downloadVolume — extension detection from bytes", () => {
   });
 
   test("falls back to .jpg for non-PNG magic bytes", async () => {
-    const result = await downloadVolume({
+    const result = await downloadBundle({
       outDir,
       format: "cbz",
       slug: "ext-fallback",
-      volumeNumber: 1,
+      kind: "volume",
+      bundleNumber: "1",
       chapters: [makeChapter("c1", 1, 2, async (_ref) => makeJpeg(1))],
       imageConcurrency: 1,
       delayMs: 0,

@@ -1,12 +1,12 @@
 import { mkdir, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { zipSync } from "fflate";
-import { detectExtFromBytes, pad } from "./helpers.ts";
+import { detectExtFromBytes, pad, padBundleNumber } from "./helpers.ts";
 import { createSemaphore } from "./semaphore.ts";
 import type {
   ChapterInput,
-  DownloadVolumeInput,
-  DownloadVolumeResult,
+  DownloadBundleInput,
+  DownloadBundleResult,
   ImageRef,
   Semaphore,
 } from "./types.ts";
@@ -38,12 +38,13 @@ async function fetchChapterPages(
   return Promise.all(tasks);
 }
 
-export async function downloadVolume(input: DownloadVolumeInput): Promise<DownloadVolumeResult> {
+export async function downloadBundle(input: DownloadBundleInput): Promise<DownloadBundleResult> {
   const {
     outDir,
     format,
     slug,
-    volumeNumber,
+    kind,
+    bundleNumber,
     chapters,
     imageConcurrency,
     delayMs,
@@ -51,11 +52,11 @@ export async function downloadVolume(input: DownloadVolumeInput): Promise<Downlo
     logger,
   } = input;
 
-  const volumePad = pad(volumeNumber, 3);
+  const padded = padBundleNumber(bundleNumber, 3);
   const ext = format === "zip" ? "zip" : "cbz";
-  const filename = `${slug}-volume-${volumePad}.${ext}`;
-  const volumeDir = join(outDir, slug);
-  const finalPath = join(volumeDir, filename);
+  const filename = `${slug}-${kind}-${padded}.${ext}`;
+  const bundleDir = join(outDir, slug);
+  const finalPath = join(bundleDir, filename);
   const tempPath = `${finalPath}.temp`;
   const chapterIds = chapters.map((c) => c.id);
   const sorted = [...chapters].sort((a, b) => a.num - b.num);
@@ -75,7 +76,7 @@ export async function downloadVolume(input: DownloadVolumeInput): Promise<Downlo
     return { chapterIds, outputPath: `[dry-run] ${finalPath}`, byteSize: 0 };
   }
 
-  await mkdir(volumeDir, { recursive: true });
+  await mkdir(bundleDir, { recursive: true });
 
   const sem = createSemaphore(imageConcurrency);
   const zipEntries: Record<string, Uint8Array> = {};

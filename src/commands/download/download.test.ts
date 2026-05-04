@@ -249,7 +249,7 @@ describe("runDownload — force", () => {
     let loggedSkip = false;
     const captureLogger: Logger = {
       info: (_obj: unknown, msg?: string) => {
-        if (msg?.includes("skipping volume")) loggedSkip = true;
+        if (msg?.includes("skipping")) loggedSkip = true;
       },
       warn: () => {},
       error: () => {},
@@ -596,5 +596,298 @@ describe("runDownload — range parsing", () => {
     await expect(
       runDownload(baseArgs({ volume: "none" }), baseCtx(), makeClient(), makeFullHttpClient()),
     ).rejects.toBeInstanceOf(CliError);
+  });
+
+  test("--chapter none throws CliError (exit-code 2)", async () => {
+    const err = await runDownload(
+      baseArgs({ volume: undefined, chapter: "none" }),
+      baseCtx(),
+      makeClient(),
+      makeFullHttpClient(),
+    ).catch((e) => e);
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).exitCode).toBe(2);
+    expect((err as CliError).message).toMatch(/not yet supported/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// --chapter tests
+// ---------------------------------------------------------------------------
+
+describe("runDownload --chapter — happy path 3-chapter range", () => {
+  test("produces 3 archives with correct names, pages, and history", async () => {
+    // ch1 → vol "1", ch2 → vol "1", ch3 → vol "2"
+    const ch1 = makeChapterRef({ id: "ch-1", volume: "1", chapter: "1" });
+    const ch2 = makeChapterRef({ id: "ch-2", volume: "1", chapter: "2" });
+    const ch3 = makeChapterRef({ id: "ch-3", volume: "2", chapter: "3" });
+
+    const client = makeClient({
+      aggregateVolumes: async () => [
+        makeVolumeRef("1", ["ch-1", "ch-2"]),
+        makeVolumeRef("2", ["ch-3"]),
+      ],
+      feedChapters: async () => [ch1, ch2, ch3],
+    });
+
+    // Each chapter has exactly 1 page
+    const http: MangaDexHttpClient = {
+      get: async (path: string) => {
+        if (path.startsWith("/at-home/server/")) {
+          return {
+            baseUrl: "https://example.com",
+            chapter: { hash: "abc", data: ["page1.jpg"], dataSaver: [] },
+          };
+        }
+        throw new Error(`Unexpected: ${path}`);
+      },
+    } as unknown as MangaDexHttpClient;
+
+    await withMockedImageFetch(async () => {
+      await runDownload(baseArgs({ volume: undefined, chapter: "1-3" }), baseCtx(), client, http);
+    });
+
+    // Assert all 3 archives exist with correct names
+    const slug = "test-manga";
+    for (const [, name] of [
+      ["1", "001"],
+      ["2", "002"],
+      ["3", "003"],
+    ] as const) {
+      const cbzPath = join(tmpDir, slug, `${slug}-chapter-${name}.cbz`);
+      const exists = await Bun.file(cbzPath).exists();
+      expect(exists).toBe(true);
+
+      const raw = new Uint8Array(await Bun.file(cbzPath).arrayBuffer());
+      const entries = unzipSync(raw);
+      const names = Object.keys(entries).sort();
+      expect(names).toHaveLength(1);
+      expect(names[0]).toBe("0001.jpg");
+    }
+
+    // Assert 3 history rows with correct volumes
+    const history = listHistory(db);
+    expect(history).toHaveLength(3);
+
+    const byChapter = new Map(history.map((r) => [r.chapterId, r]));
+    expect(byChapter.get("ch-1")).toMatchObject({
+      volume: "1",
+      chapterNum: "1",
+      source: "mangadex",
+      language: "en",
+      mangaId: "manga-id-1",
+    });
+    expect(byChapter.get("ch-2")).toMatchObject({ volume: "1", chapterNum: "2" });
+    expect(byChapter.get("ch-3")).toMatchObject({ volume: "2", chapterNum: "3" });
+  });
+});
+
+describe("runDownload --chapter — decimal chapter", () => {
+  test("decimal chapter filename uses padded integer part", async () => {
+    const ch = makeChapterRef({ id: "ch-185", volume: "3", chapter: "18.5" });
+    const client = makeClient({
+      aggregateVolumes: async () => [makeVolumeRef("3", ["ch-185"])],
+      feedChapters: async () => [ch],
+    });
+
+    const http: MangaDexHttpClient = {
+      get: async (path: string) => {
+        if (path.startsWith("/at-home/server/")) {
+          return {
+            baseUrl: "https://example.com",
+            chapter: { hash: "abc", data: ["page1.jpg"], dataSaver: [] },
+          };
+        }
+        throw new Error(`Unexpected: ${path}`);
+      },
+    } as unknown as MangaDexHttpClient;
+
+    await withMockedImageFetch(async () => {
+      await runDownload(baseArgs({ volume: undefined, chapter: "18.5" }), baseCtx(), client, http);
+    });
+
+    const cbzPath = join(tmpDir, "test-manga", "test-manga-chapter-018.5.cbz");
+    const exists = await Bun.file(cbzPath).exists();
+    expect(exists).toBe(true);
+  });
+});
+
+describe("runDownload --chapter — null volume chapter", () => {
+  test("chapter with null volume writes volume='none' in history", async () => {
+    const ch = makeChapterRef({ id: "ch-7", volume: null, chapter: "7" });
+    const client = makeClient({
+      aggregateVolumes: async () => [],
+      feedChapters: async () => [ch],
+    });
+
+    const http: MangaDexHttpClient = {
+      get: async (path: string) => {
+        if (path.startsWith("/at-home/server/")) {
+          return {
+            baseUrl: "https://example.com",
+            chapter: { hash: "abc", data: ["page1.jpg"], dataSaver: [] },
+          };
+        }
+        throw new Error(`Unexpected: ${path}`);
+      },
+    } as unknown as MangaDexHttpClient;
+
+    await withMockedImageFetch(async () => {
+      await runDownload(baseArgs({ volume: undefined, chapter: "7" }), baseCtx(), client, http);
+    });
+
+    const history = listHistory(db);
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({ volume: "none", chapterId: "ch-7" });
+
+    // Filename uses chapter number, not "none"
+    const cbzPath = join(tmpDir, "test-manga", "test-manga-chapter-007.cbz");
+    const exists = await Bun.file(cbzPath).exists();
+    expect(exists).toBe(true);
+  });
+});
+
+describe("runDownload --chapter — duplicate upload tiebreak", () => {
+  test("latest readableAt wins when two uploads share the same chapter number", async () => {
+    // older upload — should be discarded
+    const older = makeChapterRef({
+      id: "ch-old",
+      volume: "1",
+      chapter: "1",
+      readableAt: "2023-01-01T00:00:00Z",
+    });
+    // newer upload — should win
+    const newer = makeChapterRef({
+      id: "ch-new",
+      volume: "1",
+      chapter: "1",
+      readableAt: "2024-06-01T00:00:00Z",
+    });
+
+    const client = makeClient({
+      aggregateVolumes: async () => [makeVolumeRef("1", ["ch-old", "ch-new"])],
+      // Feed returns older first to verify feed-order independence
+      feedChapters: async () => [older, newer],
+    });
+
+    const http: MangaDexHttpClient = {
+      get: async (path: string) => {
+        if (path.startsWith("/at-home/server/")) {
+          return {
+            baseUrl: "https://example.com",
+            chapter: { hash: "abc", data: ["page1.jpg"], dataSaver: [] },
+          };
+        }
+        throw new Error(`Unexpected: ${path}`);
+      },
+    } as unknown as MangaDexHttpClient;
+
+    await withMockedImageFetch(async () => {
+      await runDownload(baseArgs({ volume: undefined, chapter: "1" }), baseCtx(), client, http);
+    });
+
+    // Only one bundle should be recorded, and it must be the newer upload
+    const history = listHistory(db);
+    expect(history).toHaveLength(1);
+    expect(history[0]?.chapterId).toBe("ch-new");
+  });
+
+  test("chapter with null chapter number is excluded from --chapter lookup", async () => {
+    const nullCh = makeChapterRef({ id: "ch-null", volume: "1", chapter: null });
+    // Also include a real chapter to confirm the feed is processed normally
+    const realCh = makeChapterRef({ id: "ch-real", volume: "1", chapter: "2" });
+
+    const client = makeClient({
+      aggregateVolumes: async () => [makeVolumeRef("1", ["ch-null", "ch-real"])],
+      feedChapters: async () => [nullCh, realCh],
+    });
+
+    const http: MangaDexHttpClient = {
+      get: async (path: string) => {
+        if (path.startsWith("/at-home/server/")) {
+          return {
+            baseUrl: "https://example.com",
+            chapter: { hash: "abc", data: ["page1.jpg"], dataSaver: [] },
+          };
+        }
+        throw new Error(`Unexpected: ${path}`);
+      },
+    } as unknown as MangaDexHttpClient;
+
+    await withMockedImageFetch(async () => {
+      // --chapter 2 should match realCh, null-chapter entry must not interfere
+      await runDownload(baseArgs({ volume: undefined, chapter: "2" }), baseCtx(), client, http);
+    });
+
+    const history = listHistory(db);
+    // Only the real chapter should be recorded; null-chapter entry is excluded from lookup
+    expect(history).toHaveLength(1);
+    expect(history[0]?.chapterId).toBe("ch-real");
+  });
+});
+
+describe("runDownload — mutual exclusion", () => {
+  test("passing both --volume and --chapter throws CliError with exit code 2", async () => {
+    await expect(
+      runDownload(
+        baseArgs({ volume: "1", chapter: "1" }),
+        baseCtx(),
+        makeClient(),
+        makeFullHttpClient(),
+      ),
+    ).rejects.toBeInstanceOf(CliError);
+  });
+});
+
+describe("runDownload --chapter — external chapter refused", () => {
+  test("external chapter in --chapter mode throws CliError", async () => {
+    const extUrl = "https://mangaplus.shueisha.co.jp/viewer/999";
+    const ch = makeChapterRef({ id: "ch-ext", volume: "1", chapter: "5", externalUrl: extUrl });
+    const client = makeClient({
+      aggregateVolumes: async () => [makeVolumeRef("1", ["ch-ext"])],
+      feedChapters: async () => [ch],
+    });
+
+    await expect(
+      runDownload(
+        baseArgs({ volume: undefined, chapter: "5" }),
+        baseCtx(),
+        client,
+        makeFullHttpClient(),
+      ),
+    ).rejects.toBeInstanceOf(CliError);
+  });
+
+  test("external chapter warn event emitted before throw in --chapter mode", async () => {
+    const extUrl = "https://mangaplus.shueisha.co.jp/viewer/999";
+    const ch = makeChapterRef({ id: "ch-ext", volume: "1", chapter: "5", externalUrl: extUrl });
+    const client = makeClient({
+      aggregateVolumes: async () => [makeVolumeRef("1", ["ch-ext"])],
+      feedChapters: async () => [ch],
+    });
+
+    let warnEvent: string | undefined;
+    const spyLogger: Logger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          warnEvent = (obj as Record<string, unknown>).event as string;
+        }
+      },
+      error: () => {},
+    };
+
+    try {
+      await runDownload(
+        baseArgs({ volume: undefined, chapter: "5" }),
+        { ...baseCtx(), logger: spyLogger },
+        client,
+        makeFullHttpClient(),
+      );
+    } catch {
+      // expected
+    }
+
+    expect(warnEvent).toBe("download.external_chapter");
   });
 });
