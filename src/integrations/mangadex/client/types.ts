@@ -1,29 +1,10 @@
 // Internal types for the MangaDex client layer.
 // API response shapes (MdX*) stay here and never leak past parser.ts.
+// Domain types (MangaCandidate, ChapterRef, VolumeRef) live in _shared/manga.ts — re-exported here for backwards compat.
 
-export interface MangaCandidate {
-  id: string;
-  title: string;
-  originalLanguage: string;
-  year: number | null;
-}
+import type { ChapterRef, MangaCandidate, VolumeRef } from "@integrations/_shared/manga.ts";
 
-export interface VolumeRef {
-  volume: string;
-  numeric: number;
-  chapterIds: string[];
-}
-
-export interface ChapterRef {
-  id: string;
-  volume: string | null;
-  chapter: string | null;
-  title: string | null;
-  translatedLanguage: string;
-  scanlationGroup: string | null;
-  readableAt: string;
-  externalUrl: string | null;
-}
+export type { ChapterRef, MangaCandidate, VolumeRef };
 
 // --- MangaDex REST response shapes ---
 
