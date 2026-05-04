@@ -22,6 +22,7 @@
     "typescript": "^5.7.0"
   },
   "dependencies": {
+    "cheerio": "^1.2.0",
     "fflate": "^0.8.2",
     "playwright": "^1.59.1"
   }

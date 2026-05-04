@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<!-- Synthetic fixture: mimics mangakakalot.gg chapter reader for naruto chapter 1.
+     Includes both src and data-src attributes to test lazy-load handling.
+     Structural HTML only — no tracking pixels, no session tokens, no ad scripts. -->
+<html lang="en">
+<head><meta charset="UTF-8"><title>Naruto Chapter 1</title></head>
+<body>
+<div class="container-chapter-reader">
+  <!-- data-src takes priority over src when both are present -->
+  <img src="https://cdn.example.com/naruto/ch1/page-1-thumb.jpg" data-src="https://cdn.example.com/naruto/ch1/page-1.jpg" alt="Page 1" />
+  <!-- src only -->
+  <img src="https://cdn.example.com/naruto/ch1/page-2.jpg" alt="Page 2" />
+  <!-- data-src only (fully lazy) -->
+  <img data-src="https://cdn.example.com/naruto/ch1/page-3.jpg" alt="Page 3" />
+</div>
+</body>
+</html>
