@@ -333,6 +333,31 @@ export async function runFallbackDownload(opts: {
     logger,
   });
 
+  // Guard: volume mode + MangaDex has volumes, but none of the requested ones are in the mapping.
+  // This happens when the title is partner-published and MangaDex doesn't track certain volumes.
+  if (
+    args.volume !== undefined &&
+    bundles.length === 0 &&
+    mangadexResolve &&
+    mangadexResolve.volumes.length > 0
+  ) {
+    const requested = [...requestedTokens].sort();
+    const available = mangadexResolve.volumes.map((v) => v.volume).sort();
+    logger.warn(
+      {
+        event: "download.fallback_no_volumes_matched",
+        context: "download",
+        requested,
+        available,
+      },
+      "no requested volume tokens are mapped in MangaDex aggregate",
+    );
+    throw new CliError(
+      `None of the requested volumes are mapped in MangaDex's aggregate for "${mangadexResolve.candidate.title}".\nAvailable mapped volumes: ${available.join(", ")}.\nUse --chapter <range> instead — MangaDex doesn't track this volume for this title (likely partner-published series).`,
+      2,
+    );
+  }
+
   const slug = toSlug(mkChosen.title, logger);
 
   for (const bundle of bundles) {
