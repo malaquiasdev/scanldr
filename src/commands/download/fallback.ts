@@ -144,6 +144,16 @@ function makeMangakakalotFetcher(
 // buildFallbackBundles
 // ---------------------------------------------------------------------------
 
+function compareVolumeTokens(a: string, b: string): number {
+  if (a === "none" && b === "none") return 0;
+  if (a === "none") return 1;
+  if (b === "none") return -1;
+  const an = Number(a);
+  const bn = Number(b);
+  if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+  return a.localeCompare(b);
+}
+
 export function buildFallbackBundles(opts: {
   args: DownloadArgs;
   requestedTokens: Set<string>;
@@ -332,6 +342,31 @@ export async function runFallbackDownload(opts: {
     mkChapters,
     logger,
   });
+
+  // Guard: volume mode + MangaDex has volumes, but none of the requested ones are in the mapping.
+  // This happens when the title is partner-published and MangaDex doesn't track certain volumes.
+  if (
+    args.volume !== undefined &&
+    bundles.length === 0 &&
+    mangadexResolve &&
+    mangadexResolve.volumes.length > 0
+  ) {
+    const requested = [...requestedTokens].sort(compareVolumeTokens);
+    const available = mangadexResolve.volumes.map((v) => v.volume).sort(compareVolumeTokens);
+    logger.warn(
+      {
+        event: "download.fallback_no_volumes_matched",
+        context: "download",
+        requested,
+        available,
+      },
+      "no requested volume tokens are mapped in MangaDex aggregate",
+    );
+    throw new CliError(
+      `None of the requested volumes are mapped in MangaDex's aggregate for "${mangadexResolve.candidate.title}". Available mapped volumes: ${available.join(", ")}. Use --chapter <range> instead: MangaDex doesn't track this volume for this title (likely partner-published series).`,
+      2,
+    );
+  }
 
   const slug = toSlug(mkChosen.title, logger);
 

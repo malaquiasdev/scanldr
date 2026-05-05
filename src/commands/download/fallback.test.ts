@@ -527,6 +527,203 @@ describe("promptFallbackSite — TTY readline mock", () => {
 });
 
 // ---------------------------------------------------------------------------
+// runFallbackDownload — volume mode, all requested volumes missing from aggregate
+// ---------------------------------------------------------------------------
+
+describe("runFallbackDownload — volume mode with all requested volumes missing from aggregate", () => {
+  test("throws CliError with actionable message and fires warn event", async () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+
+    const fakeFallbackHttp: FallbackHttpClient = {
+      get: async () => new Response(new Uint8Array([]), { status: 200 }),
+    };
+
+    // aggregate has vols "1" and "none", user requests vol "13"
+    const mangadexResolve: MangaDexResolveResult = {
+      candidate: { id: "manga-dandadan", title: "Dandadan", originalLanguage: "ja", year: 2021 },
+      volumes: [makeVolumeRef("1", ["ch-1"]), makeVolumeRef("none", ["ch-0"])],
+      chaptersInLang: [
+        makeChapterRef({ id: "ch-1", chapter: "1", volume: "1" }),
+        makeChapterRef({ id: "ch-0", chapter: "0", volume: "none" }),
+      ],
+      language: "en",
+    };
+
+    const mkClientStub: MangakakalotClient = {
+      searchManga: async () => [
+        { id: "dandadan-slug", title: "Dandadan", originalLanguage: "ja", year: 2021 },
+      ],
+      getChapterList: async () => [makeChapterRef({ id: "mk-ch1", chapter: "1", volume: null })],
+      getChapterImages: async () => [],
+    };
+
+    const warnPayloads: Array<Record<string, unknown>> = [];
+    const spyLogger: Logger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null) {
+          warnPayloads.push(obj as Record<string, unknown>);
+        }
+      },
+      error: () => {},
+    };
+
+    const err = await runFallbackDownload({
+      args: baseArgs({ volume: "13" }),
+      ctx: {
+        logger: spyLogger,
+        config: {
+          preferred_languages: ["en"],
+          download_quality: "data",
+          default_format: "cbz",
+          default_out: "/tmp",
+          image_concurrency: 1,
+          chapter_delay_ms: 0,
+          db_path: ":memory:",
+        },
+        db,
+      },
+      mangadexResolve,
+      createFallbackHttp: async () => fakeFallbackHttp,
+      createMangakakalotClient: () => mkClientStub,
+      // biome-ignore lint/style/noNonNullAssertion: test stub
+      promptSite: async (sites) => sites[0]!,
+    }).catch((e) => e);
+
+    db.close();
+
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).message).toContain("None of the requested volumes are mapped");
+    expect((err as CliError).message).toContain("Dandadan");
+    expect((err as CliError).message).toContain("Available mapped volumes:");
+    expect((err as CliError).message).toContain("1");
+    expect((err as CliError).message).toContain("none");
+    expect((err as CliError).message).toContain("--chapter");
+    expect((err as CliError).exitCode).toBe(2);
+
+    const noVolWarn = warnPayloads.find((p) => p.event === "download.fallback_no_volumes_matched");
+    expect(noVolWarn).toBeDefined();
+    expect(noVolWarn?.requested).toEqual(expect.arrayContaining(["13"]));
+    expect(noVolWarn?.available).toEqual(expect.arrayContaining(["1", "none"]));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runFallbackDownload — volume mode, mixed match (some found, some not)
+// ---------------------------------------------------------------------------
+
+describe("runFallbackDownload — volume mode with mixed match still proceeds with matched ones", () => {
+  test("processes matched volumes and warns on missing ones without throwing", async () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+
+    const imageUrl = "https://img-r1.2xstorage.com/test/1/0.webp";
+    const searchHtml = `<html><body>
+      <div class="panel_story_list">
+        <div class="story_item">
+          <div class="story_name"><a href="https://www.mangakakalot.gg/manga/test-slug">Test</a></div>
+        </div>
+      </div>
+    </body></html>`;
+    const chapterHtml = `<div class="container-chapter-reader"><img src="${imageUrl}" /></div>`;
+    const chaptersJson = JSON.stringify({
+      success: true,
+      data: {
+        chapters: [
+          {
+            chapter_name: "Chapter 1",
+            chapter_slug: "chapter-1",
+            chapter_num: 1,
+            updated_at: "2024-01-01T00:00:00.000000Z",
+            view: 0,
+          },
+        ],
+      },
+    });
+
+    const mockHttp: FallbackHttpClient = {
+      get: async (url: string) => {
+        if (url === imageUrl) {
+          return new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 });
+        }
+        if (url.includes("/api/manga/")) {
+          return new Response(chaptersJson, {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (url.includes("/search/")) {
+          return new Response(searchHtml, {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          });
+        }
+        return new Response(chapterHtml, { status: 200, headers: { "content-type": "text/html" } });
+      },
+    };
+
+    // aggregate has vols "1" and "none", user requests "1,13"
+    const mangadexResolve: MangaDexResolveResult = {
+      candidate: { id: "manga-test", title: "Test", originalLanguage: "ja", year: 2021 },
+      volumes: [makeVolumeRef("1", ["ch-md-1"]), makeVolumeRef("none", ["ch-md-0"])],
+      chaptersInLang: [
+        makeChapterRef({ id: "ch-md-1", chapter: "1", volume: "1" }),
+        makeChapterRef({ id: "ch-md-0", chapter: "0", volume: "none" }),
+      ],
+      language: "en",
+    };
+
+    const warnPayloads: Array<Record<string, unknown>> = [];
+    const spyLogger: Logger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null) {
+          warnPayloads.push(obj as Record<string, unknown>);
+        }
+      },
+      error: () => {},
+    };
+
+    // Should complete without throwing (vol "1" is available, vol "13" gets a per-volume warn)
+    await runFallbackDownload({
+      args: baseArgs({ volume: "1,13", noTrack: true }),
+      ctx: {
+        logger: spyLogger,
+        config: {
+          preferred_languages: ["en"],
+          download_quality: "data",
+          default_format: "cbz",
+          default_out: "/tmp",
+          image_concurrency: 1,
+          chapter_delay_ms: 0,
+          db_path: ":memory:",
+        },
+        db,
+      },
+      mangadexResolve,
+      createFallbackHttp: async () => mockHttp,
+      createMangakakalotClient: (opts) => mkClient(opts),
+      // biome-ignore lint/style/noNonNullAssertion: test stub
+      promptSite: async (sites) => sites[0]!,
+    });
+
+    db.close();
+
+    // vol 13 should generate a per-volume warn (not the top-level "no volumes matched" error)
+    const perVolWarn = warnPayloads.find((p) => p.event === "download.fallback_volume_missing");
+    expect(perVolWarn).toBeDefined();
+    expect(perVolWarn?.volume).toBe("13");
+
+    // The top-level "no volumes matched" should NOT fire
+    const noMatchWarn = warnPayloads.find(
+      (p) => p.event === "download.fallback_no_volumes_matched",
+    );
+    expect(noMatchWarn).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // makeMangakakalotFetcher — Referer header
 // ---------------------------------------------------------------------------
 
