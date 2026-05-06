@@ -50,8 +50,29 @@ function isChallengeBody(body: string): boolean {
   return CF_CHALLENGE_MARKERS.some((m) => body.includes(m));
 }
 
+const TTY_ERROR_MESSAGE = `Interactive paste in your terminal is unreliable for multi-line cURL.
+
+Pipe the cURL via your clipboard instead:
+
+  macOS:           pbpaste | scanldr auth
+  Linux (X11):     xclip -o -selection clipboard | scanldr auth
+  Linux (Wayland): wl-paste | scanldr auth
+
+Or save the cURL to a file and pipe it:
+
+  scanldr auth < curl.txt
+
+See docs/auth-manual.md for the full flow.`;
+
 export async function runAuth(opts: RunAuthOptions): Promise<void> {
   const { logger } = opts;
+
+  // Reject interactive TTY — multi-line paste is unreliable across terminals.
+  const isInteractiveTTY = opts.isTTY ?? process.stdin.isTTY;
+  if (isInteractiveTTY) {
+    throw new AuthError(TTY_ERROR_MESSAGE);
+  }
+
   const outPath = resolveAuthPath(opts);
   const fetchFn = opts.fetch ?? globalThis.fetch.bind(globalThis);
   const readStdin = opts.readStdin ?? readStdinUntilEmpty;

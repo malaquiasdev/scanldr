@@ -301,6 +301,53 @@ describe("runAuth — atomic write", () => {
 });
 
 // ---------------------------------------------------------------------------
+// TTY detection
+// ---------------------------------------------------------------------------
+
+describe("runAuth — TTY guard", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "scanldr-auth-tty-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test("refuses to read from interactive TTY with helpful guidance", async () => {
+    const opts: RunAuthOptions = {
+      logger: buildLogger(),
+      dataHome: tmpDir,
+      isTTY: true,
+      // readStdin should never be called when isTTY is true
+      readStdin: async () => {
+        throw new Error("readStdin must not be called in TTY mode");
+      },
+      fetch: buildFetch(200, "ok"),
+    };
+
+    await expect(runAuth(opts)).rejects.toBeInstanceOf(AuthError);
+    await expect(runAuth(opts)).rejects.toMatchObject({
+      message: expect.stringContaining("pbpaste"),
+    });
+  });
+
+  test("reads from piped stdin when isTTY is false", async () => {
+    const opts: RunAuthOptions = {
+      logger: buildLogger(),
+      dataHome: tmpDir,
+      isTTY: false,
+      readStdin: async () => VALID_CURL,
+      fetch: buildFetch(200, "<html>MangaKakalot</html>"),
+    };
+
+    // Should resolve without error — piped input is allowed
+    await expect(runAuth(opts)).resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AuthError shape
 // ---------------------------------------------------------------------------
 

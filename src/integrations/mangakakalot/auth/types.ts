@@ -38,6 +38,11 @@ export interface RunAuthOptions {
    * Override fetch for testing. Defaults to globalThis.fetch.
    */
   fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+  /**
+   * Whether stdin is an interactive TTY. Defaults to `process.stdin.isTTY`.
+   * Injected by tests to avoid touching the real process descriptor.
+   */
+  isTTY?: boolean;
 }
 
 export class AuthError extends Error {

@@ -1,6 +1,6 @@
 # Flow — Authentication (Cloudflare Bypass)
 
-The auth flow uses a manual "Copy as cURL" paste from the browser's DevTools. No headless browser or Playwright is involved. The user solves the Cloudflare challenge themselves in a real browser, then copies the authenticated request and pastes it into the CLI.
+The auth flow uses a manual "Copy as cURL" paste from the browser's DevTools. No headless browser or Playwright is involved. The user solves the Cloudflare challenge themselves in a real browser, then copies the authenticated request and pipes it to `scanldr auth` via the clipboard (e.g. `pbpaste | scanldr auth`). Interactive TTY paste is intentionally rejected — `scanldr auth` reads from stdin only when data is piped or file-redirected.
 
 The saved session is valid for approximately 30 days. When it expires, re-running `scanldr auth` is all that's needed.
 
