@@ -17,6 +17,8 @@ import type {
   FallbackSiteOption,
   MangaDexResolveResult,
 } from "./fallback-types.ts";
+import { runPackFlow } from "./pack-flow.ts";
+import type { PackedChapter } from "./pack.ts";
 import { promptNumericChoice } from "./prompt.ts";
 import { parseRangeSet } from "./range.ts";
 import { toSlug } from "./slug.ts";
@@ -370,18 +372,59 @@ export async function runFallbackDownload(opts: {
 
   const slug = toSlug(mkChosen.title, logger);
 
+  const successPaths: PackedChapter[] = [];
+  let failureCount = 0;
+
   for (const bundle of bundles) {
-    await processFallbackBundle({
-      bundle,
-      slug,
-      mangaId: mkChosen.id,
-      mangaTitle: mkChosen.title,
-      args,
-      ctx,
-      mkClient,
-      fallbackHttp,
-      site: site.name,
-    });
+    try {
+      const outputPath = await processFallbackBundle({
+        bundle,
+        slug,
+        mangaId: mkChosen.id,
+        mangaTitle: mkChosen.title,
+        args,
+        ctx,
+        mkClient,
+        fallbackHttp,
+        site: site.name,
+      });
+      if (outputPath !== null) {
+        successPaths.push({ num: bundle.bundleNumber, outputPath });
+      }
+    } catch (err) {
+      // CliError = user-facing content/policy error — propagate immediately.
+      // Other errors (network, infrastructure) = recoverable partial failure → log + continue.
+      if (err instanceof CliError) {
+        throw err;
+      }
+      failureCount++;
+      logger.warn(
+        {
+          event: "download.bundle_failed",
+          context: "download",
+          kind: bundle.kind,
+          bundleNumber: bundle.bundleNumber,
+          err,
+        },
+        `${bundle.kind} ${bundle.bundleNumber} failed; continuing with remaining bundles`,
+      );
+    }
+  }
+
+  // Pack flow: only for --chapter mode, N > 1 success, no failures
+  if (args.chapter !== undefined && successPaths.length > 1) {
+    if (failureCount > 0) {
+      logger.warn(
+        { event: "pack.skipped", context: "pack", reason: "partial_failures", failureCount },
+        "packing skipped due to partial download failures",
+      );
+      process.stderr.write(
+        `Warning: packing skipped because ${failureCount} chapter(s) failed to download. Re-run with --pack after fixing.\n`,
+      );
+      return;
+    }
+
+    await runPackFlow({ args, ctx, slug, successPaths });
   }
 }
 
@@ -389,6 +432,7 @@ export async function runFallbackDownload(opts: {
 // processFallbackBundle
 // ---------------------------------------------------------------------------
 
+/** Returns outputPath on success, null when the bundle was skipped (history/dryRun). */
 async function processFallbackBundle(opts: {
   bundle: FallbackBundle;
   slug: string;
@@ -399,7 +443,7 @@ async function processFallbackBundle(opts: {
   mkClient: ReturnType<typeof createMangakakalotClient>;
   fallbackHttp: FallbackHttpClient;
   site: string;
-}): Promise<void> {
+}): Promise<string | null> {
   const { bundle, slug, mangaId, mangaTitle, args, ctx, mkClient, fallbackHttp, site } = opts;
   const { logger, db } = ctx;
   const { kind, bundleNumber, volumeForHistory, chapters } = bundle;
@@ -419,7 +463,7 @@ async function processFallbackBundle(opts: {
         { event: "download.bundle_skip", context: "download", kind, bundleNumber },
         `skipping ${kind} ${bundleNumber}: already in history`,
       );
-      return;
+      return null;
     }
   }
 
@@ -450,7 +494,7 @@ async function processFallbackBundle(opts: {
       },
       `dry-run: would download ${kind} ${bundleNumber} from ${site}`,
     );
-    return;
+    return null;
   }
 
   const result = await downloadBundle({
@@ -501,4 +545,6 @@ async function processFallbackBundle(opts: {
       "history recorded",
     );
   }
+
+  return result.outputPath;
 }

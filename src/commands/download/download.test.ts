@@ -136,6 +136,8 @@ function baseArgs(overrides?: Partial<DownloadArgs>): DownloadArgs {
     noTrack: false,
     dryRun: false,
     nonTty: true,
+    packReplace: false,
+    packOverwrite: false,
     ...overrides,
   };
 }
@@ -423,52 +425,86 @@ describe("runDownload — volume not in feed", () => {
   });
 });
 
-describe("runDownload — atomic history on mid-download failure", () => {
-  test("no .cbz and no history rows when at-home server fails for chapter 2", async () => {
-    // Three chapters in volume 1
-    const ch1 = makeChapterRef({ id: "ch-1", volume: "1", chapter: "1" });
-    const ch2 = makeChapterRef({ id: "ch-2", volume: "1", chapter: "2" });
-    const ch3 = makeChapterRef({ id: "ch-3", volume: "1", chapter: "3" });
+describe("runDownload — partial chapter failure continues (AC#10)", () => {
+  test("5 chapters requested, 2 fail: resolves, 3 cbz files exist, no packed cbz, warn logged", async () => {
+    // Use --chapter mode with 5 chapters so pack would normally be triggered
+    const chapters = [1, 2, 3, 4, 5].map((n) =>
+      makeChapterRef({ id: `ch-${n}`, volume: "1", chapter: String(n) }),
+    );
 
     const multiChapterClient = makeClient({
-      aggregateVolumes: async () => [makeVolumeRef("1", ["ch-1", "ch-2", "ch-3"])],
-      feedChapters: async () => [ch1, ch2, ch3],
+      aggregateVolumes: async () => [
+        makeVolumeRef(
+          "1",
+          chapters.map((c) => c.id),
+        ),
+      ],
+      feedChapters: async () => chapters,
     });
 
-    // at-home: ch-2 server call throws (simulates network error after ch-1 succeeds)
-    let atHomeCallCount = 0;
+    // ch-2 and ch-4 fail (their at-home server calls throw)
     const failingHttp: MangaDexHttpClient = {
       get: async (path: string) => {
         if (path.startsWith("/at-home/server/")) {
-          atHomeCallCount++;
-          if (atHomeCallCount === 2) {
-            throw new Error("MangaDex HTTP 500: simulated server error for chapter 2");
+          const chId = path.replace("/at-home/server/", "");
+          if (chId === "ch-2" || chId === "ch-4") {
+            throw new Error(`simulated server error for ${chId}`);
           }
           return {
             baseUrl: "https://example.com",
-            chapter: {
-              hash: "abc123",
-              data: ["page1.jpg"],
-              dataSaver: ["ds1.jpg"],
-            },
+            chapter: { hash: "abc123", data: ["page1.jpg"], dataSaver: ["ds1.jpg"] },
           };
         }
         throw new Error(`Unexpected HTTP GET: ${path}`);
       },
     } as unknown as MangaDexHttpClient;
 
-    await expect(
-      runDownload(baseArgs(), baseCtx(), multiChapterClient, failingHttp),
-    ).rejects.toThrow();
+    const warnEvents: string[] = [];
+    const spyLogger: Logger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          warnEvents.push((obj as Record<string, unknown>).event as string);
+        }
+      },
+      error: () => {},
+    };
 
-    // No .cbz orphan left on disk
-    const cbzPath = join(tmpDir, "test-manga", "test-manga-volume-001.cbz");
-    const exists = await Bun.file(cbzPath).exists();
-    expect(exists).toBe(false);
+    // Should resolve, not throw
+    await withMockedImageFetch(async () => {
+      await runDownload(
+        baseArgs({ volume: undefined, chapter: "1-5", pack: true, nonTty: true }),
+        { ...baseCtx(), logger: spyLogger },
+        multiChapterClient,
+        failingHttp,
+      );
+    });
 
-    // Zero history rows — atomicity preserved
-    const history = listHistory(db);
-    expect(history.length).toBe(0);
+    // 3 individual chapter cbz files should exist (ch-1, ch-3, ch-5)
+    const slug = "test-manga";
+    for (const [, padded] of [
+      ["1", "001"],
+      ["3", "003"],
+      ["5", "005"],
+    ] as const) {
+      const p = join(tmpDir, slug, `${slug}-chapter-${padded}.cbz`);
+      expect(await Bun.file(p).exists()).toBe(true);
+    }
+    // ch-2 and ch-4 should NOT exist
+    for (const padded of ["002", "004"] as const) {
+      const p = join(tmpDir, slug, `${slug}-chapter-${padded}.cbz`);
+      expect(await Bun.file(p).exists()).toBe(false);
+    }
+
+    // No packed volume cbz
+    const files = await import("node:fs/promises").then((m) =>
+      m.readdir(join(tmpDir, slug)).catch(() => [] as string[]),
+    );
+    const packedFile = files.find((f) => f.startsWith(`${slug}-volume-`) && f.endsWith(".cbz"));
+    expect(packedFile).toBeUndefined();
+
+    // pack.skipped warn must have fired
+    expect(warnEvents).toContain("pack.skipped");
   });
 });
 

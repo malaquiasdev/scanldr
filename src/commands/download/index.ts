@@ -17,6 +17,8 @@ import type { DownloadRow } from "@modules/history/index.ts";
 import { CliError } from "@plugins/errors/index.ts";
 import type { MangaDexResolveResult } from "./fallback-types.ts";
 import { isFallbackEligible, runFallbackDownload } from "./fallback.ts";
+import { runPackFlow } from "./pack-flow.ts";
+import type { PackedChapter } from "./pack.ts";
 import { promptNumericChoice } from "./prompt.ts";
 import { parseRangeSet } from "./range.ts";
 import { toSlug } from "./slug.ts";
@@ -166,8 +168,9 @@ function groupChaptersIntoBundles(args: DownloadArgs, chaptersInLang: ChapterRef
   return bundles;
 }
 
-/** Per-bundle pipeline: history check → external check → build inputs → download → record. */
-async function processBundle(input: ProcessBundleArgs): Promise<void> {
+/** Per-bundle pipeline: history check → external check → build inputs → download → record.
+ * Returns the output path on success, null when the bundle was skipped (history). */
+async function processBundle(input: ProcessBundleArgs): Promise<string | null> {
   const { bundle, chosen, slug, language, args, ctx, http } = input;
   const { logger, db } = ctx;
   const { kind, bundleNumber, volumeForHistory, chapters } = bundle;
@@ -191,7 +194,7 @@ async function processBundle(input: ProcessBundleArgs): Promise<void> {
         },
         `skipping ${kind} ${bundleNumber}: already in history`,
       );
-      return;
+      return null;
     }
   }
 
@@ -234,7 +237,7 @@ async function processBundle(input: ProcessBundleArgs): Promise<void> {
         },
         `dry-run: would download ${kind} ${bundleNumber}`,
       );
-      return;
+      return null;
     }
 
     result = await downloadBundle({
@@ -301,6 +304,8 @@ async function processBundle(input: ProcessBundleArgs): Promise<void> {
       "history recorded",
     );
   }
+
+  return result.outputPath;
 }
 
 /**
@@ -394,8 +399,49 @@ async function runMangaDexDownload(
     }
   }
 
+  const successPaths: PackedChapter[] = [];
+  let failureCount = 0;
+
   for (const bundle of bundles) {
-    await processBundle({ bundle, chosen, slug, language, args, ctx, http });
+    try {
+      const outputPath = await processBundle({ bundle, chosen, slug, language, args, ctx, http });
+      if (outputPath !== null) {
+        successPaths.push({ num: bundle.bundleNumber, outputPath });
+      }
+    } catch (err) {
+      // CliError = user-facing content/policy error (e.g. external chapter) — propagate immediately.
+      // Other errors (network, infrastructure) = recoverable partial failure → log + continue.
+      if (err instanceof CliError) {
+        throw err;
+      }
+      failureCount++;
+      logger.warn(
+        {
+          event: "download.bundle_failed",
+          context: "download",
+          kind: bundle.kind,
+          bundleNumber: bundle.bundleNumber,
+          err,
+        },
+        `${bundle.kind} ${bundle.bundleNumber} failed; continuing with remaining bundles`,
+      );
+    }
+  }
+
+  // Pack flow: only for --chapter mode, N > 1 success, no failures
+  if (args.chapter !== undefined && successPaths.length > 1) {
+    if (failureCount > 0) {
+      logger.warn(
+        { event: "pack.skipped", context: "pack", reason: "partial_failures", failureCount },
+        "packing skipped due to partial download failures",
+      );
+      process.stderr.write(
+        `Warning: packing skipped because ${failureCount} chapter(s) failed to download. Re-run with --pack after fixing.\n`,
+      );
+      return;
+    }
+
+    await runPackFlow({ args, ctx, slug, successPaths });
   }
 }
 
