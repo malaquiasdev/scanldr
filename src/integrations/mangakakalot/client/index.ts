@@ -7,12 +7,13 @@ import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
 import type { ImageRef } from "@modules/downloader/types.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { parseChapterImages, parseChapterListFromApi, parseSearchResults } from "./parser.ts";
-import type { MangakakalotClient } from "./types.ts";
+import type { MangakakalotClient, VolumeMap } from "./types.ts";
 import { MangakakalotParseError } from "./types.ts";
+import { parseVolumeMapping } from "./volume-parser.ts";
 
 export type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 export type { ImageRef } from "@modules/downloader/types.ts";
-export type { MangakakalotClient } from "./types.ts";
+export type { FallbackChapterRef, MangakakalotClient, VolumeBucket, VolumeMap } from "./types.ts";
 export { MangakakalotParseError } from "./types.ts";
 
 const SITE_ROOT = "https://www.mangakakalot.gg";
@@ -124,6 +125,12 @@ export function createMangakakalotClient(opts: {
     return allChapters;
   }
 
+  async function getVolumeMap(slug: string): Promise<VolumeMap> {
+    const url = `${SITE_ROOT}/manga/${encodeURIComponent(slug)}`;
+    const html = await fetchHtml(url);
+    return runParser(url, () => parseVolumeMapping(html));
+  }
+
   async function getChapterImages(chapterIdOrUrl: string): Promise<ImageRef[]> {
     // Accept a full URL, a composite id "mangaSlug/chapter-slug" (from parseChapterListFromApi),
     // or the legacy path-style id "chapter/manga-slug/chapter-1".
@@ -142,5 +149,5 @@ export function createMangakakalotClient(opts: {
     return runParser(url, () => parseChapterImages(html, url));
   }
 
-  return { searchManga, getChapterList, getChapterImages };
+  return { searchManga, getChapterList, getChapterImages, getVolumeMap };
 }

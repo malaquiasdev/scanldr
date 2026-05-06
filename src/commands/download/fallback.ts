@@ -5,6 +5,7 @@
 import type { ChapterRef, VolumeRef } from "@integrations/_shared/manga.ts";
 import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
 import type { createMangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
+import type { VolumeMap } from "@integrations/mangakakalot/client/types.ts";
 import { downloadBundle } from "@modules/downloader/index.ts";
 import type { ImageRef } from "@modules/downloader/types.ts";
 import type { ChapterInput } from "@modules/downloader/types.ts";
@@ -241,6 +242,94 @@ export function buildFallbackBundles(opts: {
 }
 
 // ---------------------------------------------------------------------------
+// buildFallbackBundlesFromVolumeMap
+// Used when volumeMappingSource === 'fallback' (all_external series).
+// ---------------------------------------------------------------------------
+
+export function buildFallbackBundlesFromVolumeMap(opts: {
+  args: DownloadArgs;
+  requestedTokens: Set<string>;
+  volumeMap: VolumeMap;
+  logger: Logger;
+}): FallbackBundle[] {
+  const { args, requestedTokens, volumeMap, logger } = opts;
+
+  if (args.volume === undefined) {
+    // --chapter mode: find chapter directly from all buckets (flat lookup).
+    const bundles: FallbackBundle[] = [];
+    for (const chToken of requestedTokens) {
+      let found = false;
+      for (const bucket of volumeMap) {
+        const match = bucket.chapters.find((c) => c.chapter === chToken);
+        if (match) {
+          const volumeForHistory = bucket.volume === "unknown" ? "none" : bucket.volume;
+          bundles.push({
+            kind: "chapter",
+            bundleNumber: chToken,
+            volumeForHistory,
+            chapters: [
+              {
+                id: match.id,
+                volume: volumeForHistory,
+                chapter: chToken,
+                title: null,
+                translatedLanguage: "en",
+                scanlationGroup: null,
+                readableAt: "",
+                externalUrl: null,
+              },
+            ],
+          });
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        logger.warn(
+          { event: "download.fallback_chapter_missing", context: "download", chapter: chToken },
+          `chapter ${chToken} not found on fallback site; skipping`,
+        );
+      }
+    }
+    return bundles;
+  }
+
+  // --volume mode: use volumeMap buckets as authoritative source.
+  const bundles: FallbackBundle[] = [];
+
+  for (const volToken of requestedTokens) {
+    const bucket = volumeMap.find((b) => b.volume === volToken);
+    if (!bucket || bucket.chapters.length === 0) {
+      logger.warn(
+        { event: "download.fallback_volume_missing", context: "download", volume: volToken },
+        `volume ${volToken} not found in fallback site mapping; skipping`,
+      );
+      continue;
+    }
+
+    const chapters: ChapterRef[] = bucket.chapters.map((c) => ({
+      id: c.id,
+      volume: volToken,
+      chapter: c.chapter,
+      title: null,
+      translatedLanguage: "en",
+      scanlationGroup: null,
+      readableAt: "",
+      externalUrl: null,
+    }));
+
+    bundles.push({
+      kind: "volume",
+      bundleNumber: volToken,
+      volumeForHistory: volToken,
+      chapters,
+    });
+  }
+
+  return bundles;
+}
+
+// ---------------------------------------------------------------------------
 // runFallbackDownload
 // ---------------------------------------------------------------------------
 
@@ -255,6 +344,12 @@ export async function runFallbackDownload(opts: {
     http: import("@integrations/fallback-http/types.ts").FallbackHttpClient;
     logger: Logger;
   }) => import("@integrations/mangakakalot/client/types.ts").MangakakalotClient;
+  /**
+   * Controls where volume→chapter mapping is sourced from.
+   * 'fallback' — parse from the fallback site manga page (required for all_external series).
+   * 'mangadex' — use MangaDex aggregate (default, preserves existing behaviour).
+   */
+  volumeMappingSource?: "mangadex" | "fallback";
   /** Override for tests — bypasses stdin prompt. When provided, nonTty check is skipped. */
   promptSite?: (sites: FallbackSiteOption[]) => Promise<FallbackSiteOption>;
 }): Promise<void> {
@@ -264,12 +359,18 @@ export async function runFallbackDownload(opts: {
     mangadexResolve,
     createFallbackHttp: mkFallbackHttp,
     createMangakakalotClient: mkClientFactory,
+    volumeMappingSource = "mangadex",
     promptSite,
   } = opts;
   const { logger } = ctx;
 
-  // Volume mode requires MangaDex aggregate to map volumes → chapter numbers
-  if (args.volume !== undefined && (!mangadexResolve || mangadexResolve.volumes.length === 0)) {
+  // Volume mode with mangadex source requires MangaDex aggregate to map volumes → chapter numbers.
+  // When volumeMappingSource === 'fallback', we skip this guard and source from the manga page.
+  if (
+    args.volume !== undefined &&
+    volumeMappingSource === "mangadex" &&
+    (!mangadexResolve || mangadexResolve.volumes.length === 0)
+  ) {
     logger.warn(
       { event: "download.fallback_no_volume_metadata", context: "download" },
       "MangaDex has no volume data; --chapter is required for fallback",
@@ -329,45 +430,97 @@ export async function runFallbackDownload(opts: {
     "title resolved on fallback site",
   );
 
-  const mkChapters = await mkClient.getChapterList(mkChosen.id);
-
   const requestedTokens =
     args.volume !== undefined
       ? parseRangeSet(args.volume).values
       : parseRangeSet(args.chapter as string).values;
 
-  const bundles = buildFallbackBundles({
-    args,
-    requestedTokens,
-    mangadexVolumes: mangadexResolve?.volumes ?? [],
-    mangadexChapters: mangadexResolve?.chaptersInLang ?? [],
-    mkChapters,
-    logger,
-  });
+  let bundles: FallbackBundle[];
 
-  // Guard: volume mode + MangaDex has volumes, but none of the requested ones are in the mapping.
-  // This happens when the title is partner-published and MangaDex doesn't track certain volumes.
-  if (
-    args.volume !== undefined &&
-    bundles.length === 0 &&
-    mangadexResolve &&
-    mangadexResolve.volumes.length > 0
-  ) {
-    const requested = [...requestedTokens].sort(compareVolumeTokens);
-    const available = mangadexResolve.volumes.map((v) => v.volume).sort(compareVolumeTokens);
-    logger.warn(
-      {
-        event: "download.fallback_no_volumes_matched",
-        context: "download",
-        requested,
-        available,
-      },
-      "no requested volume tokens are mapped in MangaDex aggregate",
+  if (volumeMappingSource === "fallback") {
+    // Source volume→chapter mapping from the fallback site manga page.
+    logger.info(
+      { event: "download.fallback_volume_map_fetch", context: "download", slug: mkChosen.id },
+      "fetching volume mapping from fallback site",
     );
-    throw new CliError(
-      `None of the requested volumes are mapped in MangaDex's aggregate for "${mangadexResolve.candidate.title}". Available mapped volumes: ${available.join(", ")}. Use --chapter <range> instead: MangaDex doesn't track this volume for this title (likely partner-published series).`,
-      2,
-    );
+    const volumeMap = await mkClient.getVolumeMap(mkChosen.id);
+
+    if (args.volume !== undefined && volumeMap.length === 0) {
+      logger.warn(
+        { event: "download.fallback_volume_map_empty", context: "download", slug: mkChosen.id },
+        "fallback site manga page returned no volume mapping",
+      );
+      throw new CliError(
+        "Volume mapping not available on the fallback site. Use --chapter <range> instead.",
+        2,
+      );
+    }
+
+    bundles = buildFallbackBundlesFromVolumeMap({
+      args,
+      requestedTokens,
+      volumeMap,
+      logger,
+    });
+
+    // Volume mode: all requested tokens missing → specific error with available volumes.
+    if (args.volume !== undefined && bundles.length === 0) {
+      const requested = [...requestedTokens].sort(compareVolumeTokens);
+      const available = volumeMap
+        .map((b) => b.volume)
+        .filter((v) => v !== "unknown")
+        .sort(compareVolumeTokens);
+      logger.warn(
+        {
+          event: "download.fallback_no_volumes_matched",
+          context: "download",
+          requested,
+          available,
+          source: "fallback",
+        },
+        "no requested volume tokens found in fallback site mapping",
+      );
+      throw new CliError(
+        `Volume ${requested.join(", ")} not found in fallback site mapping for "${mkChosen.title}". Available volumes: ${available.join(", ")}. Use --chapter <range> if you need partial.`,
+        2,
+      );
+    }
+  } else {
+    // Default: source from MangaDex aggregate (original path).
+    const mkChapters = await mkClient.getChapterList(mkChosen.id);
+
+    bundles = buildFallbackBundles({
+      args,
+      requestedTokens,
+      mangadexVolumes: mangadexResolve?.volumes ?? [],
+      mangadexChapters: mangadexResolve?.chaptersInLang ?? [],
+      mkChapters,
+      logger,
+    });
+
+    // Guard: volume mode + MangaDex has volumes, but none of the requested ones are in the mapping.
+    if (
+      args.volume !== undefined &&
+      bundles.length === 0 &&
+      mangadexResolve &&
+      mangadexResolve.volumes.length > 0
+    ) {
+      const requested = [...requestedTokens].sort(compareVolumeTokens);
+      const available = mangadexResolve.volumes.map((v) => v.volume).sort(compareVolumeTokens);
+      logger.warn(
+        {
+          event: "download.fallback_no_volumes_matched",
+          context: "download",
+          requested,
+          available,
+        },
+        "no requested volume tokens are mapped in MangaDex aggregate",
+      );
+      throw new CliError(
+        `None of the requested volumes are mapped in MangaDex's aggregate for "${mangadexResolve.candidate.title}". Available mapped volumes: ${available.join(", ")}. Use --chapter <range> instead: MangaDex doesn't track this volume for this title (likely partner-published series).`,
+        2,
+      );
+    }
   }
 
   const slug = toSlug(mkChosen.title, logger);

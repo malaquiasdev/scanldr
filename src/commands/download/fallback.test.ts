@@ -15,10 +15,12 @@ import { unzipSync } from "fflate";
 import type { FallbackSiteOption, MangaDexResolveResult } from "./fallback-types.ts";
 import {
   buildFallbackBundles,
+  buildFallbackBundlesFromVolumeMap,
   isFallbackEligible,
   promptFallbackSite,
   runFallbackDownload,
 } from "./fallback.ts";
+import type { VolumeMap } from "@integrations/mangakakalot/client/index.ts";
 import type { DownloadArgs } from "./types.ts";
 
 const noopLogger: Logger = {
@@ -430,6 +432,7 @@ describe("runFallbackDownload — searchManga returns empty", () => {
       searchManga: async () => [],
       getChapterList: async () => [],
       getChapterImages: async () => [],
+      getVolumeMap: async () => [],
     };
 
     const warnEvents: string[] = [];
@@ -567,6 +570,7 @@ describe("runFallbackDownload — volume mode with all requested volumes missing
       ],
       getChapterList: async () => [makeChapterRef({ id: "mk-ch1", chapter: "1", volume: null })],
       getChapterImages: async () => [],
+      getVolumeMap: async () => [],
     };
 
     const warnPayloads: Array<Record<string, unknown>> = [];
@@ -855,6 +859,7 @@ function makeFallbackPackMkClient(
     getChapterImages: async (_id: string): Promise<ImageRef[]> => [
       { url: "https://cdn.mk.gg/img/1.png", page: 1 },
     ],
+    getVolumeMap: async () => [],
   };
 }
 
@@ -949,6 +954,7 @@ describe("runFallbackDownload calls pack flow when --pack is set and N>1", () =>
         }
         return [{ url: "https://cdn.mk.gg/img/1.png", page: 1 }];
       },
+      getVolumeMap: async () => [],
     };
 
     const warnEvents: string[] = [];
@@ -1007,5 +1013,326 @@ describe("runFallbackDownload calls pack flow when --pack is set and N>1", () =>
 
     db.close();
     await rm(tmpDir, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildFallbackBundlesFromVolumeMap — volume mode
+// ---------------------------------------------------------------------------
+
+describe("buildFallbackBundlesFromVolumeMap — volume mode", () => {
+  const volumeMap: VolumeMap = [
+    {
+      volume: "13",
+      chapters: [
+        { id: "dandadan/chapter-128", chapter: "128" },
+        { id: "dandadan/chapter-129", chapter: "129" },
+        { id: "dandadan/chapter-130", chapter: "130" },
+      ],
+    },
+    {
+      volume: "12",
+      chapters: [
+        { id: "dandadan/chapter-119", chapter: "119" },
+        { id: "dandadan/chapter-120", chapter: "120" },
+      ],
+    },
+  ];
+
+  test("returns volume bundle with chapters from volumeMap", () => {
+    const bundles = buildFallbackBundlesFromVolumeMap({
+      args: baseArgs({ volume: "13" }),
+      requestedTokens: new Set(["13"]),
+      volumeMap,
+      logger: noopLogger,
+    });
+
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]?.kind).toBe("volume");
+    expect(bundles[0]?.bundleNumber).toBe("13");
+    expect(bundles[0]?.chapters.map((c) => c.id)).toEqual([
+      "dandadan/chapter-128",
+      "dandadan/chapter-129",
+      "dandadan/chapter-130",
+    ]);
+  });
+
+  test("warns and skips volume not in map", () => {
+    const warnEvents: string[] = [];
+    const spyLogger: Logger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          warnEvents.push((obj as Record<string, unknown>).event as string);
+        }
+      },
+      error: () => {},
+    };
+
+    const bundles = buildFallbackBundlesFromVolumeMap({
+      args: baseArgs({ volume: "99" }),
+      requestedTokens: new Set(["99"]),
+      volumeMap,
+      logger: spyLogger,
+    });
+
+    expect(bundles).toHaveLength(0);
+    expect(warnEvents).toContain("download.fallback_volume_missing");
+  });
+
+  test("multi-volume request — only matched volumes returned", () => {
+    const bundles = buildFallbackBundlesFromVolumeMap({
+      args: baseArgs({ volume: "12,13,99" }),
+      requestedTokens: new Set(["12", "13", "99"]),
+      volumeMap,
+      logger: noopLogger,
+    });
+
+    expect(bundles).toHaveLength(2);
+    expect(bundles.map((b) => b.bundleNumber).sort()).toEqual(["12", "13"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildFallbackBundlesFromVolumeMap — chapter mode
+// ---------------------------------------------------------------------------
+
+describe("buildFallbackBundlesFromVolumeMap — chapter mode", () => {
+  const volumeMap: VolumeMap = [
+    {
+      volume: "13",
+      chapters: [
+        { id: "dandadan/chapter-128", chapter: "128" },
+        { id: "dandadan/chapter-129", chapter: "129" },
+      ],
+    },
+    {
+      volume: "unknown",
+      chapters: [{ id: "dandadan/chapter-999", chapter: "999" }],
+    },
+  ];
+
+  test("finds chapter across all volume buckets", () => {
+    const bundles = buildFallbackBundlesFromVolumeMap({
+      args: baseArgs({ volume: undefined, chapter: "128" }),
+      requestedTokens: new Set(["128"]),
+      volumeMap,
+      logger: noopLogger,
+    });
+
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]?.kind).toBe("chapter");
+    expect(bundles[0]?.chapters[0]?.id).toBe("dandadan/chapter-128");
+    expect(bundles[0]?.volumeForHistory).toBe("13");
+  });
+
+  test("chapter in 'unknown' bucket → volumeForHistory is 'none'", () => {
+    const bundles = buildFallbackBundlesFromVolumeMap({
+      args: baseArgs({ volume: undefined, chapter: "999" }),
+      requestedTokens: new Set(["999"]),
+      volumeMap,
+      logger: noopLogger,
+    });
+
+    expect(bundles[0]?.volumeForHistory).toBe("none");
+  });
+
+  test("warns when chapter is not found in any bucket", () => {
+    const warnEvents: string[] = [];
+    const spyLogger: Logger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          warnEvents.push((obj as Record<string, unknown>).event as string);
+        }
+      },
+      error: () => {},
+    };
+
+    const bundles = buildFallbackBundlesFromVolumeMap({
+      args: baseArgs({ volume: undefined, chapter: "1" }),
+      requestedTokens: new Set(["1"]),
+      volumeMap,
+      logger: spyLogger,
+    });
+
+    expect(bundles).toHaveLength(0);
+    expect(warnEvents).toContain("download.fallback_chapter_missing");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runFallbackDownload — volumeMappingSource: 'fallback' end-to-end
+// ---------------------------------------------------------------------------
+
+describe("runFallbackDownload — volumeMappingSource: fallback, --volume 13 on all_external series", () => {
+  test("uses getVolumeMap and downloads chapters from volume 13 without querying MangaDex aggregate", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "scanldr-fallback-vmap-"));
+    const db = openDb(":memory:");
+    runMigrations(db);
+
+    const imageUrl = "https://img-r1.2xstorage.com/dandadan/128/0.webp";
+
+    const mkClientWithVolumeMap: MangakakalotClient = {
+      searchManga: async () => [
+        { id: "dandadan", title: "Dandadan", originalLanguage: "ja", year: 2021 },
+      ],
+      getChapterList: async () => {
+        throw new Error("getChapterList should NOT be called when volumeMappingSource=fallback");
+      },
+      getVolumeMap: async () => [
+        {
+          volume: "13",
+          chapters: [{ id: "dandadan/chapter-128", chapter: "128" }],
+        },
+      ],
+      getChapterImages: async (_id: string): Promise<ImageRef[]> => [{ url: imageUrl, page: 1 }],
+    };
+
+    const mockHttp: FallbackHttpClient = {
+      get: async (url: string) => {
+        if (url === imageUrl) {
+          return new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 });
+        }
+        throw new Error(`unexpected http.get call: ${url}`);
+      },
+    };
+
+    // mangadexResolve simulates all_external: volumes is empty (aggregate returned nothing)
+    const mangadexResolve: MangaDexResolveResult = {
+      candidate: { id: "manga-dandadan", title: "Dandadan", originalLanguage: "ja", year: 2021 },
+      volumes: [],
+      chaptersInLang: [
+        makeChapterRef({
+          id: "ch-ext-1",
+          externalUrl: "https://mangaplus.shueisha.co.jp/viewer/1001",
+        }),
+      ],
+      language: "en",
+    };
+
+    await runFallbackDownload({
+      args: baseArgs({ volume: "13", outDir: tmpDir, noTrack: true }),
+      ctx: {
+        logger: noopLogger,
+        config: {
+          preferred_languages: ["en"],
+          download_quality: "data",
+          default_format: "cbz",
+          default_out: tmpDir,
+          image_concurrency: 1,
+          chapter_delay_ms: 0,
+          db_path: ":memory:",
+        },
+        db,
+      },
+      mangadexResolve,
+      createFallbackHttp: async () => mockHttp,
+      createMangakakalotClient: () => mkClientWithVolumeMap,
+      volumeMappingSource: "fallback",
+      // biome-ignore lint/style/noNonNullAssertion: test stub
+      promptSite: async (sites) => sites[0]!,
+    });
+
+    db.close();
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test("throws CliError when volumeMap is empty and --volume is requested", async () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+
+    const mkClientEmptyMap: MangakakalotClient = {
+      searchManga: async () => [
+        { id: "dandadan", title: "Dandadan", originalLanguage: "ja", year: 2021 },
+      ],
+      getChapterList: async () => [],
+      getVolumeMap: async () => [],
+      getChapterImages: async () => [],
+    };
+
+    const fakeFallbackHttp: FallbackHttpClient = {
+      get: async () => new Response("", { status: 200 }),
+    };
+
+    const err = await runFallbackDownload({
+      args: baseArgs({ volume: "13" }),
+      ctx: {
+        logger: noopLogger,
+        config: {
+          preferred_languages: ["en"],
+          download_quality: "data",
+          default_format: "cbz",
+          default_out: "/tmp",
+          image_concurrency: 1,
+          chapter_delay_ms: 0,
+          db_path: ":memory:",
+        },
+        db,
+      },
+      mangadexResolve: null,
+      createFallbackHttp: async () => fakeFallbackHttp,
+      createMangakakalotClient: () => mkClientEmptyMap,
+      volumeMappingSource: "fallback",
+      // biome-ignore lint/style/noNonNullAssertion: test stub
+      promptSite: async (sites) => sites[0]!,
+    }).catch((e) => e);
+
+    db.close();
+
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).message).toContain("Volume mapping not available");
+    expect((err as CliError).message).toContain("--chapter");
+  });
+
+  test("throws CliError when requested volume not found in map", async () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+
+    const mkClientMissingVol: MangakakalotClient = {
+      searchManga: async () => [
+        { id: "dandadan", title: "Dandadan", originalLanguage: "ja", year: 2021 },
+      ],
+      getChapterList: async () => [],
+      getVolumeMap: async () => [
+        { volume: "1", chapters: [{ id: "dandadan/chapter-1", chapter: "1" }] },
+        { volume: "2", chapters: [{ id: "dandadan/chapter-9", chapter: "9" }] },
+      ],
+      getChapterImages: async () => [],
+    };
+
+    const fakeFallbackHttp: FallbackHttpClient = {
+      get: async () => new Response("", { status: 200 }),
+    };
+
+    const err = await runFallbackDownload({
+      args: baseArgs({ volume: "13" }),
+      ctx: {
+        logger: noopLogger,
+        config: {
+          preferred_languages: ["en"],
+          download_quality: "data",
+          default_format: "cbz",
+          default_out: "/tmp",
+          image_concurrency: 1,
+          chapter_delay_ms: 0,
+          db_path: ":memory:",
+        },
+        db,
+      },
+      mangadexResolve: null,
+      createFallbackHttp: async () => fakeFallbackHttp,
+      createMangakakalotClient: () => mkClientMissingVol,
+      volumeMappingSource: "fallback",
+      // biome-ignore lint/style/noNonNullAssertion: test stub
+      promptSite: async (sites) => sites[0]!,
+    }).catch((e) => e);
+
+    db.close();
+
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).message).toContain("Volume 13 not found");
+    expect((err as CliError).message).toContain("Available volumes: 1, 2");
+    expect((err as CliError).message).toContain("--chapter");
   });
 });

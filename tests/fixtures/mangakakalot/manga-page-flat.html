@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<!-- Synthetic fixture: mimics mangakakalot.gg manga detail page for a series
+     that has NO volume labels in chapter names (flat chapter list only).
+     Parser should return a single bucket { volume: 'unknown', chapters: [...] }. -->
+<html lang="en">
+<head><meta charset="UTF-8"><title>Some Series - Manga</title></head>
+<body>
+<div class="story-info-right">
+  <h1 itemprop="name">Some Series</h1>
+</div>
+<ul class="row-content-chapter">
+  <li class="a-h">
+    <a class="chapter-name text-nowrap" href="https://www.mangakakalot.gg/manga/some-series/chapter-10">Chapter 10</a>
+    <span class="chapter-time text-nowrap">May 01,2026</span>
+  </li>
+  <li class="a-h">
+    <a class="chapter-name text-nowrap" href="https://www.mangakakalot.gg/manga/some-series/chapter-5">Chapter 5</a>
+    <span class="chapter-time text-nowrap">Apr 01,2026</span>
+  </li>
+  <li class="a-h">
+    <a class="chapter-name text-nowrap" href="https://www.mangakakalot.gg/manga/some-series/chapter-1">Chapter 1</a>
+    <span class="chapter-time text-nowrap">Mar 01,2026</span>
+  </li>
+</ul>
+</body>
+</html>
