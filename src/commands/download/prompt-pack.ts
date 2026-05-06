@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline";
 import { CliError } from "@plugins/errors/index.ts";
+import { buildVolumeFilename } from "./pack.ts";
 import type { PackPromptOptions, PackPromptResult } from "./types.ts";
 
 export type { PackPromptOptions, PackPromptResult };
@@ -71,6 +72,7 @@ async function promptVolumeName(hint: string): Promise<string | undefined> {
 export async function runPackPrompts(opts: PackPromptOptions): Promise<PackPromptResult> {
   const {
     chapterCount,
+    slug,
     outputName,
     defaultVolumeStem,
     checkExists,
@@ -129,13 +131,10 @@ export async function runPackPrompts(opts: PackPromptOptions): Promise<PackPromp
     }
   }
 
-  // Re-derive the effective output name if the user chose a custom volume number
+  // Re-derive the effective output name if the user chose a custom volume number.
+  // Prompt input is treated as a volume-number suffix: "13" → "<slug>-volume-13.cbz".
   const effectiveOutputName =
-    volumeName !== undefined
-      ? volumeName.endsWith(".cbz")
-        ? volumeName
-        : `${volumeName}.cbz`
-      : outputName;
+    volumeName !== undefined ? buildVolumeFilename(slug, volumeName) : outputName;
 
   // Check for existing file against the *effective* path (post-name-prompt) to avoid silent overwrites.
   const fileExists = await checkExists(effectiveOutputName);

@@ -16,6 +16,18 @@ function chapterTokenToNum(token: string): number {
 }
 
 /**
+ * Build a volume filename from a user-supplied volume number/name stem.
+ * Strips a trailing ".cbz" from input before applying the prefix.
+ * e.g. buildVolumeFilename("dandadan", "13") → "dandadan-volume-13.cbz"
+ *      buildVolumeFilename("dandadan", "13.cbz") → "dandadan-volume-13.cbz"
+ *      buildVolumeFilename("dandadan", "special-edition") → "dandadan-volume-special-edition.cbz"
+ */
+export function buildVolumeFilename(slug: string, input: string): string {
+  const clean = input.endsWith(".cbz") ? input.slice(0, -4) : input;
+  return `${slug}-volume-${clean}.cbz`;
+}
+
+/**
  * Build the default volume filename stem.
  * e.g. slug="dandadan", chapters covering 103–111 → "dandadan-volume-103-111"
  */

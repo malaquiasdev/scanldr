@@ -60,6 +60,8 @@ export interface PackPromptResult {
 
 export interface PackPromptOptions {
   chapterCount: number;
+  /** Manga slug (e.g. "dandadan") — used to build "<slug>-volume-<input>.cbz" from prompt input. */
+  slug: string;
   /** Default output filename stem (e.g. "dandadan-volume-103-111") — shown as the leave-blank hint. */
   outputName: string;
   /** Default volume stem without manga slug prefix (e.g. "103-111") — shown in the volume-number prompt hint. */
