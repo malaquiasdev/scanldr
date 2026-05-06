@@ -1,48 +1,48 @@
 # Flow — Authentication (Cloudflare Bypass)
 
-The auth flow is the only place where Playwright is used. It opens a real browser so the user can solve the Cloudflare Turnstile challenge. After the challenge passes, the CLI automatically extracts the `cf_clearance` cookie — no manual copy/paste.
+The auth flow uses a manual "Copy as cURL" paste from the browser's DevTools. No headless browser or Playwright is involved. The user solves the Cloudflare challenge themselves in a real browser, then copies the authenticated request and pipes it to `scanldr auth` via the clipboard (e.g. `pbpaste | scanldr auth`). Interactive TTY paste is intentionally rejected — `scanldr auth` reads from stdin only when data is piped or file-redirected.
 
 The saved session is valid for approximately 30 days. When it expires, re-running `scanldr auth` is all that's needed.
+
+See [`docs/auth-manual.md`](../auth-manual.md) for step-by-step instructions.
 
 ## Sequence Diagram
 
 ```mermaid
 sequenceDiagram
     actor User
-    participant CLI as scanldr CLI
-    participant Browser as Playwright (Chromium headful)
+    participant Browser as Real Browser (any)
     participant CF as Cloudflare / mangakakalot.gg
+    participant CLI as scanldr CLI
     participant FS as $XDG_DATA_HOME/scanldr/auth.json
 
-    User->>CLI: scanldr auth
-    CLI->>Browser: launch headful Chromium
-    Browser->>CF: navigate to mangakakalot.gg
+    User->>Browser: open mangakakalot.gg
+    Browser->>CF: navigate
     CF-->>Browser: Turnstile challenge page
 
     Note over User,Browser: User solves the challenge manually in the browser window
 
-    User->>Browser: clicks / waits for challenge to pass
-    Browser->>CF: challenge response
+    User->>Browser: challenge passes
     CF-->>Browser: sets cf_clearance cookie + redirects to site
+    User->>Browser: DevTools → Network → right-click request → Copy as cURL
+    User->>CLI: scanldr auth (paste cURL, press Enter on empty line)
 
-    Browser-->>CLI: page settled (networkidle)
-    CLI->>Browser: extract cf_clearance from cookie store
-    CLI->>Browser: extract User-Agent from browser context
-    Browser-->>CLI: { cf_clearance, userAgent }
-
-    CLI->>CF: GET mangakakalot.gg (verify session)
+    CLI->>CLI: parse cookies + User-Agent from cURL
+    CLI->>CF: GET <parsed URL> (verify session using extracted cookies + UA)
     CF-->>CLI: 200 OK (no challenge)
 
-    CLI->>FS: write { cf_clearance, userAgent, savedAt }
-    CLI-->>User: "Auth saved. Valid for ~30 days."
-    CLI->>Browser: close
+    CLI->>FS: atomic write { cookies, userAgent, savedAt } (mode 0600)
+    CLI-->>User: "Auth saved."
 ```
 
 ## Error Cases
 
 | Situation | Behavior |
 |---|---|
-| User closes the browser before challenge resolves | CLI exits with error — no auth saved |
-| Site returns 403 after cookie replay | `CloudflareError` thrown — user must re-run `scanldr auth` |
+| User pastes empty input | CLI exits with error — no auth saved |
+| `cf_clearance` missing from pasted cookies | `AuthError` thrown — user must re-copy from a solved-challenge request |
+| User-Agent header absent from paste | `AuthError` thrown — re-copy with headers included |
+| Site returns 403 after cookie replay | `AuthError` thrown — session may be stale, user must re-run `scanldr auth` |
+| Cloudflare challenge body returned (200 but JS challenge page) | `AuthError` thrown — paste may be stale |
 | `$XDG_DATA_HOME/scanldr/auth.json` missing | Any download command exits early with "Not authenticated. Run `scanldr auth` first." |
-| Cookie expired (>30 days) | Same as above — `CloudflareError` triggers re-auth prompt |
+| Cookie expired (>30 days) | Same as above — re-auth prompt |
