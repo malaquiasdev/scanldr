@@ -11,18 +11,19 @@ let MAX_COVER_BYTES: (typeof import("./cover.ts"))["MAX_COVER_BYTES"];
 
 beforeAll(async () => {
   mock.restore();
-  const mod = await import("./cover.ts");
+  // Import via absolute URL to use a different module cache key than the relative
+  // "./cover.ts" path used by prompt-pack.test.ts's mock.module() calls.
+  // This prevents mock leakage when Bun runs test files in the same worker (Linux CI).
+  const absoluteUrl = import.meta.resolve("./cover.ts");
+  const mod = await import(absoluteUrl);
   fetchCover = mod.fetchCover;
   MAX_COVER_BYTES = mod.MAX_COVER_BYTES;
   // Diagnostics: print module identity to detect stale mock on CI
   process.stderr.write(
-    `[cover.test] fetchCover is: ${typeof fetchCover}, toString: ${String(fetchCover).slice(0, 80)}\n`,
+    `[cover.test] absoluteUrl: ${absoluteUrl}\n`,
   );
   process.stderr.write(
-    `[cover.test] MAX_COVER_BYTES: ${MAX_COVER_BYTES}\n`,
-  );
-  process.stderr.write(
-    `[cover.test] new URL("file:///etc/passwd").protocol: ${new URL("file:///etc/passwd").protocol}\n`,
+    `[cover.test] fetchCover toString: ${String(fetchCover).slice(0, 80)}\n`,
   );
 });
 
