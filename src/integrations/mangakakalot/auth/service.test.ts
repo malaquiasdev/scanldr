@@ -131,6 +131,32 @@ describe("runAuth — session verification", () => {
       message: expect.stringContaining("session verification failed"),
     });
   });
+
+  test("throws AuthError on 503 response", async () => {
+    const opts: RunAuthOptions = {
+      logger: buildLogger(),
+      dataHome: tmpDir,
+      readStdin: async () => VALID_CURL,
+      fetch: buildFetch(503, "Service Unavailable"),
+    };
+    await expect(runAuth(opts)).rejects.toMatchObject({
+      message: expect.stringContaining("session verification failed: HTTP 503"),
+    });
+  });
+
+  test("throws AuthError wrapping network error when fetch rejects", async () => {
+    const opts: RunAuthOptions = {
+      logger: buildLogger(),
+      dataHome: tmpDir,
+      readStdin: async () => VALID_CURL,
+      fetch: async () => {
+        throw new Error("ECONNRESET");
+      },
+    };
+    await expect(runAuth(opts)).rejects.toMatchObject({
+      message: expect.stringContaining("network error"),
+    });
+  });
 });
 
 describe("runAuth — persist", () => {

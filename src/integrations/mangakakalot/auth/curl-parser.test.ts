@@ -181,3 +181,29 @@ describe("parseCurl — errors", () => {
     expect(Object.keys(result.cookies)).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// parseCurl — additional coverage
+// ---------------------------------------------------------------------------
+
+describe("parseCurl — additional coverage", () => {
+  test("preserves = in cookie value (base64 padding)", () => {
+    const input = `curl 'https://example.com' -H 'cookie: cf_clearance=abc==' -H 'user-agent: Mozilla/5.0'`;
+    const result = parseCurl(input);
+    expect(result.cookies.cf_clearance).toBe("abc==");
+  });
+
+  test("merges multiple -H cookie headers", () => {
+    const input = `curl 'https://example.com' -H 'cookie: a=1' -H 'cookie: b=2' -H 'user-agent: Mozilla/5.0'`;
+    const result = parseCurl(input);
+    expect(result.cookies.a).toBe("1");
+    expect(result.cookies.b).toBe("2");
+  });
+
+  test("extracts cookies from --cookie long flag", () => {
+    const input = `curl 'https://example.com' --cookie 'a=1; b=2' -H 'user-agent: Mozilla/5.0'`;
+    const result = parseCurl(input);
+    expect(result.cookies.a).toBe("1");
+    expect(result.cookies.b).toBe("2");
+  });
+});

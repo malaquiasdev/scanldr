@@ -110,10 +110,8 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
     );
   }
 
-  if (verifyRes.status === 403) {
-    throw new AuthError(
-      "session verification failed: Cloudflare still rejecting — paste may be stale",
-    );
+  if (verifyRes.status < 200 || verifyRes.status > 299) {
+    throw new AuthError(`session verification failed: HTTP ${verifyRes.status} from verify URL`);
   }
 
   const body = await verifyRes.text();
