@@ -173,7 +173,12 @@ export async function runPackPrompts(opts: PackPromptOptions): Promise<PackPromp
   // Skip when: nonTty without flag, packReplace, packNameProvided — same skip rules as volume-number prompt.
   let cover: CoverImage | undefined;
   const trimmedCoverUrl = opts.coverUrl?.trim();
-  if (trimmedCoverUrl !== undefined && trimmedCoverUrl !== "") {
+  // Explicit flag with empty value = user opted out; skip fetch and prompt regardless of TTY.
+  const explicitEmpty = opts.coverUrl !== undefined && trimmedCoverUrl === "";
+
+  if (explicitEmpty) {
+    cover = undefined;
+  } else if (trimmedCoverUrl !== undefined && trimmedCoverUrl !== "") {
     // Flag path: validate once, re-prompt not applicable — just throw on error
     try {
       cover = await fetchCover(trimmedCoverUrl);

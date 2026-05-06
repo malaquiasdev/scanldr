@@ -566,6 +566,79 @@ describe("runPackPrompts — --cover-url flag path", () => {
     expect(fetchCalled).toBe(false);
     expect(result.cover).toBeUndefined();
   });
+
+  test("--cover-url empty string skips cover in TTY mode (no prompt fired)", async () => {
+    captureStderr();
+    let fetchCalled = false;
+    let coverPromptCalled = false;
+
+    mock.module("./cover.ts", () => ({
+      fetchCover: async (_url: string) => {
+        fetchCalled = true;
+        return { bytes: new Uint8Array([0xff, 0xd8]), ext: ".jpg" };
+      },
+    }));
+
+    // packFlag+packNameProvided skip pack/volume prompts; only delete prompt remains.
+    // Track readline calls to confirm cover prompt never fires (cover prompt reads a URL line,
+    // but any readline call here is the delete prompt — we answer "n" and assert cover was skipped).
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          coverPromptCalled = true;
+          cb("n"); // answer delete prompt
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      nonTty: false,
+      packFlag: true,
+      packNameProvided: true,
+      coverUrl: "",
+    });
+
+    expect(fetchCalled).toBe(false);
+    expect(result.cover).toBeUndefined();
+    // readline fired for delete prompt only — not for cover URL fetch
+    expect(coverPromptCalled).toBe(true); // delete prompt did fire (TTY mode)
+  });
+
+  test("--cover-url whitespace-only skips cover in TTY mode (trim semantics)", async () => {
+    captureStderr();
+    let fetchCalled = false;
+
+    mock.module("./cover.ts", () => ({
+      fetchCover: async (_url: string) => {
+        fetchCalled = true;
+        return { bytes: new Uint8Array([0xff, 0xd8]), ext: ".jpg" };
+      },
+    }));
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          cb("n"); // answer delete prompt
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      nonTty: false,
+      packFlag: true,
+      packNameProvided: true,
+      coverUrl: "   ",
+    });
+
+    expect(fetchCalled).toBe(false);
+    expect(result.cover).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
