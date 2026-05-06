@@ -1,31 +1,8 @@
-import { beforeAll, describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeFile, mkdir } from "node:fs/promises";
-
-// Guard against module mocks leaking from other test files (e.g. prompt-pack.test.ts
-// mocks "./cover.ts" and Bun may run test files in the same worker process on Linux CI).
-// Restore all mocks before importing the real module under test.
-let fetchCover: (typeof import("./cover.ts"))["fetchCover"];
-let MAX_COVER_BYTES: (typeof import("./cover.ts"))["MAX_COVER_BYTES"];
-
-beforeAll(async () => {
-  mock.restore();
-  // Import via absolute URL to use a different module cache key than the relative
-  // "./cover.ts" path used by prompt-pack.test.ts's mock.module() calls.
-  // This prevents mock leakage when Bun runs test files in the same worker (Linux CI).
-  const absoluteUrl = import.meta.resolve("./cover.ts");
-  const mod = await import(absoluteUrl);
-  fetchCover = mod.fetchCover;
-  MAX_COVER_BYTES = mod.MAX_COVER_BYTES;
-  // Diagnostics: print module identity to detect stale mock on CI
-  process.stderr.write(
-    `[cover.test] absoluteUrl: ${absoluteUrl}\n`,
-  );
-  process.stderr.write(
-    `[cover.test] fetchCover toString: ${String(fetchCover).slice(0, 80)}\n`,
-  );
-});
+import { MAX_COVER_BYTES, fetchCover } from "./cover.ts";
 
 type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
