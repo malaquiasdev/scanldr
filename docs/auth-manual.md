@@ -17,7 +17,7 @@ Playwright-based automation is detected by Cloudflare and the challenge never re
    - Firefox: `F12`
    - Safari: `Cmd+Option+I` (enable DevTools in Safari Preferences first)
 
-4. Go to the **Network** tab. Reload the page (`F5` / `Cmd+R`).
+4. Go to the **Network** tab (if you see "Paused in debugger", see [Troubleshooting](#troubleshooting) below). Reload the page (`F5` / `Cmd+R`).
 
 5. In the Network panel, find the request to `/search/story/dragon-ball`. Right-click it:
    - Chrome/Edge: **Copy → Copy as cURL (bash)**
@@ -50,6 +50,24 @@ scanldr auth < curl.txt
 > **Note:** Interactive paste (typing or pasting directly into the terminal while `scanldr auth` waits) is intentionally rejected. Multi-line cURL output is silently truncated by macOS Terminal and iTerm2 when pasted into stdin, which leads to confusing parse errors. Piping is the only reliable approach.
 
 ## Troubleshooting
+
+### "Paused in debugger" banner appears when opening DevTools
+
+**Symptom:** As soon as DevTools opens (or on page reload with DevTools open), the browser freezes with a "Paused in debugger" banner at the top. The Network tab is unusable.
+
+**Cause:** mangakakalot.gg injects a `debugger;` statement inside a loop as an anti-inspection measure. Every modern browser honoured the statement when DevTools is attached, freezing execution.
+
+**Fix:**
+
+1. Open DevTools → **Sources** tab.
+2. Click the "Deactivate breakpoints" icon at the top of the right panel (shortcut `Cmd+F8` on Mac, `Ctrl+F8` on Linux/Windows).
+3. Click ▶ "Resume script execution" to leave the current pause.
+4. Reload the page (`Cmd+R` / `Ctrl+R`) — `debugger;` calls are now ignored.
+5. Continue with the normal **Network** tab → **Copy as cURL** flow.
+
+![Deactivate breakpoints button](./images/devtools-deactivate-breakpoints.png) <!-- TODO: capture -->
+
+### Common errors
 
 | Error | Fix |
 |---|---|
