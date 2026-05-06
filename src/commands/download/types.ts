@@ -64,8 +64,12 @@ export interface PackPromptOptions {
   outputName: string;
   /** Default volume stem without manga slug prefix (e.g. "103-111") — shown in the volume-number prompt hint. */
   defaultVolumeStem: string;
-  /** true if the target file already exists */
-  fileExists: boolean;
+  /**
+   * Called with the *effective* output filename (after volume-number prompt) to check for
+   * an existing file. Returns true when the file exists. Called after all name prompts resolve
+   * so the check is always against the actual path that will be written.
+   */
+  checkExists: (filename: string) => Promise<boolean>;
   nonTty: boolean;
   /** --pack flag (boolean form — pack with default name, keep individuals) */
   packFlag: boolean;

@@ -24,26 +24,24 @@ export async function runPackFlow(opts: {
 
   const stem = customName ?? defaultVolumeName(slug, successPaths);
   const finalName = stem.endsWith(".cbz") ? stem : `${stem}.cbz`;
-  const targetPath = join(args.outDir, slug, finalName);
 
   // Extract the portion after "<slug>-volume-" to use as the hint in the prompt.
   // e.g. stem = "dandadan-volume-103-111" → hint = "103-111"
   const volumePrefix = `${slug}-volume-`;
   const defaultVolumeStem = stem.startsWith(volumePrefix) ? stem.slice(volumePrefix.length) : stem;
 
-  let fileExists = false;
-  try {
-    await access(targetPath);
-    fileExists = true;
-  } catch {
-    fileExists = false;
-  }
-
   const { shouldPack, shouldDelete, volumeName } = await runPackPrompts({
     chapterCount: successPaths.length,
     outputName: finalName,
     defaultVolumeStem,
-    fileExists,
+    checkExists: async (filename: string) => {
+      try {
+        await access(join(args.outDir, slug, filename));
+        return true;
+      } catch {
+        return false;
+      }
+    },
     nonTty: args.nonTty,
     packFlag,
     packNameProvided,

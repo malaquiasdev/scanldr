@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline";
+import { CliError } from "@plugins/errors/index.ts";
 import type { PackPromptOptions, PackPromptResult } from "./types.ts";
 
 export type { PackPromptOptions, PackPromptResult };
@@ -72,7 +73,7 @@ export async function runPackPrompts(opts: PackPromptOptions): Promise<PackPromp
     chapterCount,
     outputName,
     defaultVolumeStem,
-    fileExists,
+    checkExists,
     nonTty,
     packFlag,
     packNameProvided,
@@ -136,10 +137,10 @@ export async function runPackPrompts(opts: PackPromptOptions): Promise<PackPromp
         : `${volumeName}.cbz`
       : outputName;
 
-  // Check for existing file (using effectiveOutputName)
+  // Check for existing file against the *effective* path (post-name-prompt) to avoid silent overwrites.
+  const fileExists = await checkExists(effectiveOutputName);
   if (fileExists) {
     if (nonTty && !packOverwrite) {
-      const { CliError } = await import("@plugins/errors/index.ts");
       throw new CliError(
         `${effectiveOutputName} already exists; pass --pack-overwrite or remove the file`,
         1,
