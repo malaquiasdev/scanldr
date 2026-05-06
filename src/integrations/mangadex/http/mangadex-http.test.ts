@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createMangaDexHttp } from "@integrations/mangadex/http/index.ts";
+import { MangaDexHttpError, createMangaDexHttp } from "@integrations/mangadex/http/index.ts";
 import type { FetchFn } from "@integrations/mangadex/http/index.ts";
 import type { Config } from "@plugins/config/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
@@ -182,7 +182,10 @@ describe("MangaDexHttp.get", () => {
       fetch: statusFetch(503),
     });
 
-    await expect(client.get("/manga")).rejects.toThrow("HTTP 503");
+    const err = await client.get("/manga").catch((e) => e);
+    expect(err).toBeInstanceOf(MangaDexHttpError);
+    expect((err as MangaDexHttpError).status).toBe(503);
+    expect((err as MangaDexHttpError).message).toContain("HTTP 503");
     expect(sleep.calls.length).toBe(5);
   });
 
@@ -195,8 +198,41 @@ describe("MangaDexHttp.get", () => {
       fetch: statusFetch(404),
     });
 
-    await expect(client.get("/not-found")).rejects.toThrow("HTTP 404");
+    const err = await client.get("/not-found").catch((e) => e);
+    expect(err).toBeInstanceOf(MangaDexHttpError);
+    expect((err as MangaDexHttpError).status).toBe(404);
+    expect((err as MangaDexHttpError).message).toContain("HTTP 404");
     expect(sleep.calls.length).toBe(0);
+  });
+
+  test("throws MangaDexHttpError after 429 retries are exhausted", async () => {
+    const sleep = makeSleep();
+    const client = createMangaDexHttp({
+      logger: noopLogger,
+      config: baseConfig,
+      sleep: sleep.fn,
+      fetch: statusFetch(429),
+    });
+
+    const err = await client.get("/manga").catch((e) => e);
+    expect(err).toBeInstanceOf(MangaDexHttpError);
+    expect((err as MangaDexHttpError).status).toBe(429);
+    expect((err as MangaDexHttpError).message).toContain("HTTP 429");
+  });
+
+  test("throws MangaDexHttpError after 5xx retries are exhausted", async () => {
+    const sleep = makeSleep();
+    const client = createMangaDexHttp({
+      logger: noopLogger,
+      config: baseConfig,
+      sleep: sleep.fn,
+      fetch: statusFetch(503),
+    });
+
+    const err = await client.get("/manga").catch((e) => e);
+    expect(err).toBeInstanceOf(MangaDexHttpError);
+    expect((err as MangaDexHttpError).status).toBe(503);
+    expect((err as MangaDexHttpError).message).toContain("HTTP 503");
   });
 
   test("query params — appended to URL", async () => {

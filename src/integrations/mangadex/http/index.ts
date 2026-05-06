@@ -49,7 +49,7 @@ export function createMangaDexHttp(opts: MangaDexHttpOptions): MangaDexHttpClien
           "429 rate-limited, backing off",
         );
         await sleep(waitMs);
-        lastError = new Error(`HTTP 429 after ${attempt + 1} attempt(s)`);
+        lastError = new MangaDexHttpError(`HTTP 429 after ${attempt + 1} attempt(s)`, 429);
         continue;
       }
 
@@ -66,7 +66,10 @@ export function createMangaDexHttp(opts: MangaDexHttpOptions): MangaDexHttpClien
           "5xx error, retrying",
         );
         await sleep(waitMs);
-        lastError = new Error(`HTTP ${response.status} after ${attempt + 1} attempt(s)`);
+        lastError = new MangaDexHttpError(
+          `HTTP ${response.status} after ${attempt + 1} attempt(s)`,
+          response.status,
+        );
         continue;
       }
 
