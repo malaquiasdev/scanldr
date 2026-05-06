@@ -204,6 +204,27 @@ describe("packVolume", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  test("00_cover is the first entry in zip insertion order (not just sorted)", async () => {
+    const { dir, slug, chapters } = await setup();
+    const coverBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+    const result = await packVolume({
+      slug,
+      outDir: dir,
+      chapters,
+      cover: { bytes: coverBytes, ext: ".jpg" },
+      logger,
+    });
+
+    const raw = await Bun.file(result.outputPath).arrayBuffer();
+    const { unzipSync } = await import("fflate");
+    const entries = unzipSync(new Uint8Array(raw));
+
+    // Assert insertion-order position-0 BEFORE any sort
+    expect(Object.keys(entries)[0]).toBe("00_cover.jpg");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   test("cover option: cover bytes are preserved exactly", async () => {
     const { dir, slug, chapters } = await setup();
     const coverBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0xca, 0xfe]);

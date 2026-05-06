@@ -68,6 +68,16 @@ describe("fetchCover — HTTP status", () => {
     );
   });
 
+  test.each([
+    [403, "HTTP 403"],
+    [503, "HTTP 503"],
+  ])("rejects on %i status", async (status, expectedMsg) => {
+    const mockFetch = asFetch(async () => makeResponse({ status, contentType: "text/html" }));
+    await expect(fetchCover("https://example.com/cover.jpg", { fetch: mockFetch })).rejects.toThrow(
+      `Cover fetch failed: ${expectedMsg}`,
+    );
+  });
+
   test("network error (fetch throws) produces useful message", async () => {
     const mockFetch = asFetch(async (): Promise<Response> => {
       throw new Error("ECONNREFUSED");
@@ -94,6 +104,14 @@ describe("fetchCover — Content-Type", () => {
     const mockFetch = asFetch(async () => makeResponse({ status: 200, contentType: "image/bmp" }));
     await expect(fetchCover("https://example.com/cover.jpg", { fetch: mockFetch })).rejects.toThrow(
       "URL did not return an image (got image/bmp)",
+    );
+  });
+
+  test("rejects when Content-Type header is absent", async () => {
+    // makeResponse without contentType omits the header → rawCt = "" → "unknown"
+    const mockFetch = asFetch(async () => makeResponse({ status: 200 }));
+    await expect(fetchCover("https://example.com/cover.jpg", { fetch: mockFetch })).rejects.toThrow(
+      "did not return an image",
     );
   });
 });

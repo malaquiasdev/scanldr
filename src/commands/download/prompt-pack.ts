@@ -114,7 +114,6 @@ export async function runPackPrompts(opts: PackPromptOptions): Promise<PackPromp
     packNameProvided,
     packReplace,
     packOverwrite,
-    coverUrl,
     logger,
   } = opts;
 
@@ -173,10 +172,11 @@ export async function runPackPrompts(opts: PackPromptOptions): Promise<PackPromp
   // Cover URL: --cover-url flag (non-interactive) OR interactive prompt.
   // Skip when: nonTty without flag, packReplace, packNameProvided — same skip rules as volume-number prompt.
   let cover: CoverImage | undefined;
-  if (coverUrl !== undefined) {
+  const trimmedCoverUrl = opts.coverUrl?.trim();
+  if (trimmedCoverUrl !== undefined && trimmedCoverUrl !== "") {
     // Flag path: validate once, re-prompt not applicable — just throw on error
     try {
-      cover = await fetchCover(coverUrl);
+      cover = await fetchCover(trimmedCoverUrl);
       const kb = (cover.bytes.byteLength / 1024).toFixed(0);
       process.stderr.write(`Fetched cover (${kb} KB)\n`);
     } catch (err) {

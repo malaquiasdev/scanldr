@@ -450,6 +450,125 @@ describe("runPackPrompts — overwrite check against effective (post-prompt) fil
 });
 
 // ---------------------------------------------------------------------------
+// --cover-url flag path (non-interactive, non-TTY)
+// ---------------------------------------------------------------------------
+
+describe("runPackPrompts — --cover-url flag path", () => {
+  afterEach(() => {
+    restoreStderr();
+    mock.restore();
+  });
+
+  test("--cover-url with valid URL fetches cover and includes in result", async () => {
+    captureStderr();
+    const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+
+    mock.module("./cover.ts", () => ({
+      fetchCover: async (_url: string) => ({ bytes: JPEG_BYTES, ext: ".jpg" }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      nonTty: true,
+      packFlag: true,
+      coverUrl: "https://example.com/cover.jpg",
+    });
+
+    expect(result.cover).toBeDefined();
+    expect(result.cover?.ext).toBe(".jpg");
+    expect(result.cover?.bytes).toEqual(JPEG_BYTES);
+  });
+
+  test("--cover-url with invalid scheme fails fast (no re-prompt)", async () => {
+    captureStderr();
+
+    mock.module("./cover.ts", () => ({
+      fetchCover: async (_url: string) => {
+        throw new Error("Only http(s) URLs allowed");
+      },
+    }));
+
+    // Track if any readline prompt fires — it must not
+    let promptFired = false;
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, _cb: (line: string) => void) => {
+          promptFired = true;
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    // Flag path warns and continues without cover — does NOT re-prompt
+    const result = await runPackPrompts({
+      ...baseOpts,
+      nonTty: true,
+      packFlag: true,
+      coverUrl: "file:///etc/passwd",
+    });
+
+    expect(promptFired).toBe(false);
+    expect(result.cover).toBeUndefined();
+  });
+
+  test("--cover-url with HTTP 404 fails fast (no re-prompt)", async () => {
+    captureStderr();
+
+    mock.module("./cover.ts", () => ({
+      fetchCover: async (_url: string) => {
+        throw new Error("Cover fetch failed: HTTP 404");
+      },
+    }));
+
+    let promptFired = false;
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, _cb: (line: string) => void) => {
+          promptFired = true;
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      nonTty: true,
+      packFlag: true,
+      coverUrl: "https://example.com/missing.jpg",
+    });
+
+    expect(promptFired).toBe(false);
+    expect(result.cover).toBeUndefined();
+  });
+
+  test("--cover-url empty string skips cover (matches empty prompt behavior)", async () => {
+    captureStderr();
+    let fetchCalled = false;
+
+    mock.module("./cover.ts", () => ({
+      fetchCover: async (_url: string) => {
+        fetchCalled = true;
+        return { bytes: new Uint8Array([0xff, 0xd8]), ext: ".jpg" };
+      },
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      nonTty: true,
+      packFlag: true,
+      coverUrl: "",
+    });
+
+    expect(fetchCalled).toBe(false);
+    expect(result.cover).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Issue #79 regression: effectiveOutputName uses <slug>-volume-<input> convention
 // ---------------------------------------------------------------------------
 
