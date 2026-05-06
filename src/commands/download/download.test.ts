@@ -1019,6 +1019,7 @@ function makeMkClient(overrides?: Partial<MangakakalotClient>): MangakakalotClie
     getChapterImages: async (_id: string): Promise<ImageRef[]> => [
       { url: "https://cdn.mangakakalot.gg/img/1.png", page: 1 },
     ],
+    getVolumeMap: async () => [],
     ...overrides,
   };
 }
@@ -1038,6 +1039,7 @@ describe("fallback — title not on MangaDex, mangakakalot has it", () => {
       getChapterImages: async (_id: string): Promise<ImageRef[]> => [
         { url: "https://cdn.mk.gg/img/1.png", page: 1 },
       ],
+      getVolumeMap: async () => [],
     };
 
     const fallbackHttp = makeFallbackHttp();
@@ -1110,6 +1112,7 @@ describe("fallback — MangaDex aggregate reused for volume mode", () => {
       getChapterImages: async (_id: string): Promise<ImageRef[]> => [
         { url: "https://cdn.mk.gg/img/1.png", page: 1 },
       ],
+      getVolumeMap: async () => [],
     };
 
     const fallbackHttp = makeFallbackHttp();
