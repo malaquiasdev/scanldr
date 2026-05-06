@@ -56,14 +56,17 @@ sequenceDiagram
         User->>CLI: 1
         CLI->>Fallback: search title → resolve slug
 
-        alt reason == all_external (Shueisha/MangaPlus partner titles, e.g. Dandadan, JJK, OPM)
-            Note over CLI,Fallback: MangaDex aggregate is empty for these titles.<br/>Source volume→chapter mapping from fallback site manga page.
+        alt reason == all_external AND --volume mode (Shueisha/MangaPlus partner titles)
+            Note over CLI,Fallback: MangaDex aggregate is empty for these titles.<br/>Source volume→chapter mapping from fallback site manga page (volumeMappingSource='fallback').
             CLI->>Fallback: GET /manga/<slug> (manga detail page)
             Fallback-->>CLI: HTML with "Vol.X Ch.Y" chapter list
             CLI->>CLI: parseVolumeMapping(html) → VolumeMap [{ volume, chapters[] }]
             Note over CLI: if VolumeMap is empty → CliError "use --chapter instead"<br/>if requested volume not in map → CliError with available volumes list
+        else reason == all_external AND --chapter mode
+            Note over CLI,Fallback: volumeMappingSource='mangadex' (uses JSON API, not HTML parser).<br/>getChapterList() is reliable for chapter lookups; getVolumeMap() (HTML) returns<br/>0 buckets for real Shueisha titles (selector drift / DMCA redirect).
+            CLI->>Fallback: GET /api/manga/<slug>/chapters → ChapterRef[]
         else reason == title_not_found OR no_chapters_in_lang
-            Note over CLI,Fallback: volume range sourced from MangaDex aggregate if available,<br/>otherwise user must pass --chapter manually
+            Note over CLI,Fallback: volume range sourced from MangaDex aggregate if available,<br/>otherwise user must pass --chapter manually (volumeMappingSource='mangadex')
             CLI->>Fallback: GET /api/manga/<slug>/chapters → ChapterRef[]
         end
 
@@ -99,7 +102,10 @@ All chapters belonging to a volume are merged into a single `.cbz` archive, sort
 2. **History writes are atomic per volume** — chapters are accumulated in memory while downloading; once the `.cbz` is renamed from `.temp` to its final path, all chapter rows are inserted in a single SQLite transaction. Either every chapter of the volume lands in history or none does — no orphan rows pointing at a volume archive that was never produced.
 3. **Preferred languages from config** — CLI only prompts for language selection when none of the user's `preferred_languages` (from `scanldr.json`) are available. If a preferred language is found, it is used silently.
 4. **User always picks fallback** — CLI never silently falls back to another site. Always warns and prompts.
-5. **Volume metadata source depends on fallback reason** — for `all_external` series (Shueisha/MangaPlus titles like Dandadan, JJK, OPM, Spy x Family), the MangaDex aggregate is empty. The CLI fetches the fallback site's manga detail page and parses the `Vol.X Ch.Y` chapter list as the authoritative volume→chapter mapping (`volumeMappingSource: 'fallback'`). For all other reasons (`title_not_found`, `no_chapters_in_lang`), MangaDex aggregate data is used when available (`volumeMappingSource: 'mangadex'`).
+5. **Volume metadata source depends on fallback reason AND mode** — `volumeMappingSource` is set as follows:
+   - `'fallback'` (HTML parser, `getVolumeMap`): only when reason is `all_external` **AND** `--volume` flag is set. The MangaDex aggregate is empty for these titles, so the CLI parses the fallback site manga page to map volumes → chapters.
+   - `'mangadex'` (JSON API, `getChapterList`): all other cases — including `--chapter` with `all_external`. `getVolumeMap` (HTML parser) returns 0 buckets for real Shueisha titles (Dandadan, JJK, Spy x Family) due to selector drift or DMCA redirects; `getChapterList` (JSON API) is stable and sufficient for chapter-mode lookups.
+   - **Invariant**: `volumeMappingSource='fallback'` with `--chapter` mode is explicitly forbidden and throws `CliError("Internal: chapter-mode with volumeMappingSource='fallback' is not supported...")`.
 6. **`--chapter` as escape hatch** — when volume metadata is unavailable, the user can pass `--chapter 18-21` manually.
 7. **One `.cbz` per volume** — all chapters in the volume are merged into a single archive.
 8. **Zero-padded image filenames** — pages saved as `0001.png`, `0002.png`, etc. to guarantee correct sort order in all CBZ readers.

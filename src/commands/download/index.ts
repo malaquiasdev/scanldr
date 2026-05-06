@@ -522,9 +522,12 @@ export async function runDownload(
       mangadexResolve,
       createFallbackHttp,
       createMangakakalotClient,
-      // For all_external series (Shueisha/MangaPlus titles), the MangaDex aggregate is empty.
-      // Source volume→chapter mapping from the fallback site manga page instead.
-      volumeMappingSource: eligibility.reason === "all_external" ? "fallback" : "mangadex",
+      // For all_external series (Shueisha/MangaPlus titles) in --volume mode, the MangaDex
+      // aggregate is empty so we source volume→chapter mapping from the fallback site manga page.
+      // In --chapter mode, keep the old path (getChapterList JSON API) which works correctly —
+      // getVolumeMap parses the HTML detail page which returns 0 buckets for real titles.
+      volumeMappingSource:
+        eligibility.reason === "all_external" && args.volume !== undefined ? "fallback" : "mangadex",
     });
   }
 
