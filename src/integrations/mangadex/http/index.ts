@@ -1,7 +1,9 @@
 import { acquire, createBucket } from "./bucket.ts";
 import { backoffMs, buildUrl, retryAfterMs } from "./request.ts";
+import { MangaDexHttpError } from "./types.ts";
 import type { FetchFn, MangaDexHttpClient, MangaDexHttpOptions, QueryParams } from "./types.ts";
 
+export { MangaDexHttpError } from "./types.ts";
 export type { FetchFn, MangaDexHttpClient, MangaDexHttpOptions, QueryParams } from "./types.ts";
 
 const BASE_URL = "https://api.mangadex.org";
@@ -68,7 +70,7 @@ export function createMangaDexHttp(opts: MangaDexHttpOptions): MangaDexHttpClien
         continue;
       }
 
-      throw new Error(`MangaDex HTTP ${response.status}: ${url}`);
+      throw new MangaDexHttpError(`MangaDex HTTP ${response.status}: ${url}`, response.status);
     }
 
     throw lastError ?? new Error(`MangaDex request failed after ${MAX_RETRIES} attempts: ${url}`);
