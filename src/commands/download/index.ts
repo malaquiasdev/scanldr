@@ -1,3 +1,5 @@
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 import { createFallbackHttp } from "@integrations/fallback-http/index.ts";
 import {
   AtHomeError,
@@ -17,6 +19,9 @@ import type { DownloadRow } from "@modules/history/index.ts";
 import { CliError } from "@plugins/errors/index.ts";
 import type { MangaDexResolveResult } from "./fallback-types.ts";
 import { isFallbackEligible, runFallbackDownload } from "./fallback.ts";
+import type { PackedChapter } from "./pack.ts";
+import { defaultVolumeName, deleteIndividualFiles, packVolume } from "./pack.ts";
+import { runPackPrompts } from "./prompt-pack.ts";
 import { promptNumericChoice } from "./prompt.ts";
 import { parseRangeSet } from "./range.ts";
 import { toSlug } from "./slug.ts";
@@ -166,8 +171,9 @@ function groupChaptersIntoBundles(args: DownloadArgs, chaptersInLang: ChapterRef
   return bundles;
 }
 
-/** Per-bundle pipeline: history check → external check → build inputs → download → record. */
-async function processBundle(input: ProcessBundleArgs): Promise<void> {
+/** Per-bundle pipeline: history check → external check → build inputs → download → record.
+ * Returns the output path on success, null when the bundle was skipped (history). */
+async function processBundle(input: ProcessBundleArgs): Promise<string | null> {
   const { bundle, chosen, slug, language, args, ctx, http } = input;
   const { logger, db } = ctx;
   const { kind, bundleNumber, volumeForHistory, chapters } = bundle;
@@ -191,7 +197,7 @@ async function processBundle(input: ProcessBundleArgs): Promise<void> {
         },
         `skipping ${kind} ${bundleNumber}: already in history`,
       );
-      return;
+      return null;
     }
   }
 
@@ -234,7 +240,7 @@ async function processBundle(input: ProcessBundleArgs): Promise<void> {
         },
         `dry-run: would download ${kind} ${bundleNumber}`,
       );
-      return;
+      return null;
     }
 
     result = await downloadBundle({
@@ -301,6 +307,8 @@ async function processBundle(input: ProcessBundleArgs): Promise<void> {
       "history recorded",
     );
   }
+
+  return result.outputPath;
 }
 
 /**
@@ -394,8 +402,93 @@ async function runMangaDexDownload(
     }
   }
 
+  const successPaths: PackedChapter[] = [];
+  let failureCount = 0;
+
   for (const bundle of bundles) {
-    await processBundle({ bundle, chosen, slug, language, args, ctx, http });
+    try {
+      const outputPath = await processBundle({ bundle, chosen, slug, language, args, ctx, http });
+      if (outputPath !== null) {
+        successPaths.push({ num: bundle.bundleNumber, outputPath });
+      }
+    } catch (err) {
+      failureCount++;
+      throw err;
+    }
+  }
+
+  // Pack flow: only for --chapter mode, N > 1 success, no failures
+  if (args.chapter !== undefined && successPaths.length > 1) {
+    if (failureCount > 0) {
+      logger.warn(
+        { event: "pack.skipped", context: "pack", reason: "partial_failures", failureCount },
+        "packing skipped due to partial download failures",
+      );
+      process.stderr.write(
+        `Warning: packing skipped because ${failureCount} chapter(s) failed to download. Re-run with --pack after fixing.\n`,
+      );
+      return;
+    }
+
+    await runPackFlow({ args, ctx, slug, successPaths });
+  }
+}
+
+/** Determine the output filename stem for the pack, then run prompts + pack. */
+async function runPackFlow(opts: {
+  args: DownloadArgs;
+  ctx: DownloadContext;
+  slug: string;
+  successPaths: PackedChapter[];
+}): Promise<void> {
+  const { args, ctx, slug, successPaths } = opts;
+  const { logger } = ctx;
+
+  // --pack-replace implies --pack
+  const packFlag = args.packReplace || args.pack !== undefined;
+  const customName = typeof args.pack === "string" && args.pack !== "" ? args.pack : undefined;
+
+  const stem = customName ?? defaultVolumeName(slug, successPaths);
+  const finalName = stem.endsWith(".cbz") ? stem : `${stem}.cbz`;
+  const targetPath = join(args.outDir, slug, finalName);
+
+  let fileExists = false;
+  try {
+    await access(targetPath);
+    fileExists = true;
+  } catch {
+    fileExists = false;
+  }
+
+  const { shouldPack, shouldDelete } = await runPackPrompts({
+    chapterCount: successPaths.length,
+    outputName: finalName,
+    fileExists,
+    nonTty: args.nonTty,
+    packFlag,
+    packReplace: args.packReplace,
+    packOverwrite: args.packOverwrite,
+    logger,
+  });
+
+  if (!shouldPack) return;
+
+  const result = await packVolume({
+    slug,
+    outDir: args.outDir,
+    chapters: successPaths,
+    customName,
+    logger,
+  });
+
+  const mb = (result.byteSize / 1024 / 1024).toFixed(1);
+  process.stderr.write(`✓ Created ${result.outputPath} (${mb} MB)\n`);
+
+  if (shouldDelete) {
+    await deleteIndividualFiles(successPaths, logger);
+    process.stderr.write(`✓ Deleted ${successPaths.length} individual chapter files\n`);
+  } else {
+    process.stderr.write(`✓ Kept ${successPaths.length} individual chapter files\n`);
   }
 }
 

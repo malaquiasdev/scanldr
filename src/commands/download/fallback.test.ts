@@ -64,6 +64,8 @@ function baseArgs(overrides?: Partial<DownloadArgs>): DownloadArgs {
     noTrack: false,
     dryRun: false,
     nonTty: true,
+    packReplace: false,
+    packOverwrite: false,
     ...overrides,
   };
 }
@@ -372,6 +374,8 @@ describe("runFallbackDownload — MissingAuthError propagates unwrapped", () => 
         noTrack: false,
         dryRun: false,
         nonTty: false,
+        packReplace: false,
+        packOverwrite: false,
       },
       ctx: {
         logger: noopLogger,
@@ -448,6 +452,8 @@ describe("runFallbackDownload — searchManga returns empty", () => {
         noTrack: false,
         dryRun: false,
         nonTty: false,
+        packReplace: false,
+        packOverwrite: false,
       },
       ctx: {
         logger: spyLogger,

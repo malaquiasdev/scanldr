@@ -43,6 +43,12 @@ export interface DownloadArgs {
   noTrack: boolean;
   dryRun: boolean;
   nonTty: boolean;
+  /** --pack [name] — pack downloaded chapters into a single volume cbz */
+  pack?: string | boolean;
+  /** --pack-replace — after packing, delete individual chapter files */
+  packReplace: boolean;
+  /** --pack-overwrite — overwrite existing packed file without prompting */
+  packOverwrite: boolean;
 }
 
 export interface DownloadContext {

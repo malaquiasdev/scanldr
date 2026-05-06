@@ -1,0 +1,249 @@
+import { describe, expect, test } from "bun:test";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { createLogger } from "@plugins/logger/index.ts";
+import { zipSync } from "fflate";
+import { defaultVolumeName, deleteIndividualFiles, packVolume } from "./pack.ts";
+import { runPackPrompts } from "./prompt-pack.ts";
+
+const TMP = join(import.meta.dir, "__pack_test_tmp__");
+const logger = createLogger({ level: "warn", format: "human" });
+
+/** Build a minimal cbz with N pages (1.jpg, 2.jpg...) and write it to disk. */
+async function makeChapterCbz(
+  dir: string,
+  slug: string,
+  num: string,
+  pages: number,
+): Promise<string> {
+  const entries: Record<string, Uint8Array> = {};
+  for (let i = 1; i <= pages; i++) {
+    // Minimal JPEG header bytes
+    entries[`${String(i).padStart(4, "0")}.jpg`] = new Uint8Array([0xff, 0xd8, 0xff, i]);
+  }
+  const zipped = zipSync(entries);
+  await mkdir(dir, { recursive: true });
+  const path = join(dir, `${slug}-chapter-${num}.cbz`);
+  await writeFile(path, zipped);
+  return path;
+}
+
+// ---------------------------------------------------------------------------
+// defaultVolumeName
+// ---------------------------------------------------------------------------
+
+describe("defaultVolumeName", () => {
+  test("formats first-last range correctly", () => {
+    const chapters = [
+      { num: "103", outputPath: "" },
+      { num: "104", outputPath: "" },
+      { num: "105", outputPath: "" },
+    ];
+    expect(defaultVolumeName("dandadan", chapters)).toBe("dandadan-volume-103-105");
+  });
+
+  test("single chapter: no range suffix", () => {
+    const chapters = [{ num: "7", outputPath: "" }];
+    expect(defaultVolumeName("dandadan", chapters)).toBe("dandadan-volume-007");
+  });
+
+  test("decimal chapter pads integer portion", () => {
+    const chapters = [
+      { num: "18.5", outputPath: "" },
+      { num: "19", outputPath: "" },
+    ];
+    expect(defaultVolumeName("series", chapters)).toBe("series-volume-018.5-019");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// packVolume — fixture-based integration tests
+// ---------------------------------------------------------------------------
+
+describe("packVolume", () => {
+  async function setup() {
+    const dir = join(TMP, String(Math.random()));
+    const slug = "dandadan";
+    const slug_dir = join(dir, slug);
+
+    const ch103 = await makeChapterCbz(slug_dir, slug, "103", 10);
+    const ch104 = await makeChapterCbz(slug_dir, slug, "104", 8);
+    const ch105 = await makeChapterCbz(slug_dir, slug, "105", 12);
+
+    return {
+      dir,
+      slug,
+      chapters: [
+        { num: "103", outputPath: ch103 },
+        { num: "104", outputPath: ch104 },
+        { num: "105", outputPath: ch105 },
+      ],
+    };
+  }
+
+  test("total image count equals sum of page counts", async () => {
+    const { dir, slug, chapters } = await setup();
+    const result = await packVolume({ slug, outDir: dir, chapters, logger });
+
+    const raw = await Bun.file(result.outputPath).arrayBuffer();
+    const { unzipSync } = await import("fflate");
+    const entries = unzipSync(new Uint8Array(raw));
+    const names = Object.keys(entries);
+
+    expect(names.length).toBe(10 + 8 + 12); // 30 total
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("ordering: first entry is chapter-103/page-001, last is chapter-105/page-012", async () => {
+    const { dir, slug, chapters } = await setup();
+    const result = await packVolume({ slug, outDir: dir, chapters, logger });
+
+    const raw = await Bun.file(result.outputPath).arrayBuffer();
+    const { unzipSync } = await import("fflate");
+    const entries = unzipSync(new Uint8Array(raw));
+    const names = Object.keys(entries).sort();
+
+    expect(names[0]).toBe("chapter-103/page-001.jpg");
+    expect(names[names.length - 1]).toBe("chapter-105/page-012.jpg");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("decimal chapters: prefix is chapter-018.5", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const slug = "series";
+    const slug_dir = join(dir, slug);
+
+    const ch18_5 = await makeChapterCbz(slug_dir, slug, "018.5", 3);
+    const ch19 = await makeChapterCbz(slug_dir, slug, "019", 3);
+
+    const result = await packVolume({
+      slug,
+      outDir: dir,
+      chapters: [
+        { num: "18.5", outputPath: ch18_5 },
+        { num: "19", outputPath: ch19 },
+      ],
+      logger,
+    });
+
+    const raw = await Bun.file(result.outputPath).arrayBuffer();
+    const { unzipSync } = await import("fflate");
+    const entries = unzipSync(new Uint8Array(raw));
+    const names = Object.keys(entries).sort();
+
+    expect(names.some((n) => n.startsWith("chapter-018.5/"))).toBe(true);
+    expect(names.some((n) => n.startsWith("chapter-019/"))).toBe(true);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("custom name is respected and .cbz is appended if missing", async () => {
+    const { dir, slug, chapters } = await setup();
+    const result = await packVolume({
+      slug,
+      outDir: dir,
+      chapters,
+      customName: "my-custom-volume",
+      logger,
+    });
+
+    expect(result.outputPath).toMatch(/my-custom-volume\.cbz$/);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("deleteIndividualFiles removes chapter files", async () => {
+    const { dir, chapters } = await setup();
+
+    // Ensure files exist before deletion
+    for (const ch of chapters) {
+      expect(await Bun.file(ch.outputPath).exists()).toBe(true);
+    }
+
+    await deleteIndividualFiles(chapters, logger);
+
+    for (const ch of chapters) {
+      expect(await Bun.file(ch.outputPath).exists()).toBe(false);
+    }
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runPackPrompts — unit tests (non-interactive paths only)
+// ---------------------------------------------------------------------------
+
+describe("runPackPrompts", () => {
+  const baseOpts = {
+    outputName: "dandadan-volume-103-111.cbz",
+    fileExists: false,
+    nonTty: false,
+    packFlag: false,
+    packReplace: false,
+    packOverwrite: false,
+    logger,
+  };
+
+  test("N == 1 → skip (shouldPack: false)", async () => {
+    const result = await runPackPrompts({ ...baseOpts, chapterCount: 1 });
+    expect(result).toEqual({ shouldPack: false, shouldDelete: false });
+  });
+
+  test("non-TTY without --pack flag → skip", async () => {
+    const result = await runPackPrompts({
+      ...baseOpts,
+      chapterCount: 5,
+      nonTty: true,
+    });
+    expect(result).toEqual({ shouldPack: false, shouldDelete: false });
+  });
+
+  test("non-TTY with --pack-replace → pack + delete, no prompt", async () => {
+    const result = await runPackPrompts({
+      ...baseOpts,
+      chapterCount: 5,
+      nonTty: true,
+      packFlag: true,
+      packReplace: true,
+    });
+    expect(result).toEqual({ shouldPack: true, shouldDelete: true });
+  });
+
+  test("non-TTY with --pack flag only → pack, keep individuals", async () => {
+    const result = await runPackPrompts({
+      ...baseOpts,
+      chapterCount: 5,
+      nonTty: true,
+      packFlag: true,
+    });
+    expect(result).toEqual({ shouldPack: true, shouldDelete: false });
+  });
+
+  test("non-TTY + file exists + no --pack-overwrite → throws CliError", async () => {
+    await expect(
+      runPackPrompts({
+        ...baseOpts,
+        chapterCount: 5,
+        nonTty: true,
+        packFlag: true,
+        fileExists: true,
+        packOverwrite: false,
+      }),
+    ).rejects.toThrow(/already exists/i);
+  });
+
+  test("non-TTY + file exists + --pack-overwrite → pack succeeds", async () => {
+    const result = await runPackPrompts({
+      ...baseOpts,
+      chapterCount: 5,
+      nonTty: true,
+      packFlag: true,
+      fileExists: true,
+      packOverwrite: true,
+    });
+    expect(result.shouldPack).toBe(true);
+  });
+});

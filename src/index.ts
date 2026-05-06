@@ -101,6 +101,9 @@ const handlers: Record<string, Handler> = {
         "no-track": { type: "boolean" },
         "dry-run": { type: "boolean" },
         "non-tty": { type: "boolean" },
+        pack: { type: "string" },
+        "pack-replace": { type: "boolean" },
+        "pack-overwrite": { type: "boolean" },
       },
     });
 
@@ -144,6 +147,11 @@ const handlers: Record<string, Handler> = {
     const http = createMangaDexHttp({ logger: ctx.logger, config: ctx.config });
     const client = createMangaDexClient(http);
 
+    // --pack can be a string (custom name) or bare boolean (no value → empty string from parseArgs)
+    const rawPack = dlValues.pack;
+    const packArg: string | boolean | undefined =
+      rawPack === "" ? true : typeof rawPack === "string" ? rawPack : undefined;
+
     await runDownload(
       {
         manga,
@@ -158,6 +166,9 @@ const handlers: Record<string, Handler> = {
         noTrack: dlValues["no-track"] === true,
         dryRun: dlValues["dry-run"] === true,
         nonTty: dlValues["non-tty"] === true || !process.stdout.isTTY,
+        pack: packArg,
+        packReplace: dlValues["pack-replace"] === true,
+        packOverwrite: dlValues["pack-overwrite"] === true,
       },
       { logger: ctx.logger, config: ctx.config, db: ctx.db },
       client,

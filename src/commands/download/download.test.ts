@@ -136,6 +136,8 @@ function baseArgs(overrides?: Partial<DownloadArgs>): DownloadArgs {
     noTrack: false,
     dryRun: false,
     nonTty: true,
+    packReplace: false,
+    packOverwrite: false,
     ...overrides,
   };
 }
