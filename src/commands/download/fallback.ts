@@ -437,6 +437,16 @@ export async function runFallbackDownload(opts: {
 
   let bundles: FallbackBundle[];
 
+  // Invariant: volumeMappingSource='fallback' is only valid when --volume is set.
+  // --chapter + 'fallback' is an internal caller error: getVolumeMap (HTML parser) is unreliable
+  // for real titles; getChapterList (JSON API) must be used for chapter mode.
+  if (volumeMappingSource === "fallback" && args.volume === undefined) {
+    throw new CliError(
+      "Internal: chapter-mode with volumeMappingSource='fallback' is not supported. Use volumeMappingSource='mangadex' for chapter mode.",
+      2,
+    );
+  }
+
   if (volumeMappingSource === "fallback") {
     // Source volume→chapter mapping from the fallback site manga page.
     logger.info(

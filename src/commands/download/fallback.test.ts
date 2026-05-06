@@ -1017,6 +1017,60 @@ describe("runFallbackDownload calls pack flow when --pack is set and N>1", () =>
 });
 
 // ---------------------------------------------------------------------------
+// runFallbackDownload — chapter-mode + volumeMappingSource='fallback' is an invariant violation
+// ---------------------------------------------------------------------------
+
+describe("runFallbackDownload — chapter mode + volumeMappingSource='fallback' throws CliError", () => {
+  test("throws CliError with internal invariant message", async () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+
+    const fakeFallbackHttp: FallbackHttpClient = {
+      get: async () => new Response("", { status: 200 }),
+    };
+
+    const mkClientStub: MangakakalotClient = {
+      searchManga: async () => [
+        { id: "dandadan", title: "Dandadan", originalLanguage: "ja", year: 2021 },
+      ],
+      getChapterList: async () => [],
+      getVolumeMap: async () => [],
+      getChapterImages: async () => [],
+    };
+
+    const err = await runFallbackDownload({
+      args: baseArgs({ volume: undefined, chapter: "128" }),
+      ctx: {
+        logger: noopLogger,
+        config: {
+          preferred_languages: ["en"],
+          download_quality: "data",
+          default_format: "cbz",
+          default_out: "/tmp",
+          image_concurrency: 1,
+          chapter_delay_ms: 0,
+          db_path: ":memory:",
+        },
+        db,
+      },
+      mangadexResolve: null,
+      createFallbackHttp: async () => fakeFallbackHttp,
+      createMangakakalotClient: () => mkClientStub,
+      volumeMappingSource: "fallback",
+      // biome-ignore lint/style/noNonNullAssertion: test stub
+      promptSite: async (sites) => sites[0]!,
+    }).catch((e) => e);
+
+    db.close();
+
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).message).toContain("Internal");
+    expect((err as CliError).message).toContain("chapter-mode");
+    expect((err as CliError).message).toContain("volumeMappingSource='fallback'");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildFallbackBundlesFromVolumeMap — volume mode
 // ---------------------------------------------------------------------------
 
