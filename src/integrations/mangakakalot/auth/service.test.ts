@@ -85,6 +85,42 @@ describe("runAuth — validation", () => {
   });
 });
 
+describe("runAuth — fetch URL", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "scanldr-auth-url-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test("verifies session against the URL parsed from the cURL", async () => {
+    let capturedUrl: string | undefined;
+
+    const capturingFetch: RunAuthOptions["fetch"] = async (url, _init) => {
+      capturedUrl = url as string;
+      return {
+        status: 200,
+        ok: true,
+        text: async () => "<html>MangaKakalot</html>",
+      } as Response;
+    };
+
+    const opts: RunAuthOptions = {
+      logger: buildLogger(),
+      dataHome: tmpDir,
+      readStdin: async () => VALID_CURL,
+      fetch: capturingFetch,
+    };
+
+    await runAuth(opts);
+
+    expect(capturedUrl).toBe("https://www.mangakakalot.gg/search/story/dragon-ball");
+  });
+});
+
 describe("runAuth — session verification", () => {
   let tmpDir: string;
 

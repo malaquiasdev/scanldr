@@ -21,8 +21,13 @@ scanldr/
 │       │   └── parser.ts         # Maps API responses to internal types
 │       └── mangakakalot/
 │           ├── client.ts         # HttpClient with Cloudflare cookie replay
-│           ├── browser.ts        # Playwright — used only for auth
 │           └── parser.ts         # HTML/JSON extraction (Cheerio)
+├── integrations/
+│   └── mangakakalot/
+│       └── auth/
+│           ├── service.ts        # runAuth — parses cURL paste, verifies session, writes auth.json
+│           ├── parser.ts         # parseCurl — extracts URL, cookies, User-Agent from cURL string
+│           └── types.ts          # AuthError, RunAuthOptions, ParsedCurl
 ├── docs/                         # This documentation
 ├── scanldr.db                    # SQLite — download history + subscriptions (gitignored)
 └── $XDG_DATA_HOME/scanldr/auth.json  # Saved Cloudflare session (mode 0600, outside repo)
