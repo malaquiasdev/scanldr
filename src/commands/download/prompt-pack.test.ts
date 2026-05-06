@@ -80,8 +80,11 @@ describe("runPackPrompts — prompt text written to stderr before readline", () 
           } else if (callCount === 2) {
             // Second call: "Volume number?" → blank
             cb("");
+          } else if (callCount === 3) {
+            // Third call: "Cover URL?" → blank (skip cover)
+            cb("");
           } else {
-            // Third call: "Delete?" → capture then answer
+            // Fourth call: "Delete?" → capture then answer
             stderrWhenDeletePrompted = [...stderrOutput];
             cb("n");
           }
@@ -110,6 +113,9 @@ describe("runPackPrompts — prompt text written to stderr before readline", () 
           } else if (callCount === 2) {
             // "Volume number?" → capture stderr first then answer
             stderrWhenVolumePrompted = [...stderrOutput];
+            cb("");
+          } else if (callCount === 3) {
+            // "Cover URL?" → blank
             cb("");
           } else {
             cb("n");
@@ -146,7 +152,8 @@ describe("runPackPrompts — volume-number prompt", () => {
           else if (callCount === 2) {
             volumePromptShown = true;
             cb("");                             // Volume number (blank)
-          } else cb("n");                       // Delete?
+          } else if (callCount === 3) cb("");   // Cover URL? (blank)
+          else cb("n");                         // Delete?
         },
         close: () => {},
       }),
@@ -167,7 +174,8 @@ describe("runPackPrompts — volume-number prompt", () => {
         once: (_event: string, cb: (line: string) => void) => {
           callCount++;
           if (callCount === 1) cb("y");
-          else if (callCount === 2) cb("");     // blank
+          else if (callCount === 2) cb("");     // volume number blank
+          else if (callCount === 3) cb("");     // cover URL blank
           else cb("n");
         },
         close: () => {},
@@ -189,6 +197,7 @@ describe("runPackPrompts — volume-number prompt", () => {
           callCount++;
           if (callCount === 1) cb("y");
           else if (callCount === 2) cb("13");  // volume number
+          else if (callCount === 3) cb("");    // cover URL blank
           else cb("n");
         },
         close: () => {},
@@ -210,6 +219,7 @@ describe("runPackPrompts — volume-number prompt", () => {
           callCount++;
           if (callCount === 1) cb("y");
           else if (callCount === 2) cb("13-final special_1.0");
+          else if (callCount === 3) cb("");    // cover URL blank
           else cb("n");
         },
         close: () => {},
@@ -234,6 +244,7 @@ describe("runPackPrompts — volume-number prompt", () => {
           if (callCount === 1) cb("y");
           else if (callCount === 2) cb("../../evil");  // invalid
           else if (callCount === 3) cb("13");          // valid on retry
+          else if (callCount === 4) cb("");            // cover URL blank
           else cb("n");
         },
         close: () => {},
@@ -381,7 +392,8 @@ describe("runPackPrompts — overwrite check against effective (post-prompt) fil
           callCount++;
           if (callCount === 1) cb("y");   // Pack?
           else if (callCount === 2) cb("13"); // Volume number → collides
-          else if (callCount === 3) {
+          else if (callCount === 3) cb(""); // Cover URL? → blank
+          else if (callCount === 4) {
             overwritePromptShown = true;
             cb("y"); // Overwrite?
           } else cb("n"); // Delete?
@@ -414,7 +426,8 @@ describe("runPackPrompts — overwrite check against effective (post-prompt) fil
           callCount++;
           if (callCount === 1) cb("y");   // Pack?
           else if (callCount === 2) cb("13"); // Volume number
-          else if (callCount === 3) {
+          else if (callCount === 3) cb(""); // Cover URL? → blank
+          else if (callCount === 4) {
             // Should be Delete? not Overwrite?
             overwritePromptShown = stderrOutput.join("").includes("Overwrite");
             cb("n"); // Delete?
@@ -456,9 +469,10 @@ describe("runPackPrompts — effectiveOutputName uses slug-volume convention (is
       createInterface: () => ({
         once: (_event: string, cb: (line: string) => void) => {
           callCount++;
-          if (callCount === 1) cb("y");   // Pack?
+          if (callCount === 1) cb("y");      // Pack?
           else if (callCount === 2) cb("13"); // Volume number
-          else cb("n"); // Delete?
+          else if (callCount === 3) cb("");   // Cover URL? → blank
+          else cb("n");                       // Delete?
         },
         close: () => {},
       }),
@@ -487,9 +501,10 @@ describe("runPackPrompts — effectiveOutputName uses slug-volume convention (is
       createInterface: () => ({
         once: (_event: string, cb: (line: string) => void) => {
           callCount++;
-          if (callCount === 1) cb("y");  // Pack?
+          if (callCount === 1) cb("y");   // Pack?
           else if (callCount === 2) cb(""); // blank → default
-          else cb("n"); // Delete?
+          else if (callCount === 3) cb(""); // Cover URL? → blank
+          else cb("n");                     // Delete?
         },
         close: () => {},
       }),

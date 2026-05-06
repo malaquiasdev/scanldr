@@ -181,6 +181,65 @@ describe("packVolume", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  test("cover option: 00_cover.jpg is the first alphabetical entry", async () => {
+    const { dir, slug, chapters } = await setup();
+    const coverBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+    const result = await packVolume({
+      slug,
+      outDir: dir,
+      chapters,
+      cover: { bytes: coverBytes, ext: ".jpg" },
+      logger,
+    });
+
+    const raw = await Bun.file(result.outputPath).arrayBuffer();
+    const { unzipSync } = await import("fflate");
+    const entries = unzipSync(new Uint8Array(raw));
+    const names = Object.keys(entries).sort();
+
+    expect(names[0]).toBe("00_cover.jpg");
+    // Total = cover + 30 chapter pages
+    expect(names.length).toBe(31);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("cover option: cover bytes are preserved exactly", async () => {
+    const { dir, slug, chapters } = await setup();
+    const coverBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0xca, 0xfe]);
+    const result = await packVolume({
+      slug,
+      outDir: dir,
+      chapters,
+      cover: { bytes: coverBytes, ext: ".jpg" },
+      logger,
+    });
+
+    const raw = await Bun.file(result.outputPath).arrayBuffer();
+    const { unzipSync } = await import("fflate");
+    const entries = unzipSync(new Uint8Array(raw));
+
+    expect(entries["00_cover.jpg"]).toEqual(coverBytes);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("no cover option: total count unchanged (no extra entries)", async () => {
+    const { dir, slug, chapters } = await setup();
+    const result = await packVolume({ slug, outDir: dir, chapters, logger });
+
+    const raw = await Bun.file(result.outputPath).arrayBuffer();
+    const { unzipSync } = await import("fflate");
+    const entries = unzipSync(new Uint8Array(raw));
+    const names = Object.keys(entries);
+
+    // No cover file — should not contain 00_cover
+    expect(names.some((n) => n.startsWith("00_cover"))).toBe(false);
+    expect(names.length).toBe(30);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   test("deleteIndividualFiles removes chapter files", async () => {
     const { dir, chapters } = await setup();
 

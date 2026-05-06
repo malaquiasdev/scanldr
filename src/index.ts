@@ -106,6 +106,7 @@ const handlers: Record<string, Handler> = {
         pack: { type: "string" },
         "pack-replace": { type: "boolean" },
         "pack-overwrite": { type: "boolean" },
+        "cover-url": { type: "string" },
       },
     });
 
@@ -171,6 +172,7 @@ const handlers: Record<string, Handler> = {
         pack: packArg,
         packReplace: dlValues["pack-replace"] === true,
         packOverwrite: dlValues["pack-overwrite"] === true,
+        coverUrl: typeof dlValues["cover-url"] === "string" ? dlValues["cover-url"] : undefined,
       },
       { logger: ctx.logger, config: ctx.config, db: ctx.db },
       client,

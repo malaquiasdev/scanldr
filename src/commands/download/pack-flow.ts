@@ -30,7 +30,7 @@ export async function runPackFlow(opts: {
   const volumePrefix = `${slug}-volume-`;
   const defaultVolumeStem = stem.startsWith(volumePrefix) ? stem.slice(volumePrefix.length) : stem;
 
-  const { shouldPack, shouldDelete, volumeName } = await runPackPrompts({
+  const { shouldPack, shouldDelete, volumeName, cover } = await runPackPrompts({
     chapterCount: successPaths.length,
     slug,
     outputName: finalName,
@@ -48,6 +48,7 @@ export async function runPackFlow(opts: {
     packNameProvided,
     packReplace: args.packReplace,
     packOverwrite: args.packOverwrite,
+    coverUrl: args.coverUrl,
     logger,
   });
 
@@ -64,6 +65,7 @@ export async function runPackFlow(opts: {
     outDir: args.outDir,
     chapters: successPaths,
     customName: resolvedCustomName,
+    cover,
     logger,
   });
 

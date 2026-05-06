@@ -1,7 +1,8 @@
 import { createInterface } from "node:readline";
 import { CliError } from "@plugins/errors/index.ts";
+import { fetchCover } from "./cover.ts";
 import { buildVolumeFilename } from "./pack.ts";
-import type { PackPromptOptions, PackPromptResult } from "./types.ts";
+import type { CoverImage, PackPromptOptions, PackPromptResult } from "./types.ts";
 
 export type { PackPromptOptions, PackPromptResult };
 
@@ -64,9 +65,41 @@ async function promptVolumeName(hint: string): Promise<string | undefined> {
 }
 
 /**
+ * Prompt for a cover image URL.
+ * Re-prompts on validation error (does NOT abort the pack flow).
+ * Returns the fetched CoverImage, or undefined when the user left input blank.
+ */
+async function promptCoverUrl(): Promise<CoverImage | undefined> {
+  while (true) {
+    const answer = await new Promise<string>((resolve) => {
+      const rl = createInterface({ input: process.stdin, output: process.stderr });
+      process.stderr.write("Cover image URL (leave blank for none): ");
+      rl.once("line", (line) => {
+        rl.close();
+        resolve(line.trim());
+      });
+    });
+
+    if (answer === "") return undefined;
+
+    try {
+      const cover = await fetchCover(answer);
+      const kb = (cover.bytes.byteLength / 1024).toFixed(0);
+      process.stderr.write(`Fetched cover (${kb} KB)\n`);
+      return cover;
+    } catch (err) {
+      process.stderr.write(
+        `${err instanceof Error ? err.message : String(err)}. Try again (or leave blank to skip).\n`,
+      );
+      // Loop back — re-prompt rather than aborting
+    }
+  }
+}
+
+/**
  * Orchestrates the two-step pack prompt (or non-interactive flag path).
  *
- * Returns { shouldPack, shouldDelete, volumeName }.
+ * Returns { shouldPack, shouldDelete, volumeName, cover }.
  * Throws CliError when the target file exists in non-interactive mode and --pack-overwrite was not passed.
  */
 export async function runPackPrompts(opts: PackPromptOptions): Promise<PackPromptResult> {
@@ -81,6 +114,7 @@ export async function runPackPrompts(opts: PackPromptOptions): Promise<PackPromp
     packNameProvided,
     packReplace,
     packOverwrite,
+    coverUrl,
     logger,
   } = opts;
 
@@ -136,6 +170,25 @@ export async function runPackPrompts(opts: PackPromptOptions): Promise<PackPromp
   const effectiveOutputName =
     volumeName !== undefined ? buildVolumeFilename(slug, volumeName) : outputName;
 
+  // Cover URL: --cover-url flag (non-interactive) OR interactive prompt.
+  // Skip when: nonTty without flag, packReplace, packNameProvided — same skip rules as volume-number prompt.
+  let cover: CoverImage | undefined;
+  if (coverUrl !== undefined) {
+    // Flag path: validate once, re-prompt not applicable — just throw on error
+    try {
+      cover = await fetchCover(coverUrl);
+      const kb = (cover.bytes.byteLength / 1024).toFixed(0);
+      process.stderr.write(`Fetched cover (${kb} KB)\n`);
+    } catch (err) {
+      // Flag-supplied URL failed — warn and proceed without cover (don't abort)
+      process.stderr.write(
+        `Warning: cover fetch failed — ${err instanceof Error ? err.message : String(err)}. Continuing without cover.\n`,
+      );
+    }
+  } else if (!nonTty && !packNameProvided && !packReplace) {
+    cover = await promptCoverUrl();
+  }
+
   // Check for existing file against the *effective* path (post-name-prompt) to avoid silent overwrites.
   const fileExists = await checkExists(effectiveOutputName);
   if (fileExists) {
@@ -174,5 +227,5 @@ export async function runPackPrompts(opts: PackPromptOptions): Promise<PackPromp
     shouldDelete = await promptYesNo("Delete individual chapter files? [y/N] ");
   }
 
-  return { shouldPack: true, shouldDelete, volumeName };
+  return { shouldPack: true, shouldDelete, volumeName, cover };
 }

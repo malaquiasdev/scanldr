@@ -28,6 +28,14 @@ export interface ResolveLanguageInput {
   logger: Logger;
 }
 
+// Cover image types
+
+export interface CoverImage {
+  bytes: Uint8Array;
+  /** File extension including dot, e.g. ".jpg" */
+  ext: string;
+}
+
 // Pack volume types
 
 export interface PackedChapter {
@@ -43,6 +51,8 @@ export interface PackVolumeInput {
   chapters: PackedChapter[];
   /** Override the output filename stem (without extension). */
   customName?: string;
+  /** Optional cover image to write as 00_cover.<ext> at root of zip. */
+  cover?: CoverImage;
   logger: Logger;
 }
 
@@ -56,10 +66,14 @@ export interface PackPromptResult {
   shouldDelete: boolean;
   /** Volume name stem chosen by the user (may differ from the default). Undefined when pack was skipped. */
   volumeName?: string;
+  /** Cover image fetched from the URL the user provided (or --cover-url flag). */
+  cover?: CoverImage;
 }
 
 export interface PackPromptOptions {
   chapterCount: number;
+  /** When provided, skip the cover-URL prompt and use this URL directly. */
+  coverUrl?: string;
   /** Manga slug (e.g. "dandadan") — used to build "<slug>-volume-<input>.cbz" from prompt input. */
   slug: string;
   /** Default output filename stem (e.g. "dandadan-volume-103-111") — shown as the leave-blank hint. */
@@ -105,6 +119,8 @@ export interface DownloadArgs {
   packReplace: boolean;
   /** --pack-overwrite — overwrite existing packed file without prompting */
   packOverwrite: boolean;
+  /** --cover-url <url> — skip prompt, fetch this URL as the volume cover */
+  coverUrl?: string;
 }
 
 export interface DownloadContext {
