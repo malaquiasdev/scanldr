@@ -180,9 +180,11 @@ describe("packVolume", () => {
 describe("runPackPrompts", () => {
   const baseOpts = {
     outputName: "dandadan-volume-103-111.cbz",
-    fileExists: false,
+    defaultVolumeStem: "103-111",
+    checkExists: async () => false,
     nonTty: false,
     packFlag: false,
+    packNameProvided: false,
     packReplace: false,
     packOverwrite: false,
     logger,
@@ -230,7 +232,7 @@ describe("runPackPrompts", () => {
         chapterCount: 5,
         nonTty: true,
         packFlag: true,
-        fileExists: true,
+        checkExists: async () => true,
         packOverwrite: false,
       }),
     ).rejects.toThrow(/already exists/i);
@@ -242,7 +244,7 @@ describe("runPackPrompts", () => {
       chapterCount: 5,
       nonTty: true,
       packFlag: true,
-      fileExists: true,
+      checkExists: async () => true,
       packOverwrite: true,
     });
     expect(result.shouldPack).toBe(true);

@@ -1,0 +1,436 @@
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { Logger } from "@plugins/logger/index.ts";
+
+const noopLogger: Logger = { info: () => {}, warn: () => {}, error: () => {} };
+
+// Capture stderr output for assertions
+let stderrOutput: string[] = [];
+let originalStderrWrite: typeof process.stderr.write;
+
+function captureStderr() {
+  stderrOutput = [];
+  originalStderrWrite = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (chunk: string | Uint8Array, ..._args: unknown[]) => {
+    stderrOutput.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString());
+    return true;
+  };
+}
+
+function restoreStderr() {
+  process.stderr.write = originalStderrWrite;
+}
+
+const baseOpts = {
+  outputName: "dandadan-volume-103-111.cbz",
+  defaultVolumeStem: "103-111",
+  checkExists: async () => false,
+  nonTty: false,
+  packFlag: false,
+  packNameProvided: false,
+  packReplace: false,
+  packOverwrite: false,
+  chapterCount: 9,
+  logger: noopLogger,
+};
+
+// ---------------------------------------------------------------------------
+// Prompt visibility — prompts always written to stderr before readline reads
+// ---------------------------------------------------------------------------
+
+describe("runPackPrompts — prompt text written to stderr before readline", () => {
+  beforeEach(captureStderr);
+  afterEach(() => {
+    restoreStderr();
+    mock.restore();
+  });
+
+  test("Pack N chapters prompt appears on stderr before answer is read", async () => {
+    let stderrAtCallTime: string[] = [];
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          // Capture what's been written to stderr so far, then answer
+          stderrAtCallTime = [...stderrOutput];
+          cb("n");
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    await runPackPrompts({ ...baseOpts });
+
+    // The pack prompt text must have been written to stderr before readline fired
+    expect(stderrAtCallTime.join("")).toMatch(/Pack 9 chapters/);
+  });
+
+  test("Delete individual files prompt appears on stderr before answer is read", async () => {
+    let stderrWhenDeletePrompted: string[] = [];
+    let callCount = 0;
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          if (callCount === 1) {
+            // First call: "Pack?" → yes
+            cb("y");
+          } else if (callCount === 2) {
+            // Second call: "Volume number?" → blank
+            cb("");
+          } else {
+            // Third call: "Delete?" → capture then answer
+            stderrWhenDeletePrompted = [...stderrOutput];
+            cb("n");
+          }
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    await runPackPrompts({ ...baseOpts });
+
+    expect(stderrWhenDeletePrompted.join("")).toMatch(/Delete individual chapter files/);
+  });
+
+  test("Volume number prompt appears on stderr before answer is read", async () => {
+    let stderrWhenVolumePrompted: string[] = [];
+    let callCount = 0;
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          if (callCount === 1) {
+            // "Pack?" → yes
+            cb("y");
+          } else if (callCount === 2) {
+            // "Volume number?" → capture stderr first then answer
+            stderrWhenVolumePrompted = [...stderrOutput];
+            cb("");
+          } else {
+            cb("n");
+          }
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    await runPackPrompts({ ...baseOpts });
+
+    expect(stderrWhenVolumePrompted.join("")).toMatch(/Volume number/);
+    expect(stderrWhenVolumePrompted.join("")).toMatch(/103-111/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Volume-number prompt — happy paths
+// ---------------------------------------------------------------------------
+
+describe("runPackPrompts — volume-number prompt", () => {
+  afterEach(() => mock.restore());
+
+  test("AC5: user accepts pack and is prompted for volume number in interactive TTY mode", async () => {
+    let volumePromptShown = false;
+    let callCount = 0;
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          if (callCount === 1) cb("y");        // Pack?
+          else if (callCount === 2) {
+            volumePromptShown = true;
+            cb("");                             // Volume number (blank)
+          } else cb("n");                       // Delete?
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({ ...baseOpts });
+
+    expect(result.shouldPack).toBe(true);
+    expect(volumePromptShown).toBe(true);
+  });
+
+  test("AC6: blank volume input → volumeName is undefined (default)", async () => {
+    let callCount = 0;
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          if (callCount === 1) cb("y");
+          else if (callCount === 2) cb("");     // blank
+          else cb("n");
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({ ...baseOpts });
+
+    expect(result.volumeName).toBeUndefined();
+  });
+
+  test("AC7: non-empty input → volumeName equals input", async () => {
+    let callCount = 0;
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          if (callCount === 1) cb("y");
+          else if (callCount === 2) cb("13");  // volume number
+          else cb("n");
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({ ...baseOpts });
+
+    expect(result.volumeName).toBe("13");
+  });
+
+  test("AC8: accepts alphanumeric, dash, underscore, dot, spaces (e.g. 13-final)", async () => {
+    let callCount = 0;
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          if (callCount === 1) cb("y");
+          else if (callCount === 2) cb("13-final special_1.0");
+          else cb("n");
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({ ...baseOpts });
+
+    expect(result.volumeName).toBe("13-final special_1.0");
+  });
+
+  test("AC9: rejects slash, re-prompts, then accepts valid input on second try", async () => {
+    let callCount = 0;
+    let stderrBuf = "";
+    captureStderr();
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          if (callCount === 1) cb("y");
+          else if (callCount === 2) cb("../../evil");  // invalid
+          else if (callCount === 3) cb("13");          // valid on retry
+          else cb("n");
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({ ...baseOpts });
+    stderrBuf = stderrOutput.join("");
+    restoreStderr();
+
+    expect(result.volumeName).toBe("13");
+    expect(stderrBuf).toMatch(/Invalid volume name/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Volume-number prompt — skip conditions (AC10)
+// ---------------------------------------------------------------------------
+
+describe("runPackPrompts — volume-number prompt is skipped when", () => {
+  afterEach(() => mock.restore());
+
+  test("AC10a: --pack <name> was passed (packNameProvided=true)", async () => {
+    let callCount = 0;
+    const callArgs: number[] = [];
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          callArgs.push(callCount);
+          if (callCount === 1) cb("y");   // Pack?
+          else cb("n");                   // Delete? (no volume number prompt in between)
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      packNameProvided: true,
+      packFlag: true,
+    });
+
+    // packFlag=true means pack is decided via flag (no pack prompt), only delete prompt fires
+    expect(callCount).toBe(1);
+    expect(result.volumeName).toBeUndefined();
+  });
+
+  test("AC10b: --pack-replace was passed (non-interactive delete path)", async () => {
+    // packReplace means shouldDelete=true without prompt, and no volume-number prompt
+    let callCount = 0;
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          cb("y"); // only "Pack?" prompt
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      packFlag: true,
+      packReplace: true,
+    });
+
+    // pack is set via flag, so no pack prompt is shown; packReplace skips volume prompt
+    expect(callCount).toBe(0);
+    expect(result.shouldPack).toBe(true);
+    expect(result.shouldDelete).toBe(true);
+    expect(result.volumeName).toBeUndefined();
+  });
+
+  test("AC10c: non-TTY mode (nonTty=true) with packFlag", async () => {
+    let callCount = 0;
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          cb("y");
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      nonTty: true,
+      packFlag: true,
+    });
+
+    expect(callCount).toBe(0);
+    expect(result.volumeName).toBeUndefined();
+  });
+
+  test("AC10d: N == 1 → whole pack flow skipped (no prompts at all)", async () => {
+    let callCount = 0;
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          cb("y");
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({ ...baseOpts, chapterCount: 1 });
+
+    expect(callCount).toBe(0);
+    expect(result.shouldPack).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P0 regression: existence check must happen AFTER effective name is resolved
+// ---------------------------------------------------------------------------
+
+describe("runPackPrompts — overwrite check against effective (post-prompt) filename", () => {
+  afterEach(() => {
+    restoreStderr();
+    mock.restore();
+  });
+
+  test("prompts overwrite when custom volume name collides even if default name does not exist", async () => {
+    // dandadan-volume-13.cbz exists, dandadan-volume-103-111.cbz does not
+    let overwritePromptShown = false;
+    let callCount = 0;
+
+    captureStderr();
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          if (callCount === 1) cb("y");   // Pack?
+          else if (callCount === 2) cb("13"); // Volume number → collides
+          else if (callCount === 3) {
+            overwritePromptShown = true;
+            cb("y"); // Overwrite?
+          } else cb("n"); // Delete?
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      // Default name does NOT exist; only "13.cbz" exists
+      checkExists: async (filename: string) => filename === "13.cbz",
+    });
+
+    expect(overwritePromptShown).toBe(true);
+    expect(result.shouldPack).toBe(true);
+    expect(result.volumeName).toBe("13");
+  });
+
+  test("does not prompt overwrite when neither default nor custom name exists", async () => {
+    let overwritePromptShown = false;
+    let callCount = 0;
+
+    captureStderr();
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          if (callCount === 1) cb("y");   // Pack?
+          else if (callCount === 2) cb("13"); // Volume number
+          else if (callCount === 3) {
+            // Should be Delete? not Overwrite?
+            overwritePromptShown = stderrOutput.join("").includes("Overwrite");
+            cb("n"); // Delete?
+          }
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      checkExists: async () => false, // nothing exists
+    });
+
+    expect(overwritePromptShown).toBe(false);
+    expect(result.shouldPack).toBe(true);
+    expect(result.volumeName).toBe("13");
+  });
+});
