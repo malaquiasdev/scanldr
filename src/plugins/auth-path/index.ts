@@ -1,6 +1,6 @@
 // XDG-aware auth.json path resolver.
-// Lifted from src/integrations/mangakakalot/browser/index.ts so multiple
-// integrations share a single source of truth.
+// Shared by src/integrations/mangakakalot/auth/ and src/integrations/fallback-http/
+// so all integrations resolve the same auth.json path.
 
 import { homedir } from "node:os";
 import { join } from "node:path";

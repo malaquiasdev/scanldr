@@ -39,7 +39,7 @@ graph TD
         MangaDexParser[sites/mangadex/parser.ts<br/>API response mapping]
         FallbackClient[sites/mangakakalot/client.ts<br/>HttpClient + cookie replay]
         FallbackParser[sites/mangakakalot/parser.ts<br/>HTML/JSON extraction]
-        Browser[sites/mangakakalot/browser.ts<br/>Playwright — auth only]
+        AuthService[sites/mangakakalot/auth/service.ts<br/>cURL paste auth — stdin]
         Downloader[downloader.ts<br/>Image download + packaging]
         History[history.ts<br/>SQLite download history]
         AuthFile[($XDG_DATA_HOME/scanldr/auth.json)<br/>Saved Cloudflare session]
@@ -48,7 +48,6 @@ graph TD
     subgraph External
         MangaDex[MangaDex API]
         FallbackSite[Fallback Site<br/>mangakakalot.gg]
-        Chromium[Headful Chromium<br/>via Playwright]
     end
 
     DB[(scanldr.db<br/>SQLite)]
@@ -67,9 +66,9 @@ graph TD
     FallbackSite -->|HTML| FallbackParser
     FallbackParser -->|ChapterRef[]| Index
 
-    Index -->|auth command| Browser
-    Browser -->|launches| Chromium
-    Browser -->|extracts cf_clearance| AuthFile
+    Index -->|auth command| AuthService
+    AuthService -->|verifies session via parsed URL| FallbackSite
+    AuthService -->|atomic write| AuthFile
 
     Index -->|download chapters| Downloader
     Downloader -->|images from MangaDex| MangaDex
@@ -86,13 +85,12 @@ graph TD
     style MangaDexParser fill:#438dd5,color:#fff
     style FallbackClient fill:#438dd5,color:#fff
     style FallbackParser fill:#438dd5,color:#fff
-    style Browser fill:#438dd5,color:#fff
+    style AuthService fill:#438dd5,color:#fff
     style Downloader fill:#438dd5,color:#fff
     style History fill:#438dd5,color:#fff
     style AuthFile fill:#ff7043,color:#fff
     style MangaDex fill:#ff6740,color:#fff
     style FallbackSite fill:#757575,color:#fff
-    style Chromium fill:#757575,color:#fff
     style DB fill:#ff7043,color:#fff
     style FS fill:#4caf50,color:#fff
 ```
@@ -103,7 +101,7 @@ graph TD
 
 1. **MangaDex is the primary source** — metadata (volume→chapter mapping) and downloads come from MangaDex first. Fallback sites are only used when the user explicitly chooses them after being shown what MangaDex has available.
 2. **User controls language and source** — the CLI never silently picks a language or falls back to another site. It always presents options and waits for confirmation.
-3. **Playwright is scoped to auth only** — and only for sites that require Cloudflare bypass. MangaDex needs no browser.
+3. **Auth uses manual cURL paste** — the user solves the Cloudflare challenge in a real browser, then copies the authenticated request via DevTools "Copy as cURL" and pastes it into `scanldr auth`. No headless browser or Playwright is involved. See `docs/auth-manual.md`.
 4. **Download history is decoupled from output files** — SQLite records what was downloaded. The user can freely delete `.cbz` files without the CLI re-downloading them.
 5. **One `.cbz` per volume** — chapters within a volume are merged into a single archive, matching how the user reads (complete volumes, not weekly chapters).
 6. **Parser is site-specific** — each source has its own module under `src/sites/`, keeping the core downloader generic.

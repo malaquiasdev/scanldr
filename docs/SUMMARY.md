@@ -28,7 +28,7 @@ This document is the central index of all technical documentation for **scanldr*
 ## 🛠 Technical Standards
 - **Runtime:** Bun
 - **Language:** TypeScript
-- **Browser automation:** Playwright (auth flow only, for non-MangaDex sites)
+- **Auth:** manual cURL paste captured from the user's real browser via DevTools
 - **Metadata source:** MangaDex API
 - **Output formats:** CBZ / ZIP
 - **History persistence:** SQLite via `bun:sqlite`

@@ -1,7 +1,9 @@
 # ADR-001: Cookie Replay over Playwright Stealth
 
 **Date:** 2026-04-24
-**Status:** Accepted
+**Status:** Superseded by ADR-002
+
+> **Note (2026-05-05):** The Playwright-based auth capture described in this ADR was abandoned in issue #58. The homepage never triggers a CF challenge, so `cf_clearance` is never issued via that path. Navigating to a protected endpoint (`/search/…`) instead causes Cloudflare to detect Playwright and hang indefinitely. The auth strategy is still cookie replay, but the capture mechanism is now a manual cURL paste from the user's real browser. See [ADR-002](./002-manual-cookie-paste.md).
 
 ## Context
 

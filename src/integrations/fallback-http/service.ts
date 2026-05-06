@@ -3,7 +3,7 @@
 // cookies + UA on every request per ADR-001.
 
 import { readFile } from "node:fs/promises";
-import type { AuthSession } from "@integrations/mangakakalot/browser/types.ts";
+import type { AuthSession } from "@integrations/mangakakalot/auth/types.ts";
 import { resolveAuthPath } from "@plugins/auth-path/index.ts";
 import { CloudflareError, MissingAuthError } from "./types.ts";
 import type { FallbackHttpClient, FallbackHttpOptions, FetchFn } from "./types.ts";
