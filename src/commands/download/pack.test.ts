@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { CliError } from "@plugins/errors/index.ts";
 import { createLogger } from "@plugins/logger/index.ts";
 import { zipSync } from "fflate";
-import { defaultVolumeName, deleteIndividualFiles, packVolume } from "./pack.ts";
+import { buildVolumeFilename, defaultVolumeName, deleteIndividualFiles, packVolume } from "./pack.ts";
 import { runPackPrompts } from "./prompt-pack.ts";
 
 const TMP = join(import.meta.dir, "__pack_test_tmp__");
@@ -54,6 +54,32 @@ describe("defaultVolumeName", () => {
       { num: "19", outputPath: "" },
     ];
     expect(defaultVolumeName("series", chapters)).toBe("series-volume-018.5-019");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildVolumeFilename
+// ---------------------------------------------------------------------------
+
+describe("buildVolumeFilename", () => {
+  test("prompt input '13' produces <slug>-volume-13.cbz filename", () => {
+    expect(buildVolumeFilename("dandadan", "13")).toBe("dandadan-volume-13.cbz");
+  });
+
+  test("prompt input '13.5' produces <slug>-volume-13.5.cbz filename", () => {
+    expect(buildVolumeFilename("dandadan", "13.5")).toBe("dandadan-volume-13.5.cbz");
+  });
+
+  test("prompt input 'special-edition' produces <slug>-volume-special-edition.cbz", () => {
+    expect(buildVolumeFilename("dandadan", "special-edition")).toBe(
+      "dandadan-volume-special-edition.cbz",
+    );
+  });
+
+  test("prompt input '13.cbz' single-suffixes correctly (no .cbz.cbz)", () => {
+    const result = buildVolumeFilename("dandadan", "13.cbz");
+    expect(result).toBe("dandadan-volume-13.cbz");
+    expect(result).not.toContain(".cbz.cbz");
   });
 });
 
@@ -179,6 +205,7 @@ describe("packVolume", () => {
 
 describe("runPackPrompts", () => {
   const baseOpts = {
+    slug: "dandadan",
     outputName: "dandadan-volume-103-111.cbz",
     defaultVolumeStem: "103-111",
     checkExists: async () => false,

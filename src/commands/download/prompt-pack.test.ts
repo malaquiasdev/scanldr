@@ -21,6 +21,7 @@ function restoreStderr() {
 }
 
 const baseOpts = {
+  slug: "dandadan",
   outputName: "dandadan-volume-103-111.cbz",
   defaultVolumeStem: "103-111",
   checkExists: async () => false,
@@ -392,8 +393,8 @@ describe("runPackPrompts — overwrite check against effective (post-prompt) fil
     const { runPackPrompts } = await import("./prompt-pack.ts");
     const result = await runPackPrompts({
       ...baseOpts,
-      // Default name does NOT exist; only "13.cbz" exists
-      checkExists: async (filename: string) => filename === "13.cbz",
+      // Default name does NOT exist; only "dandadan-volume-13.cbz" exists
+      checkExists: async (filename: string) => filename === "dandadan-volume-13.cbz",
     });
 
     expect(overwritePromptShown).toBe(true);
@@ -432,5 +433,108 @@ describe("runPackPrompts — overwrite check against effective (post-prompt) fil
     expect(overwritePromptShown).toBe(false);
     expect(result.shouldPack).toBe(true);
     expect(result.volumeName).toBe("13");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #79 regression: effectiveOutputName uses <slug>-volume-<input> convention
+// ---------------------------------------------------------------------------
+
+describe("runPackPrompts — effectiveOutputName uses slug-volume convention (issue #79)", () => {
+  afterEach(() => {
+    restoreStderr();
+    mock.restore();
+  });
+
+  test("prompt input '13' → checkExists called with 'dandadan-volume-13.cbz'", async () => {
+    const checkedNames: string[] = [];
+    let callCount = 0;
+
+    captureStderr();
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          if (callCount === 1) cb("y");   // Pack?
+          else if (callCount === 2) cb("13"); // Volume number
+          else cb("n"); // Delete?
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    await runPackPrompts({
+      ...baseOpts,
+      checkExists: async (filename: string) => {
+        checkedNames.push(filename);
+        return false;
+      },
+    });
+
+    expect(checkedNames).toContain("dandadan-volume-13.cbz");
+    expect(checkedNames).not.toContain("13.cbz");
+  });
+
+  test("prompt input empty preserves default <slug>-volume-<first>-<last>.cbz", async () => {
+    const checkedNames: string[] = [];
+    let callCount = 0;
+
+    captureStderr();
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          if (callCount === 1) cb("y");  // Pack?
+          else if (callCount === 2) cb(""); // blank → default
+          else cb("n"); // Delete?
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      checkExists: async (filename: string) => {
+        checkedNames.push(filename);
+        return false;
+      },
+    });
+
+    expect(result.volumeName).toBeUndefined();
+    expect(checkedNames).toContain("dandadan-volume-103-111.cbz");
+  });
+
+  test("--pack <name> flag treats input as full filename without volume prefix (regression)", async () => {
+    // When --pack <name> is provided, packNameProvided=true skips the volume prompt entirely.
+    // pack-flow.ts passes customName directly to packVolume → no slug-volume- prefix added.
+    // This test verifies the prompt layer does not interfere with the flag path.
+    captureStderr();
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          // Only the delete prompt should fire (pack decided via flag, no volume prompt)
+          cb("n");
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      packFlag: true,
+      packNameProvided: true,
+      // outputName already reflects the --pack <name> resolved filename
+      outputName: "box-set-final.cbz",
+    });
+
+    // Volume prompt skipped → volumeName stays undefined → pack-flow.ts uses customName as-is
+    expect(result.volumeName).toBeUndefined();
+    expect(result.shouldPack).toBe(true);
   });
 });

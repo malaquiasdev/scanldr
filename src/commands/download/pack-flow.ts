@@ -1,6 +1,6 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
-import { defaultVolumeName, deleteIndividualFiles, packVolume } from "./pack.ts";
+import { buildVolumeFilename, defaultVolumeName, deleteIndividualFiles, packVolume } from "./pack.ts";
 import type { PackedChapter } from "./pack.ts";
 import { runPackPrompts } from "./prompt-pack.ts";
 import type { DownloadArgs, DownloadContext } from "./types.ts";
@@ -32,6 +32,7 @@ export async function runPackFlow(opts: {
 
   const { shouldPack, shouldDelete, volumeName } = await runPackPrompts({
     chapterCount: successPaths.length,
+    slug,
     outputName: finalName,
     defaultVolumeStem,
     checkExists: async (filename: string) => {
@@ -52,8 +53,11 @@ export async function runPackFlow(opts: {
 
   if (!shouldPack) return;
 
-  // Resolve the effective custom name: user-entered volume name takes precedence
-  const resolvedCustomName = volumeName !== undefined ? volumeName : customName;
+  // Resolve the effective custom name.
+  // Prompt input is a volume-number suffix → apply "<slug>-volume-<input>" convention.
+  // --pack <name> flag input is already a complete filename stem → pass through as-is.
+  const resolvedCustomName =
+    volumeName !== undefined ? buildVolumeFilename(slug, volumeName) : customName;
 
   const result = await packVolume({
     slug,
