@@ -5,6 +5,9 @@ scanldr.db-wal
 scanldr.db-shm
 .scanldr-auth.json
 
+#Download
+download
+
 # Build / deps
 node_modules/
 dist/
