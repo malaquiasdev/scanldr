@@ -6,6 +6,7 @@ import type {
   DownloadRow,
   GetChapterIdsFilter,
   HistoryFilter,
+  HistoryQuery,
   IsVolumeFullyDownloadedFilter,
   RecordResult,
 } from "./types.ts";
@@ -124,4 +125,93 @@ export function queryHistory(db: Db, filter?: HistoryFilter): DownloadRecord[] {
   }[];
 
   return raw.map(toRecord);
+}
+
+/**
+ * Escape SQLite LIKE special characters so user input is treated as a literal
+ * substring and not as a pattern. We use backslash as the escape character and
+ * pair it with `ESCAPE '\\'` in every LIKE clause below.
+ */
+function escapeLikePattern(input: string): string {
+  // Escape backslash first to avoid double-escaping, then % and _.
+  return input.replace(/[\\%_]/g, "\\$&");
+}
+
+/** List downloads with LIKE title matching, source filter, and a row limit. */
+export function queryHistoryList(db: Db, query: HistoryQuery): DownloadRecord[] {
+  const conditions: string[] = [];
+  // Parameterized to prevent SQL injection; user input never concatenated into SQL.
+  const params: (string | number)[] = [];
+
+  if (query.mangaTitle !== undefined) {
+    conditions.push("manga_title LIKE ? ESCAPE '\\' COLLATE NOCASE");
+    params.push(`%${escapeLikePattern(query.mangaTitle)}%`);
+  }
+  if (query.source !== undefined) {
+    conditions.push("source = ?");
+    params.push(query.source);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const limitClause = query.limit !== undefined && query.limit > 0 ? `LIMIT ${query.limit}` : "";
+  const sql = `SELECT * FROM downloads ${where} ORDER BY downloaded_at DESC ${limitClause}`.trim();
+
+  const stmt = db.prepare(sql);
+  const raw = stmt.all(...params) as {
+    id: number;
+    manga_id: string;
+    manga_title: string;
+    volume: string;
+    chapter_id: string;
+    chapter_num: string;
+    source: string;
+    language: string;
+    downloaded_at: number;
+  }[];
+
+  return raw.map(toRecord);
+}
+
+/** Count matching downloads — used to show the count before confirmation. */
+export function countHistoryMatches(db: Db, query: Omit<HistoryQuery, "limit">): number {
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (query.mangaTitle !== undefined) {
+    conditions.push("manga_title LIKE ? ESCAPE '\\' COLLATE NOCASE");
+    params.push(`%${escapeLikePattern(query.mangaTitle)}%`);
+  }
+  if (query.source !== undefined) {
+    conditions.push("source = ?");
+    params.push(query.source);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const sql = `SELECT COUNT(*) as cnt FROM downloads ${where}`.trim();
+
+  const stmt = db.prepare(sql);
+  const row = stmt.get(...params) as { cnt: number };
+  return row.cnt;
+}
+
+/** Delete matching downloads. Returns number of deleted rows. */
+export function deleteHistory(db: Db, query: Omit<HistoryQuery, "limit">): number {
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (query.mangaTitle !== undefined) {
+    conditions.push("manga_title LIKE ? ESCAPE '\\' COLLATE NOCASE");
+    params.push(`%${escapeLikePattern(query.mangaTitle)}%`);
+  }
+  if (query.source !== undefined) {
+    conditions.push("source = ?");
+    params.push(query.source);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const sql = `DELETE FROM downloads ${where}`.trim();
+
+  const stmt = db.prepare(sql);
+  const result = stmt.run(...params);
+  return result.changes;
 }
