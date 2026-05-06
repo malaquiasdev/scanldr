@@ -23,7 +23,7 @@ function restoreStderr() {
 const baseOpts = {
   outputName: "dandadan-volume-103-111.cbz",
   defaultVolumeStem: "103-111",
-  fileExists: false,
+  checkExists: async () => false,
   nonTty: false,
   packFlag: false,
   packNameProvided: false,
@@ -354,5 +354,83 @@ describe("runPackPrompts — volume-number prompt is skipped when", () => {
 
     expect(callCount).toBe(0);
     expect(result.shouldPack).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P0 regression: existence check must happen AFTER effective name is resolved
+// ---------------------------------------------------------------------------
+
+describe("runPackPrompts — overwrite check against effective (post-prompt) filename", () => {
+  afterEach(() => {
+    restoreStderr();
+    mock.restore();
+  });
+
+  test("prompts overwrite when custom volume name collides even if default name does not exist", async () => {
+    // dandadan-volume-13.cbz exists, dandadan-volume-103-111.cbz does not
+    let overwritePromptShown = false;
+    let callCount = 0;
+
+    captureStderr();
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          if (callCount === 1) cb("y");   // Pack?
+          else if (callCount === 2) cb("13"); // Volume number → collides
+          else if (callCount === 3) {
+            overwritePromptShown = true;
+            cb("y"); // Overwrite?
+          } else cb("n"); // Delete?
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      // Default name does NOT exist; only "13.cbz" exists
+      checkExists: async (filename: string) => filename === "13.cbz",
+    });
+
+    expect(overwritePromptShown).toBe(true);
+    expect(result.shouldPack).toBe(true);
+    expect(result.volumeName).toBe("13");
+  });
+
+  test("does not prompt overwrite when neither default nor custom name exists", async () => {
+    let overwritePromptShown = false;
+    let callCount = 0;
+
+    captureStderr();
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          callCount++;
+          if (callCount === 1) cb("y");   // Pack?
+          else if (callCount === 2) cb("13"); // Volume number
+          else if (callCount === 3) {
+            // Should be Delete? not Overwrite?
+            overwritePromptShown = stderrOutput.join("").includes("Overwrite");
+            cb("n"); // Delete?
+          }
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      checkExists: async () => false, // nothing exists
+    });
+
+    expect(overwritePromptShown).toBe(false);
+    expect(result.shouldPack).toBe(true);
+    expect(result.volumeName).toBe("13");
   });
 });
