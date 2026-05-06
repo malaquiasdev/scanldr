@@ -1,3 +1,4 @@
+import { MangaDexHttpError } from "@integrations/mangadex/http/index.ts";
 import type { ImageRef } from "@modules/downloader/types.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { AtHomeError } from "./types.ts";
@@ -36,13 +37,6 @@ function logRefreshFailed(logger: Logger, chapterId: string, attempt: number, er
   );
 }
 
-// Parse HTTP status from error messages like "MangaDex HTTP 404: <url>"
-function parseHttpStatus(err: unknown): number | null {
-  if (!(err instanceof Error)) return null;
-  const match = /^MangaDex HTTP (\d+):/.exec(err.message);
-  return match ? Number(match[1]) : null;
-}
-
 export async function getAtHomeServer(
   httpClient: AtHomeOptions["httpClient"],
   chapterId: string,
@@ -57,8 +51,8 @@ export async function getAtHomeServer(
       pages: quality === "data" ? res.chapter.data : res.chapter.dataSaver,
     };
   } catch (err) {
-    const status = parseHttpStatus(err);
-    if (status !== null) {
+    if (err instanceof MangaDexHttpError) {
+      const { status } = err;
       const msg =
         status === 404
           ? `at-home server returned 404 for chapter ${chapterId}. Likely an externally-hosted chapter (MangaPlus / Comikey / Cubari). Check chapter.externalUrl in the feed.`

@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import { MangaDexHttpError } from "@integrations/mangadex/http/index.ts";
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { AtHomeError, getAtHomeServer, mangadexImageFetcher } from "./index.ts";
@@ -61,7 +62,10 @@ describe("getAtHomeServer", () => {
   it("throws AtHomeError with status 404 and external hint when http layer returns 404", async () => {
     const client = makeHttpClient({
       get: async () => {
-        throw new Error("MangaDex HTTP 404: https://api.mangadex.org/at-home/server/ch-ext");
+        throw new MangaDexHttpError(
+          "MangaDex HTTP 404: https://api.mangadex.org/at-home/server/ch-ext",
+          404,
+        );
       },
     });
     const err = await getAtHomeServer(client, "ch-ext", "data").catch((e) => e);
@@ -74,7 +78,10 @@ describe("getAtHomeServer", () => {
   it("throws AtHomeError with correct status for non-404 HTTP errors", async () => {
     const client = makeHttpClient({
       get: async () => {
-        throw new Error("MangaDex HTTP 403: https://api.mangadex.org/at-home/server/ch-403");
+        throw new MangaDexHttpError(
+          "MangaDex HTTP 403: https://api.mangadex.org/at-home/server/ch-403",
+          403,
+        );
       },
     });
     const err = await getAtHomeServer(client, "ch-403", "data").catch((e) => e);
@@ -103,7 +110,10 @@ describe("getAtHomeServer", () => {
     };
     const client = makeHttpClient({
       get: async () => {
-        throw new Error("MangaDex HTTP 404: https://api.mangadex.org/at-home/server/ch-ext");
+        throw new MangaDexHttpError(
+          "MangaDex HTTP 404: https://api.mangadex.org/at-home/server/ch-ext",
+          404,
+        );
       },
     });
     const err = await getAtHomeServer(client, "ch-ext", "data", spyLogger).catch((e) => e);
@@ -251,7 +261,10 @@ describe("mangadexImageFetcher — refresh failure during retry", () => {
             chapter: { hash: "abc123", data: ["page1.jpg"], dataSaver: [] },
           } as T;
         }
-        throw new Error("MangaDex HTTP 404: https://api.mangadex.org/at-home/server/ch-del");
+        throw new MangaDexHttpError(
+          "MangaDex HTTP 404: https://api.mangadex.org/at-home/server/ch-del",
+          404,
+        );
       },
     });
 
@@ -323,7 +336,10 @@ describe("mangadexImageFetcher — refresh failure during retry", () => {
             chapter: { hash: "abc123", data: ["page1.jpg"], dataSaver: [] },
           } as T;
         }
-        throw new Error("MangaDex HTTP 404: https://api.mangadex.org/at-home/server/ch-del");
+        throw new MangaDexHttpError(
+          "MangaDex HTTP 404: https://api.mangadex.org/at-home/server/ch-del",
+          404,
+        );
       },
     });
 
