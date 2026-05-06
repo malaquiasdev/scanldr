@@ -180,9 +180,11 @@ describe("packVolume", () => {
 describe("runPackPrompts", () => {
   const baseOpts = {
     outputName: "dandadan-volume-103-111.cbz",
+    defaultVolumeStem: "103-111",
     fileExists: false,
     nonTty: false,
     packFlag: false,
+    packNameProvided: false,
     packReplace: false,
     packOverwrite: false,
     logger,

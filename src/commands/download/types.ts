@@ -54,16 +54,23 @@ export interface PackVolumeResult {
 export interface PackPromptResult {
   shouldPack: boolean;
   shouldDelete: boolean;
+  /** Volume name stem chosen by the user (may differ from the default). Undefined when pack was skipped. */
+  volumeName?: string;
 }
 
 export interface PackPromptOptions {
   chapterCount: number;
+  /** Default output filename stem (e.g. "dandadan-volume-103-111") — shown as the leave-blank hint. */
   outputName: string;
+  /** Default volume stem without manga slug prefix (e.g. "103-111") — shown in the volume-number prompt hint. */
+  defaultVolumeStem: string;
   /** true if the target file already exists */
   fileExists: boolean;
   nonTty: boolean;
   /** --pack flag (boolean form — pack with default name, keep individuals) */
   packFlag: boolean;
+  /** true when --pack <name> was supplied (skip volume-number prompt) */
+  packNameProvided: boolean;
   /** --pack-replace flag (pack + delete individuals) */
   packReplace: boolean;
   /** --pack-overwrite flag (overwrite if exists) */

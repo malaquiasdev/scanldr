@@ -20,10 +20,16 @@ export async function runPackFlow(opts: {
   // --pack-replace implies --pack
   const packFlag = args.packReplace || args.pack !== undefined;
   const customName = typeof args.pack === "string" && args.pack !== "" ? args.pack : undefined;
+  const packNameProvided = customName !== undefined;
 
   const stem = customName ?? defaultVolumeName(slug, successPaths);
   const finalName = stem.endsWith(".cbz") ? stem : `${stem}.cbz`;
   const targetPath = join(args.outDir, slug, finalName);
+
+  // Extract the portion after "<slug>-volume-" to use as the hint in the prompt.
+  // e.g. stem = "dandadan-volume-103-111" → hint = "103-111"
+  const volumePrefix = `${slug}-volume-`;
+  const defaultVolumeStem = stem.startsWith(volumePrefix) ? stem.slice(volumePrefix.length) : stem;
 
   let fileExists = false;
   try {
@@ -33,12 +39,14 @@ export async function runPackFlow(opts: {
     fileExists = false;
   }
 
-  const { shouldPack, shouldDelete } = await runPackPrompts({
+  const { shouldPack, shouldDelete, volumeName } = await runPackPrompts({
     chapterCount: successPaths.length,
     outputName: finalName,
+    defaultVolumeStem,
     fileExists,
     nonTty: args.nonTty,
     packFlag,
+    packNameProvided,
     packReplace: args.packReplace,
     packOverwrite: args.packOverwrite,
     logger,
@@ -46,11 +54,14 @@ export async function runPackFlow(opts: {
 
   if (!shouldPack) return;
 
+  // Resolve the effective custom name: user-entered volume name takes precedence
+  const resolvedCustomName = volumeName !== undefined ? volumeName : customName;
+
   const result = await packVolume({
     slug,
     outDir: args.outDir,
     chapters: successPaths,
-    customName,
+    customName: resolvedCustomName,
     logger,
   });
 
