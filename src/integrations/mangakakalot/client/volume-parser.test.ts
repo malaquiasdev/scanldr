@@ -11,35 +11,34 @@ function readFixture(name: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// parseVolumeMapping — naruto real-structure fixture (≥50 chapters required)
-// Series: naruto (non-DMCA series). Fixture: manga-page-naruto-real.html.
-// Captured: 2026-05-06 (structure modeled from real-chapter-dandadan-1.html DOM;
-// direct fetch unavailable due to expired Cloudflare auth session).
+// parseVolumeMapping — naruto synthetic fixture (≥50 chapters required)
+// Series: naruto (non-DMCA series). Fixture: manga-page-naruto-synthetic.html.
+// SYNTHETIC: modeled from real DOM structure; live capture blocked by CF auth.
 // ---------------------------------------------------------------------------
 
-describe("parseVolumeMapping — naruto real-structure fixture", () => {
+describe("parseVolumeMapping — naruto synthetic fixture", () => {
   it("returns at least 1 volume bucket", () => {
-    const html = readFixture("manga-page-naruto-real.html");
+    const html = readFixture("manga-page-naruto-synthetic.html");
     const map = parseVolumeMapping(html);
     expect(map.length).toBeGreaterThanOrEqual(1);
   });
 
   it("returns at least 50 chapters total across all buckets", () => {
-    const html = readFixture("manga-page-naruto-real.html");
+    const html = readFixture("manga-page-naruto-synthetic.html");
     const map = parseVolumeMapping(html);
     const totalChapters = map.reduce((sum, b) => sum + b.chapters.length, 0);
     expect(totalChapters).toBeGreaterThanOrEqual(50);
   });
 
   it("volumes are sorted numerically ascending", () => {
-    const html = readFixture("manga-page-naruto-real.html");
+    const html = readFixture("manga-page-naruto-synthetic.html");
     const map = parseVolumeMapping(html);
     const numericVolumes = map.filter((b) => b.volume !== "unknown").map((b) => Number(b.volume));
     expect(numericVolumes).toEqual([...numericVolumes].sort((a, b) => a - b));
   });
 
   it("composite id follows <slug>/<chapter-slug> convention", () => {
-    const html = readFixture("manga-page-naruto-real.html");
+    const html = readFixture("manga-page-naruto-synthetic.html");
     const map = parseVolumeMapping(html);
     const firstChapter = map[0]?.chapters[0];
     expect(firstChapter?.id).toMatch(/^naruto\/chapter-\d+$/);
@@ -130,10 +129,10 @@ describe("parseVolumeMapping — DOM drift detection", () => {
   });
 
   it("thrown error includes the selector and url", () => {
+    expect.assertions(3);
     const html = readFixture("manga-page-drift.html");
     try {
       parseVolumeMapping(html, "https://www.mangakakalot.gg/manga/dandadan");
-      expect(true).toBe(false); // must not reach here
     } catch (err) {
       expect(err).toBeInstanceOf(MangakakalotParseError);
       const parseErr = err as MangakakalotParseError;
@@ -154,6 +153,25 @@ describe("parseVolumeMapping — DOM drift detection", () => {
   it("returns [] for minimal HTML without manga identifiers", () => {
     const html = "<html><body></body></html>";
     expect(parseVolumeMapping(html)).toEqual([]);
+  });
+
+  it("returns [] for error page with only <h1>404</h1> (single signal, no throw)", () => {
+    // Only 1 signal (h1 with >=3 chars). Score < 2 → not a manga page → silent [].
+    const html = "<html><body><h1>404</h1><p>Page not found.</p></body></html>";
+    expect(parseVolumeMapping(html, "https://www.mangakakalot.gg/manga/notfound")).toEqual([]);
+  });
+
+  it("returns [] for redirect-to-home page (popular sidebar but no manga-detail markers)", () => {
+    // Only has h1 + popular sidebar links but no og:title / og:type / manga-info containers.
+    const html = `<html><body>
+      <h1>Welcome to MangaKakalot</h1>
+      <div class="slide-caption">
+        <h3>Popular Manga</h3>
+        <a href="/manga/one-piece">One Piece</a>
+        <a href="/manga/naruto">Naruto</a>
+      </div>
+    </body></html>`;
+    expect(parseVolumeMapping(html, "https://www.mangakakalot.gg/")).toEqual([]);
   });
 });
 

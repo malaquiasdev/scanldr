@@ -22,20 +22,33 @@ const CH_ONLY_PATTERN = /(?:Ch\.|Chapter\s+)(\d+(?:\.\d+)?)/i;
 /**
  * Heuristic: determines whether a page looks like a real manga detail page.
  *
- * A real manga page has at minimum one of:
- *   - An <h1> element with non-trivial text (the manga title)
- *   - An og:title meta tag
- *   - A .story-info-right container (standard mangakakalot detail page shell)
+ * Requires at least 2 independent page-shape signals to avoid false-positives on
+ * generic error pages (e.g. <h1>404</h1> or <h1>Error</h1>) that also lack a
+ * chapter list. A single-signal match silently returns [] (non-manga page path).
  *
- * If true, a missing chapter list signals DOM drift or DMCA removal — telemetry-worthy.
- * If false (bare HTML, redirect page, error page), silently returning [] is fine.
+ * Signals scored:
+ *   1. og:title meta tag present and non-empty
+ *   2. og:type meta tag is "manga" or "article"
+ *   3. .story-info-right or .manga-info-text container present (standard detail page shell)
+ *   4. <h1> with text >= 3 chars (manga title element)
+ *
+ * If score >= 2 → looks like a manga page → throw on missing chapter list (DOM drift).
+ * If score  < 2 → genuinely non-manga page → silently return [].
  */
 function htmlLooksLikeMangaPage($: cheerio.CheerioAPI): boolean {
-  if ($("meta[property='og:title']").attr("content")?.trim()) return true;
-  if ($(".story-info-right").length > 0) return true;
+  let score = 0;
+
+  if ($("meta[property='og:title']").attr("content")?.trim()) score++;
+
+  const ogType = $("meta[property='og:type']").attr("content")?.toLowerCase() ?? "";
+  if (ogType === "manga" || ogType === "article") score++;
+
+  if ($(".story-info-right, .manga-info-text, [class*='manga-info']").length > 0) score++;
+
   const h1Text = $("h1").first().text().trim();
-  if (h1Text.length > 2) return true;
-  return false;
+  if (h1Text.length >= 3) score++;
+
+  return score >= 2;
 }
 
 /**
