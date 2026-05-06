@@ -1,23 +1,22 @@
 // Manual cURL paste auth service.
 // Reads a cURL paste from stdin, validates, verifies, and writes auth.json.
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { resolveAuthPath } from "@plugins/auth-path/index.ts";
 import { parseCurl } from "./curl-parser.ts";
 import { AuthError } from "./types.ts";
 import type { AuthSession, RunAuthOptions } from "./types.ts";
 
-const VERIFY_URL = "https://www.mangakakalot.gg/search/story/dragon-ball";
 const CF_CHALLENGE_MARKERS = ["Just a moment...", "Enable JavaScript and cookies"];
 
 const INSTRUCTIONS = `
 To capture a session for the fallback site:
 
-  1. Open ${VERIFY_URL} in your real browser
+  1. Open mangakakalot.gg in your real browser
   2. Solve any Cloudflare challenge that appears
   3. Open DevTools (F12) → Network tab → reload the page
-  4. Right-click the request to /search/... → Copy → Copy as cURL
+  4. Right-click any request to the site → Copy → Copy as cURL
   5. Paste below, then press Enter on an empty line to submit:
 
 `;
@@ -33,11 +32,11 @@ async function readStdinUntilEmpty(): Promise<string> {
     process.stdin.resume();
     process.stdin.on("data", (chunk: Buffer) => {
       chunks.push(chunk);
-      const so_far = Buffer.concat(chunks).toString("utf8");
+      const soFar = Buffer.concat(chunks).toString("utf8");
       // Stop when we see two consecutive newlines (blank line submitted)
-      if (/\n\s*\n/.test(so_far)) {
+      if (/\n\s*\n/.test(soFar)) {
         process.stdin.pause();
-        resolve(so_far.trim());
+        resolve(soFar.trim());
       }
     });
     process.stdin.on("end", () => {
@@ -98,7 +97,7 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
 
   let verifyRes: Response;
   try {
-    verifyRes = await fetchFn(VERIFY_URL, {
+    verifyRes = await fetchFn(parsed.url, {
       headers: {
         cookie: cookieHeader,
         "user-agent": parsed.userAgent,
@@ -121,9 +120,9 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
     );
   }
 
-  process.stdout.write(`✓ Verified session against ${VERIFY_URL}\n`);
+  process.stdout.write(`✓ Verified session against ${parsed.url}\n`);
 
-  logger.info({ event: "auth.verified", context: "auth", url: VERIFY_URL }, "session verified");
+  logger.info({ event: "auth.verified", context: "auth", url: parsed.url }, "session verified");
 
   const session: AuthSession = {
     cookies: parsed.cookies,
@@ -132,10 +131,21 @@ export async function runAuth(opts: RunAuthOptions): Promise<void> {
   };
 
   await mkdir(dirname(outPath), { recursive: true, mode: 0o700 });
-  await writeFile(outPath, JSON.stringify(session, null, 2), {
-    encoding: "utf8",
-    mode: 0o600,
-  });
+
+  // Atomic write: write to .tmp first (mode 0600), then rename.
+  // rename(2) is atomic on POSIX — a crash mid-write leaves the previous file intact.
+  const tmpPath = `${outPath}.tmp`;
+  try {
+    await writeFile(tmpPath, JSON.stringify(session, null, 2), {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    await rename(tmpPath, outPath);
+  } catch (err) {
+    // Best-effort cleanup of the temp file; swallow errors.
+    await unlink(tmpPath).catch(() => undefined);
+    throw err;
+  }
 
   process.stdout.write(`✓ Saved to ${outPath} (mode 0600)\n`);
 

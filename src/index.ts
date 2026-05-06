@@ -20,7 +20,7 @@ Usage:
   scanldr <command> [args] [flags]
 
 Commands:
-  auth                          Open browser for Cloudflare bypass, save session
+  auth                          Capture session via DevTools 'Copy as cURL' paste
   list <manga>                  List volumes, chapters, languages, groups
   download <manga> --volume <n> Download volumes (e.g. 1, 1-5, 1,3,7, 1-5,8,10)
   download <manga> --chapter <n> Download chapters (same range syntax)

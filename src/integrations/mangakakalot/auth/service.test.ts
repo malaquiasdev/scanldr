@@ -231,6 +231,39 @@ describe("runAuth — persist", () => {
   });
 });
 
+describe("runAuth — atomic write", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "scanldr-auth-atomic-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test("writes atomically via rename of .tmp file (no .tmp remains after success)", async () => {
+    const opts: RunAuthOptions = {
+      logger: buildLogger(),
+      dataHome: tmpDir,
+      readStdin: async () => VALID_CURL,
+      fetch: buildFetch(200, "<html>MangaKakalot</html>"),
+    };
+
+    await runAuth(opts);
+
+    const outPath = resolveAuthPath({ dataHome: tmpDir });
+    const tmpPath = `${outPath}.tmp`;
+
+    // Final file must exist
+    const finalStat = await stat(outPath);
+    expect(finalStat.isFile()).toBe(true);
+
+    // Temp file must have been removed (renamed away)
+    await expect(stat(tmpPath)).rejects.toThrow();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // AuthError shape
 // ---------------------------------------------------------------------------

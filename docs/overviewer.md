@@ -46,10 +46,11 @@ scanldr/
 - When MangaDex does not have a title or the available languages are not acceptable, the CLI lists configured fallback sites and prompts the user to choose one
 - Volume metadata from MangaDex is still used to determine the chapter range even when downloading from a fallback site
 
-### 3.4. Browser (`src/sites/mangakakalot/browser.ts`)
+### 3.4. Auth (`src/integrations/mangakakalot/auth/`)
 - Used **only** in the `auth` command for sites that require Cloudflare bypass
-- Launches Playwright (headful Chromium), user solves the Turnstile, CLI extracts `cf_clearance` automatically
-- Not used for MangaDex (no Cloudflare)
+- User opens the site in a real browser, solves the Turnstile, then copies the request via DevTools "Copy as cURL" and pastes it into the CLI prompt
+- The CLI parses cookies and User-Agent from the paste, verifies the session against the parsed URL, then writes `auth.json` atomically (mode 0600)
+- Not used for MangaDex (no Cloudflare). See `docs/auth-manual.md` for step-by-step instructions.
 
 ### 3.5. Download History (`src/history.ts`)
 - SQLite database via `bun:sqlite` (zero extra dependencies)
@@ -69,7 +70,7 @@ scanldr/
 
 | Command | Description |
 |---|---|
-| `scanldr auth` | Opens browser for Cloudflare bypass, saves session (~30 days) |
+| `scanldr auth` | Capture session via DevTools "Copy as cURL" paste, saves session (~30 days) |
 | `scanldr list <manga>` | Lists all available volumes, chapters, languages, and scanlation groups |
 | `scanldr list <manga> --volume <n>` | Lists chapters within a specific volume |
 | `scanldr list <manga> --chapter <n>` | Lists details of a specific chapter |
