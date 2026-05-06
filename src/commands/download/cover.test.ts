@@ -14,6 +14,16 @@ beforeAll(async () => {
   const mod = await import("./cover.ts");
   fetchCover = mod.fetchCover;
   MAX_COVER_BYTES = mod.MAX_COVER_BYTES;
+  // Diagnostics: print module identity to detect stale mock on CI
+  process.stderr.write(
+    `[cover.test] fetchCover is: ${typeof fetchCover}, toString: ${String(fetchCover).slice(0, 80)}\n`,
+  );
+  process.stderr.write(
+    `[cover.test] MAX_COVER_BYTES: ${MAX_COVER_BYTES}\n`,
+  );
+  process.stderr.write(
+    `[cover.test] new URL("file:///etc/passwd").protocol: ${new URL("file:///etc/passwd").protocol}\n`,
+  );
 });
 
 type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
