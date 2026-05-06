@@ -5,8 +5,11 @@ import { join } from "node:path";
 import type { ChapterRef, VolumeRef } from "@integrations/_shared/manga.ts";
 import { MissingAuthError } from "@integrations/fallback-http/index.ts";
 import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
-import type { MangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
-import { createMangakakalotClient as mkClient } from "@integrations/mangakakalot/client/index.ts";
+import {
+  MangakakalotParseError,
+  createMangakakalotClient as mkClient,
+} from "@integrations/mangakakalot/client/index.ts";
+import type { MangakakalotClient, VolumeMap } from "@integrations/mangakakalot/client/index.ts";
 import type { ImageRef } from "@modules/downloader/types.ts";
 import { openDb, runMigrations } from "@plugins/db/index.ts";
 import { CliError } from "@plugins/errors/index.ts";
@@ -20,7 +23,6 @@ import {
   promptFallbackSite,
   runFallbackDownload,
 } from "./fallback.ts";
-import type { VolumeMap } from "@integrations/mangakakalot/client/index.ts";
 import type { DownloadArgs } from "./types.ts";
 
 const noopLogger: Logger = {
@@ -1388,5 +1390,83 @@ describe("runFallbackDownload — volumeMappingSource: fallback, --volume 13 on 
     expect((err as CliError).message).toContain("Volume 13 not found");
     expect((err as CliError).message).toContain("Available volumes: 1, 2");
     expect((err as CliError).message).toContain("--chapter");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runFallbackDownload — MangakakalotParseError (DOM drift) handling (#74)
+// ---------------------------------------------------------------------------
+
+describe("runFallbackDownload — MangakakalotParseError from getVolumeMap is caught and re-thrown as CliError", () => {
+  test("drift error → logger.warn with mangakakalot.parse_drift event → CliError", async () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+
+    const fakeFallbackHttp: FallbackHttpClient = {
+      get: async () => new Response("", { status: 200 }),
+    };
+
+    const driftError = new MangakakalotParseError(
+      "ul.row-content-chapter li",
+      "https://www.mangakakalot.gg/manga/dandadan",
+      "no chapter list found on manga detail page",
+    );
+
+    const mkClientDrift: MangakakalotClient = {
+      searchManga: async () => [
+        { id: "dandadan", title: "Dandadan", originalLanguage: "ja", year: 2021 },
+      ],
+      getChapterList: async () => [],
+      getVolumeMap: async () => { throw driftError; },
+      getChapterImages: async () => [],
+    };
+
+    const warnPayloads: Array<Record<string, unknown>> = [];
+    const spyLogger: Logger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null) {
+          warnPayloads.push(obj as Record<string, unknown>);
+        }
+      },
+      error: () => {},
+    };
+
+    const err = await runFallbackDownload({
+      args: baseArgs({ volume: "13" }),
+      ctx: {
+        logger: spyLogger,
+        config: {
+          preferred_languages: ["en"],
+          download_quality: "data",
+          default_format: "cbz",
+          default_out: "/tmp",
+          image_concurrency: 1,
+          chapter_delay_ms: 0,
+          db_path: ":memory:",
+        },
+        db,
+      },
+      mangadexResolve: null,
+      createFallbackHttp: async () => fakeFallbackHttp,
+      createMangakakalotClient: () => mkClientDrift,
+      volumeMappingSource: "fallback",
+      // biome-ignore lint/style/noNonNullAssertion: test stub
+      promptSite: async (sites) => sites[0]!,
+    }).catch((e) => e);
+
+    db.close();
+
+    // Must throw CliError (not MangakakalotParseError)
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).message).toContain("Volume mapping not available");
+    expect((err as CliError).exitCode).toBe(2);
+
+    // Must log structured warn with mangakakalot.parse_drift event
+    const driftWarn = warnPayloads.find((p) => p.event === "mangakakalot.parse_drift");
+    expect(driftWarn).toBeDefined();
+    expect(driftWarn?.context).toBe("fallback");
+    expect(driftWarn?.selector).toBe("ul.row-content-chapter li");
+    expect(driftWarn?.url).toBe("https://www.mangakakalot.gg/manga/dandadan");
   });
 });

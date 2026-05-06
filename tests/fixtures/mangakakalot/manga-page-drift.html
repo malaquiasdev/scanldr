@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<!-- Drift fixture: real-looking manga detail page (has og:title, h1, site structure)
+     but the chapter list container is absent — simulates site refactor or DMCA removal.
+     parseVolumeMapping must throw MangakakalotParseError (not return []) on this page. -->
+<html lang="en" prefix="og: http://ogp.me/ns# fb: http://ogp.me/ns/fb#">
+<head>
+    <meta charset="utf-8">
+    <title>Dandadan Manga | MangaKakalot</title>
+    <meta property="og:title" content="Dandadan Manga" />
+    <meta property="og:site_name" content="MangaKakalot" />
+    <link rel="stylesheet" href="/css/all.css">
+</head>
+<body>
+<div class="container">
+  <div class="story-info-right">
+    <h1 itemprop="name">Dandadan</h1>
+    <table class="variations-tableInfo">
+      <tr>
+        <td class="table-label"><label>Author(s):</label></td>
+        <td>Yukinobu Tatsu</td>
+      </tr>
+      <tr>
+        <td class="table-label"><label>Status:</label></td>
+        <td>Ongoing</td>
+      </tr>
+    </table>
+  </div>
+  <!-- Chapter list absent — either DMCA takedown or site refactored this section -->
+  <div class="panel-story-info">
+    <p>Content temporarily unavailable.</p>
+  </div>
+  <div class="slide-caption">
+    <h3>Popular Manga</h3>
+    <a href="https://www.mangakakalot.gg/manga/one-piece">One Piece</a>
+  </div>
+</div>
+</body>
+</html>

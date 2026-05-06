@@ -4,10 +4,13 @@
 
 import * as cheerio from "cheerio";
 import type { FallbackChapterRef, VolumeMap } from "./types.ts";
+import { MangakakalotParseError } from "./types.ts";
 
 // Confirmed selector against real mangakakalot.gg manga pages (2026-05-06).
-// Each <li> inside .row-content-chapter has an <a class="chapter-name"> with the chapter label.
-const CHAPTER_LIST_SELECTOR = ".row-content-chapter li";
+// Each <li> inside ul.row-content-chapter has an <a class="chapter-name"> with the chapter label.
+// Selector confirmed on non-DMCA series (e.g. naruto); DMCA'd series (e.g. dandadan) return
+// a manga page with h1/og:title present but the chapter list container absent → drift throw.
+const CHAPTER_LIST_SELECTOR = "ul.row-content-chapter li";
 const CHAPTER_LINK_SELECTOR = "a.chapter-name";
 
 // Matches "Vol.13 Ch.128 ..." or "Vol.1 Ch.1" — captures volume and chapter numbers.
@@ -15,6 +18,25 @@ const VOL_CH_PATTERN = /Vol\.(\d+(?:\.\d+)?)\s+Ch\.(\d+(?:\.\d+)?)/i;
 
 // Matches "Ch.N" or "Chapter N" without a volume prefix.
 const CH_ONLY_PATTERN = /(?:Ch\.|Chapter\s+)(\d+(?:\.\d+)?)/i;
+
+/**
+ * Heuristic: determines whether a page looks like a real manga detail page.
+ *
+ * A real manga page has at minimum one of:
+ *   - An <h1> element with non-trivial text (the manga title)
+ *   - An og:title meta tag
+ *   - A .story-info-right container (standard mangakakalot detail page shell)
+ *
+ * If true, a missing chapter list signals DOM drift or DMCA removal — telemetry-worthy.
+ * If false (bare HTML, redirect page, error page), silently returning [] is fine.
+ */
+function htmlLooksLikeMangaPage($: cheerio.CheerioAPI): boolean {
+  if ($("meta[property='og:title']").attr("content")?.trim()) return true;
+  if ($(".story-info-right").length > 0) return true;
+  const h1Text = $("h1").first().text().trim();
+  if (h1Text.length > 2) return true;
+  return false;
+}
 
 /**
  * Extract chapter slug from a mangakakalot chapter URL.
@@ -42,16 +64,27 @@ function compositeIdFromUrl(href: string): string | null {
  * Returns a VolumeMap (array of VolumeBucket).
  * - Chapters with "Vol.X Ch.Y" labels are grouped under volume X.
  * - Chapters without volume labels are grouped under the "unknown" bucket.
- * - Empty array when the chapter list container is absent (DOM drift).
+ * - Returns [] for genuinely empty / non-manga pages (blank HTML, 404 shells, etc.).
+ * - Throws MangakakalotParseError when the page looks like a manga detail page
+ *   (has h1/og:title/story-info-right) but the chapter list container is absent —
+ *   this signals DOM drift or DMCA chapter removal, not a genuinely empty page.
  *
  * Buckets are sorted by volume number ascending; "unknown" is always last.
  * Chapters within each bucket are sorted by chapter number ascending.
  */
-export function parseVolumeMapping(html: string): VolumeMap {
+export function parseVolumeMapping(html: string, url = ""): VolumeMap {
   const $ = cheerio.load(html);
   const items = $(CHAPTER_LIST_SELECTOR);
 
   if (items.length === 0) {
+    // Distinguish DOM drift from genuinely empty pages.
+    if (htmlLooksLikeMangaPage($)) {
+      throw new MangakakalotParseError(
+        CHAPTER_LIST_SELECTOR,
+        url,
+        "no chapter list found on manga detail page; site may have refactored or DMCA'd the chapter list",
+      );
+    }
     return [];
   }
 
