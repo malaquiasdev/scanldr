@@ -4,11 +4,15 @@
 
 import type { ChapterRef, VolumeRef } from "@integrations/_shared/manga.ts";
 import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
-import type { createMangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
-import type { VolumeMap } from "@integrations/mangakakalot/client/types.ts";
+import {
+  MangakakalotParseError,
+} from "@integrations/mangakakalot/client/index.ts";
+import type {
+  VolumeMap,
+  createMangakakalotClient,
+} from "@integrations/mangakakalot/client/index.ts";
 import { downloadBundle } from "@modules/downloader/index.ts";
-import type { ImageRef } from "@modules/downloader/types.ts";
-import type { ChapterInput } from "@modules/downloader/types.ts";
+import type { ChapterInput, ImageRef } from "@modules/downloader/types.ts";
 import { isVolumeFullyDownloaded, recordDownloadedChapters } from "@modules/history/index.ts";
 import type { DownloadRow } from "@modules/history/index.ts";
 import { CliError } from "@plugins/errors/index.ts";
@@ -453,7 +457,28 @@ export async function runFallbackDownload(opts: {
       { event: "download.fallback_volume_map_fetch", context: "download", slug: mkChosen.id },
       "fetching volume mapping from fallback site",
     );
-    const volumeMap = await mkClient.getVolumeMap(mkChosen.id);
+    let volumeMap: VolumeMap;
+    try {
+      volumeMap = await mkClient.getVolumeMap(mkChosen.id);
+    } catch (err) {
+      if (err instanceof MangakakalotParseError) {
+        logger.warn(
+          {
+            event: "mangakakalot.parse_drift",
+            context: "fallback",
+            selector: err.selector,
+            url: err.url,
+            err,
+          },
+          "parser DOM drift detected — fallback site may have changed structure",
+        );
+        throw new CliError(
+          "Volume mapping not available on the fallback site. Use --chapter <range> instead.",
+          2,
+        );
+      }
+      throw err;
+    }
 
     if (args.volume !== undefined && volumeMap.length === 0) {
       logger.warn(

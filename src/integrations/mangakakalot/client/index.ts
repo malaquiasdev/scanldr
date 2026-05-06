@@ -128,7 +128,7 @@ export function createMangakakalotClient(opts: {
   async function getVolumeMap(slug: string): Promise<VolumeMap> {
     const url = `${SITE_ROOT}/manga/${encodeURIComponent(slug)}`;
     const html = await fetchHtml(url);
-    return runParser(url, () => parseVolumeMapping(html));
+    return runParser(url, () => parseVolumeMapping(html, url));
   }
 
   async function getChapterImages(chapterIdOrUrl: string): Promise<ImageRef[]> {
