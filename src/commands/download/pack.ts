@@ -4,27 +4,9 @@ import { padBundleNumber } from "@modules/downloader/helpers.ts";
 import { CliError } from "@plugins/errors/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { unzipSync, zipSync } from "fflate";
+import type { PackVolumeInput, PackVolumeResult, PackedChapter } from "./types.ts";
 
-export interface PackedChapter {
-  /** The chapter number token (e.g. "103", "18.5") */
-  num: string;
-  /** Absolute path to the individual .cbz file */
-  outputPath: string;
-}
-
-export interface PackVolumeInput {
-  slug: string;
-  outDir: string;
-  chapters: PackedChapter[];
-  /** Override the output filename stem (without extension). */
-  customName?: string;
-  logger: Logger;
-}
-
-export interface PackVolumeResult {
-  outputPath: string;
-  byteSize: number;
-}
+export type { PackedChapter, PackVolumeInput, PackVolumeResult };
 
 /** Sort a chapter token numerically (decimal-aware). "none" sorts last. */
 function chapterTokenToNum(token: string): number {
@@ -133,8 +115,14 @@ export async function packVolume(input: PackVolumeInput): Promise<PackVolumeResu
   }
 
   const zipped = zipSync(allEntries);
-  await writeFile(tempPath, zipped, { mode: 0o644 });
-  await rename(tempPath, finalPath);
+  try {
+    await writeFile(tempPath, zipped, { mode: 0o644 });
+    await rename(tempPath, finalPath);
+  } catch (err) {
+    // Clean up the temp file so it doesn't litter disk on partial writes.
+    await unlink(tempPath).catch(() => undefined);
+    throw err;
+  }
 
   const { size } = await stat(finalPath);
 

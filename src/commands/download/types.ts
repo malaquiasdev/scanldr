@@ -28,6 +28,49 @@ export interface ResolveLanguageInput {
   logger: Logger;
 }
 
+// Pack volume types
+
+export interface PackedChapter {
+  /** The chapter number token (e.g. "103", "18.5") */
+  num: string;
+  /** Absolute path to the individual .cbz file */
+  outputPath: string;
+}
+
+export interface PackVolumeInput {
+  slug: string;
+  outDir: string;
+  chapters: PackedChapter[];
+  /** Override the output filename stem (without extension). */
+  customName?: string;
+  logger: Logger;
+}
+
+export interface PackVolumeResult {
+  outputPath: string;
+  byteSize: number;
+}
+
+export interface PackPromptResult {
+  shouldPack: boolean;
+  shouldDelete: boolean;
+}
+
+export interface PackPromptOptions {
+  chapterCount: number;
+  outputName: string;
+  /** true if the target file already exists */
+  fileExists: boolean;
+  nonTty: boolean;
+  /** --pack flag (boolean form — pack with default name, keep individuals) */
+  packFlag: boolean;
+  /** --pack-replace flag (pack + delete individuals) */
+  packReplace: boolean;
+  /** --pack-overwrite flag (overwrite if exists) */
+  packOverwrite: boolean;
+  logger: Logger;
+}
+
 export interface DownloadArgs {
   manga: string;
   /** Set when --volume flag is provided */

@@ -1,5 +1,7 @@
 import { createInterface } from "node:readline";
-import type { Logger } from "@plugins/logger/index.ts";
+import type { PackPromptOptions, PackPromptResult } from "./types.ts";
+
+export type { PackPromptOptions, PackPromptResult };
 
 /**
  * Ask a yes/no question on stderr.
@@ -14,26 +16,6 @@ function promptYesNo(question: string): Promise<boolean> {
       resolve(line.trim().toLowerCase() === "y");
     });
   });
-}
-
-export interface PackPromptResult {
-  shouldPack: boolean;
-  shouldDelete: boolean;
-}
-
-export interface PackPromptOptions {
-  chapterCount: number;
-  outputName: string;
-  /** true if the target file already exists */
-  fileExists: boolean;
-  nonTty: boolean;
-  /** --pack flag (boolean form — pack with default name, keep individuals) */
-  packFlag: boolean;
-  /** --pack-replace flag (pack + delete individuals) */
-  packReplace: boolean;
-  /** --pack-overwrite flag (overwrite if exists) */
-  packOverwrite: boolean;
-  logger: Logger;
 }
 
 /**

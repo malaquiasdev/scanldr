@@ -327,6 +327,38 @@ describe("packVolume — .cbz suffix deduplication", () => {
 });
 
 // ---------------------------------------------------------------------------
+// packVolume — .tmp cleanup on write failure (P2.2)
+// ---------------------------------------------------------------------------
+
+describe("packVolume — .tmp cleanup on write failure", () => {
+  test("write fails (read-only dir) → .tmp file does NOT exist after", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const slug = "dandadan";
+    const slug_dir = join(dir, slug);
+    const ch1 = await makeChapterCbz(slug_dir, slug, "1", 2);
+
+    // Make the output dir read-only so writeFile on .tmp throws
+    const { chmod } = await import("node:fs/promises");
+    await chmod(slug_dir, 0o555);
+
+    const finalPath = join(slug_dir, "dandadan-volume-001.cbz");
+    const tempPath = `${finalPath}.tmp`;
+
+    try {
+      await expect(
+        packVolume({ slug, outDir: dir, chapters: [{ num: "1", outputPath: ch1 }], logger }),
+      ).rejects.toThrow();
+
+      // The .tmp file must NOT be left on disk
+      expect(await Bun.file(tempPath).exists()).toBe(false);
+    } finally {
+      await chmod(slug_dir, 0o755);
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // deleteIndividualFiles — partial unlink failure (P2.2)
 // ---------------------------------------------------------------------------
 
