@@ -1,8 +1,20 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, mock, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeFile, mkdir } from "node:fs/promises";
-import { MAX_COVER_BYTES, fetchCover } from "./cover.ts";
+
+// Guard against module mocks leaking from other test files (e.g. prompt-pack.test.ts
+// mocks "./cover.ts" and Bun may run test files in the same worker process on Linux CI).
+// Restore all mocks before importing the real module under test.
+let fetchCover: (typeof import("./cover.ts"))["fetchCover"];
+let MAX_COVER_BYTES: (typeof import("./cover.ts"))["MAX_COVER_BYTES"];
+
+beforeAll(async () => {
+  mock.restore();
+  const mod = await import("./cover.ts");
+  fetchCover = mod.fetchCover;
+  MAX_COVER_BYTES = mod.MAX_COVER_BYTES;
+});
 
 type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
