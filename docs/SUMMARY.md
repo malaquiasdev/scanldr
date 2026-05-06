@@ -25,6 +25,9 @@ This document is the central index of all technical documentation for **scanldr*
 - [ADR-003: SQLite for Download History](adr/003-sqlite-download-history.md)
 - [ADR-004: Subscriptions Stored in SQLite, Not a Flat-Text File](adr/004-subscriptions-in-sqlite.md)
 
+## ⚙️ CI/CD
+- [Quality & Security Stack](ci-cd.md)
+
 ## 🛠 Technical Standards
 - **Runtime:** Bun
 - **Language:** TypeScript

@@ -284,7 +284,11 @@ Flags:
 
 All log lines follow the pino convention: structured fields first, human message last — `logger.warn({ event, context, ...fields }, msg)`.
 
-## 10. Future Considerations
+## 10. CI/CD & Quality
+
+The project adopts a layered quality and security stack. See [docs/ci-cd.md](ci-cd.md) for the full stack rationale, local execution commands, and manual prerequisite steps.
+
+## 11. Future Considerations
 
 - **REST API mode:** expose core commands as HTTP endpoints for integration with other tools or UIs
 - **TUI:** interactive terminal interface for browsing and selecting volumes
