@@ -2,6 +2,10 @@
   <img src="assets/banner.svg" alt="scanldr" width="800"/>
 </p>
 
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=malaquiasdev_scanldr&metric=alert_status)](https://sonarcloud.io/dashboard?id=malaquiasdev_scanldr)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=malaquiasdev_scanldr&metric=coverage)](https://sonarcloud.io/dashboard?id=malaquiasdev_scanldr)
+[![CodeQL](https://github.com/malaquiasdev/scanldr/actions/workflows/codeql.yml/badge.svg)](https://github.com/malaquiasdev/scanldr/actions/workflows/codeql.yml)
+
 A command-line tool to download manga from MangaDex and Mangakakalot, packaged as CBZ archives.
 
 ## Features
