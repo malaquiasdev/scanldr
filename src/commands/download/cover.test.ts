@@ -18,8 +18,9 @@ function makeResponse(opts: {
   contentType?: string;
   body?: Uint8Array | ArrayBuffer;
 }): Response {
-  const headers = new Headers();
-  if (opts.contentType) headers.set("content-type", opts.contentType);
+  // Use plain-object headers to avoid Bun version-specific Headers constructor edge cases.
+  const headers: Record<string, string> = {};
+  if (opts.contentType) headers["content-type"] = opts.contentType;
   return new Response(opts.body ?? new Uint8Array([0xff, 0xd8]), {
     status: opts.status,
     headers,
