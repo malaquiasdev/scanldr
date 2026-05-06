@@ -1,12 +1,17 @@
 import { afterAll, describe, expect, mock, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ChapterRef, VolumeRef } from "@integrations/_shared/manga.ts";
 import { MissingAuthError } from "@integrations/fallback-http/index.ts";
 import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
 import type { MangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
 import { createMangakakalotClient as mkClient } from "@integrations/mangakakalot/client/index.ts";
+import type { ImageRef } from "@modules/downloader/types.ts";
 import { openDb, runMigrations } from "@plugins/db/index.ts";
 import { CliError } from "@plugins/errors/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
+import { unzipSync } from "fflate";
 import type { FallbackSiteOption, MangaDexResolveResult } from "./fallback-types.ts";
 import {
   buildFallbackBundles,
@@ -815,5 +820,192 @@ describe("makeMangakakalotFetcher sends Referer header", () => {
     });
 
     expect(capturedHeaders?.referer).toBe("https://www.mangakakalot.gg/");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runFallbackDownload — pack flow wired (P1.1)
+// ---------------------------------------------------------------------------
+
+/** Minimal valid PNG bytes for image mock responses */
+const PNG_BYTES = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+  0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+  0x00, 0x00, 0x02, 0x00, 0x01, 0xe2, 0x21, 0xbc, 0x33, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+  0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+
+function makeFallbackPackHttp(): FallbackHttpClient {
+  return {
+    get: async (_url: string) =>
+      new Response(PNG_BYTES, { status: 200, headers: { "content-type": "image/png" } }),
+  };
+}
+
+function makeFallbackPackMkClient(
+  chapters: Array<{ id: string; num: string }>,
+): MangakakalotClient {
+  return {
+    searchManga: async () => [
+      { id: "dandadan-slug", title: "Dandadan", originalLanguage: "ja", year: 2021 },
+    ],
+    getChapterList: async () =>
+      chapters.map((c) => makeChapterRef({ id: c.id, chapter: c.num, volume: null })),
+    getChapterImages: async (_id: string): Promise<ImageRef[]> => [
+      { url: "https://cdn.mk.gg/img/1.png", page: 1 },
+    ],
+  };
+}
+
+describe("runFallbackDownload calls pack flow when --pack is set and N>1", () => {
+  test("happy path: 3 chapters → packed volume cbz produced", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "scanldr-fallback-pack-"));
+    const db = openDb(":memory:");
+    runMigrations(db);
+
+    const chapters = [
+      { id: "mk-ch-1", num: "1" },
+      { id: "mk-ch-2", num: "2" },
+      { id: "mk-ch-3", num: "3" },
+    ];
+
+    await runFallbackDownload({
+      args: baseArgs({
+        volume: undefined,
+        chapter: "1-3",
+        outDir: tmpDir,
+        noTrack: true,
+        pack: true,
+        nonTty: true,
+        packReplace: false,
+        packOverwrite: false,
+      }),
+      ctx: {
+        logger: noopLogger,
+        config: {
+          preferred_languages: ["en"],
+          download_quality: "data",
+          default_format: "cbz",
+          default_out: tmpDir,
+          image_concurrency: 1,
+          chapter_delay_ms: 0,
+          db_path: ":memory:",
+        },
+        db,
+      },
+      mangadexResolve: null,
+      createFallbackHttp: async () => makeFallbackPackHttp(),
+      createMangakakalotClient: () => makeFallbackPackMkClient(chapters),
+      // biome-ignore lint/style/noNonNullAssertion: test stub
+      promptSite: async (sites) => sites[0]!,
+    });
+
+    // Individual chapter files should exist
+    const slug = "dandadan";
+    for (const num of ["001", "002", "003"]) {
+      const p = join(tmpDir, slug, `${slug}-chapter-${num}.cbz`);
+      expect(await Bun.file(p).exists()).toBe(true);
+    }
+
+    // Packed volume cbz should also exist
+    const files = await import("node:fs/promises").then((m) => m.readdir(join(tmpDir, slug)));
+    const packedFile = files.find((f) => f.startsWith(`${slug}-volume-`) && f.endsWith(".cbz"));
+    expect(packedFile).toBeDefined();
+
+    // Verify it's a valid zip with chapter subdirs
+    const packedPath = join(tmpDir, slug, packedFile as string);
+    const raw = new Uint8Array(await Bun.file(packedPath).arrayBuffer());
+    const entries = unzipSync(raw);
+    const names = Object.keys(entries);
+    expect(names.some((n) => n.startsWith("chapter-001/"))).toBe(true);
+    expect(names.some((n) => n.startsWith("chapter-002/"))).toBe(true);
+    expect(names.some((n) => n.startsWith("chapter-003/"))).toBe(true);
+
+    db.close();
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test("partial failure: 1 of 3 chapters fails → pack skipped, warn logged", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "scanldr-fallback-pack-partial-"));
+    const db = openDb(":memory:");
+    runMigrations(db);
+
+    let imageCallCount = 0;
+    const partialMkClient: MangakakalotClient = {
+      searchManga: async () => [
+        { id: "dandadan-slug", title: "Dandadan", originalLanguage: "ja", year: 2021 },
+      ],
+      getChapterList: async () => [
+        makeChapterRef({ id: "mk-ch-1", chapter: "1", volume: null }),
+        makeChapterRef({ id: "mk-ch-2", chapter: "2", volume: null }),
+        makeChapterRef({ id: "mk-ch-3", chapter: "3", volume: null }),
+      ],
+      getChapterImages: async (_id: string): Promise<ImageRef[]> => {
+        imageCallCount++;
+        // Chapter 2 (second call) fails
+        if (imageCallCount === 2) {
+          throw new Error("simulated image fetch failure for chapter 2");
+        }
+        return [{ url: "https://cdn.mk.gg/img/1.png", page: 1 }];
+      },
+    };
+
+    const warnEvents: string[] = [];
+    const spyLogger: Logger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          warnEvents.push((obj as Record<string, unknown>).event as string);
+        }
+      },
+      error: () => {},
+    };
+
+    // Should resolve (not throw) even with partial failure
+    await runFallbackDownload({
+      args: baseArgs({
+        volume: undefined,
+        chapter: "1-3",
+        outDir: tmpDir,
+        noTrack: true,
+        pack: true,
+        nonTty: true,
+        packReplace: false,
+        packOverwrite: false,
+      }),
+      ctx: {
+        logger: spyLogger,
+        config: {
+          preferred_languages: ["en"],
+          download_quality: "data",
+          default_format: "cbz",
+          default_out: tmpDir,
+          image_concurrency: 1,
+          chapter_delay_ms: 0,
+          db_path: ":memory:",
+        },
+        db,
+      },
+      mangadexResolve: null,
+      createFallbackHttp: async () => makeFallbackPackHttp(),
+      createMangakakalotClient: () => partialMkClient,
+      // biome-ignore lint/style/noNonNullAssertion: test stub
+      promptSite: async (sites) => sites[0]!,
+    });
+
+    // pack.skipped warn must have fired
+    expect(warnEvents).toContain("pack.skipped");
+
+    // No packed volume cbz
+    const slug = "dandadan";
+    const files = await import("node:fs/promises").then((m) =>
+      m.readdir(join(tmpDir, slug)).catch(() => [] as string[]),
+    );
+    const packedFile = files.find((f) => f.startsWith(`${slug}-volume-`) && f.endsWith(".cbz"));
+    expect(packedFile).toBeUndefined();
+
+    db.close();
+    await rm(tmpDir, { recursive: true, force: true });
   });
 });

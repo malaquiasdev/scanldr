@@ -1,6 +1,7 @@
 import { rename, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { padBundleNumber } from "@modules/downloader/helpers.ts";
+import { CliError } from "@plugins/errors/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { unzipSync, zipSync } from "fflate";
 
@@ -87,6 +88,20 @@ async function readChapterEntries(
 export async function packVolume(input: PackVolumeInput): Promise<PackVolumeResult> {
   const { slug, outDir, chapters, customName, logger } = input;
 
+  if (customName !== undefined) {
+    // Reject names with path separators or '..' to prevent path traversal
+    if (
+      customName.includes("/") ||
+      customName.includes("\\") ||
+      customName.split(/[\\/]/).some((s) => s === "..")
+    ) {
+      throw new CliError(
+        `--pack name cannot contain path separators or '..' (got: ${customName})`,
+        2,
+      );
+    }
+  }
+
   const sorted = [...chapters].sort((a, b) => chapterTokenToNum(a.num) - chapterTokenToNum(b.num));
 
   const stem = customName ?? defaultVolumeName(slug, sorted);
@@ -140,11 +155,31 @@ export async function deleteIndividualFiles(
     { event: "pack.delete_individuals", context: "pack", count: chapters.length },
     "deleting individual chapter files",
   );
+  let deleted = 0;
+  let failed = 0;
   for (const ch of chapters) {
-    await unlink(ch.outputPath);
-    logger.info(
-      { event: "pack.deleted", context: "pack", path: ch.outputPath },
-      `deleted ${ch.outputPath}`,
-    );
+    try {
+      await unlink(ch.outputPath);
+      deleted++;
+      logger.info(
+        { event: "pack.deleted", context: "pack", path: ch.outputPath },
+        `deleted ${ch.outputPath}`,
+      );
+    } catch (err) {
+      failed++;
+      logger.warn(
+        {
+          event: "pack.delete_failed",
+          context: "pack",
+          path: ch.outputPath,
+          error: err instanceof Error ? err.message : String(err),
+        },
+        `failed to delete ${ch.outputPath}`,
+      );
+    }
   }
+  logger.info(
+    { event: "pack.delete_summary", context: "pack", deleted, failed },
+    `deleted ${deleted} file(s), failed ${failed}`,
+  );
 }

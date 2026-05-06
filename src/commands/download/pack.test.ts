@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { CliError } from "@plugins/errors/index.ts";
 import { createLogger } from "@plugins/logger/index.ts";
 import { zipSync } from "fflate";
 import { defaultVolumeName, deleteIndividualFiles, packVolume } from "./pack.ts";
@@ -245,5 +246,130 @@ describe("runPackPrompts", () => {
       packOverwrite: true,
     });
     expect(result.shouldPack).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// packVolume — path traversal rejection (P2.1)
+// ---------------------------------------------------------------------------
+
+describe("packVolume — customName path traversal rejection", () => {
+  async function setupMinimal() {
+    const dir = join(TMP, String(Math.random()));
+    const slug = "test";
+    const slug_dir = join(dir, slug);
+    const ch1 = await makeChapterCbz(slug_dir, slug, "1", 1);
+    return { dir, slug, chapters: [{ num: "1", outputPath: ch1 }] };
+  }
+
+  test('--pack "../oops" is rejected with CliError', async () => {
+    const { dir, slug, chapters } = await setupMinimal();
+    await expect(
+      packVolume({ slug, outDir: dir, chapters, customName: "../oops", logger }),
+    ).rejects.toBeInstanceOf(CliError);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test('--pack "foo/bar" is rejected with CliError', async () => {
+    const { dir, slug, chapters } = await setupMinimal();
+    await expect(
+      packVolume({ slug, outDir: dir, chapters, customName: "foo/bar", logger }),
+    ).rejects.toBeInstanceOf(CliError);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test('--pack "..\\\\evil" is rejected with CliError', async () => {
+    const { dir, slug, chapters } = await setupMinimal();
+    await expect(
+      packVolume({ slug, outDir: dir, chapters, customName: "..\\evil", logger }),
+    ).rejects.toBeInstanceOf(CliError);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test('--pack "valid-name_1.0 extra" is accepted', async () => {
+    const { dir, slug, chapters } = await setupMinimal();
+    const result = await packVolume({
+      slug,
+      outDir: dir,
+      chapters,
+      customName: "valid-name_1.0 extra",
+      logger,
+    });
+    expect(result.outputPath).toMatch(/valid-name_1\.0 extra\.cbz$/);
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// packVolume — custom name already ending in .cbz does not double-append (P2.3)
+// ---------------------------------------------------------------------------
+
+describe("packVolume — .cbz suffix deduplication", () => {
+  test("--pack <name>.cbz does not double-append .cbz", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const slug = "dandadan";
+    const slug_dir = join(dir, slug);
+    const ch1 = await makeChapterCbz(slug_dir, slug, "1", 2);
+
+    const result = await packVolume({
+      slug,
+      outDir: dir,
+      chapters: [{ num: "1", outputPath: ch1 }],
+      customName: "my-volume.cbz",
+      logger,
+    });
+
+    expect(result.outputPath).toMatch(/my-volume\.cbz$/);
+    expect(result.outputPath).not.toMatch(/my-volume\.cbz\.cbz$/);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deleteIndividualFiles — partial unlink failure (P2.2)
+// ---------------------------------------------------------------------------
+
+describe("deleteIndividualFiles — partial unlink failure", () => {
+  test("unlink failure on middle file is logged as warn and does not throw", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const slug = "dandadan";
+    const slug_dir = join(dir, slug);
+    await mkdir(slug_dir, { recursive: true });
+
+    // Create 3 real files
+    const paths = await Promise.all([
+      makeChapterCbz(slug_dir, slug, "1", 1),
+      makeChapterCbz(slug_dir, slug, "2", 1),
+      makeChapterCbz(slug_dir, slug, "3", 1),
+    ]);
+
+    const chapters = paths.map((p, i) => ({ num: String(i + 1), outputPath: p }));
+
+    // Delete the middle file first so unlink will fail on it
+    await rm(paths[1] as string, { force: true });
+
+    const warnEvents: string[] = [];
+    const spyLogger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          warnEvents.push((obj as Record<string, unknown>).event as string);
+        }
+      },
+      error: () => {},
+    };
+
+    // Should not throw even though middle file is missing
+    await expect(deleteIndividualFiles(chapters, spyLogger)).resolves.toBeUndefined();
+
+    // Outer files should be gone
+    expect(await Bun.file(paths[0] as string).exists()).toBe(false);
+    expect(await Bun.file(paths[2] as string).exists()).toBe(false);
+
+    // Warn fired for the missing middle file
+    expect(warnEvents).toContain("pack.delete_failed");
+
+    await rm(dir, { recursive: true, force: true });
   });
 });
