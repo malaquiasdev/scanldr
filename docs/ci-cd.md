@@ -45,4 +45,8 @@ gitleaks protect --staged --verbose
 
 Install gitleaks: `brew install gitleaks` (macOS) or see https://github.com/gitleaks/gitleaks#installing.
 
-> Note: Static analysis and semantic vulnerability scanning workflows were temporarily removed pending account setup. Re-enable by reverting commit 0adcd7b after the `SONAR_TOKEN` secret is configured and Code scanning is enabled in repo settings (see PR #80 for the original implementation).
+> Note: Static analysis and semantic vulnerability scanning workflows were temporarily removed pending account setup (PR #94). To re-enable, revert the squash-merge commit of PR #94 on main, then complete the manual setup:
+> 1. Create a SonarCloud account and link the repository.
+> 2. Save the `SONAR_TOKEN` secret in repo settings → Secrets and variables → Actions.
+> 3. Enable Code scanning in repo settings → Security → Code scanning.
+> See PR #80 for the original implementation reference.
