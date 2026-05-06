@@ -41,6 +41,15 @@ export interface HistoryFilter {
   language?: string | undefined;
 }
 
+/** Query for listing/clearing with LIKE title matching and limit support */
+export interface HistoryQuery {
+  /** LIKE pattern applied to manga_title (case-insensitive) */
+  mangaTitle?: string | undefined;
+  source?: string | undefined;
+  /** 0 = unlimited */
+  limit?: number | undefined;
+}
+
 export type RecordResult =
   | { ok: true; inserted: number }
   | { ok: false; inserted: number; rejected: DownloadRow[] };

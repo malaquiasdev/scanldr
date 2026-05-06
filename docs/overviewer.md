@@ -91,7 +91,8 @@ scanldr/
 | `scanldr pause <manga>` / `scanldr resume <manga>` | Toggle `paused` flag (paused subs are skipped by `sync`) |
 | `scanldr import <file>` | Bootstrap subscriptions from a flat-text list (e.g. legacy `mangas.txt`) |
 | `scanldr export [--out <file>]` | Dump active subscriptions as plain text |
-| `scanldr history [--manga <m>]` | Display download history (filtered by manga if given) |
+| `scanldr history [--manga <m>] [--source <s>] [--limit <n>]` | List download history sorted by date DESC; default limit 50, `--limit 0` = unlimited |
+| `scanldr history clear [--manga <m>] [--source <s>] [--yes]` | Delete history records; interactive confirmation by default; `--yes` skips prompt |
 
 > `--volume` and `--chapter` are mutually exclusive. Passing both is a CLI error.
 
@@ -187,7 +188,10 @@ Flags that apply across commands. CLI flags always override `scanldr.json`.
 | `--strict` | `sync` | `false` | Exit non-zero if any subscription was skipped or errored (cron-friendly alerting) |
 | `--source <site>` | `watch`, `unwatch` | `mangadex` | Subscription source |
 | `--paused` | `watchlist` | omits paused | Include paused subscriptions in the listing |
-| `--manga <m>` | `history` | all | Filter history by manga title or id |
+| `--manga <m>` | `history`, `history clear` | all | Filter history by manga title (LIKE `%m%` case-insensitive) |
+| `--source <s>` | `history`, `history clear` | all | Filter history by source (`mangadex` / `mangakakalot`) |
+| `--limit <n>` | `history` | `50` | Max rows to display; `0` = unlimited |
+| `--yes` | `history clear` | `false` | Skip interactive confirmation (for scripts / CI) |
 | `--out <file>` | `export` | stdout | File to write the watchlist export to |
 
 > Mutual exclusion: `--volume` and `--chapter` cannot be combined on `download` / `list`.

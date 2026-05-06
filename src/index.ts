@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
 import { runDownload } from "@commands/download/index.ts";
+import { runHistoryClear, runHistoryList } from "@commands/history/index.ts";
 import { runList } from "@commands/list/index.ts";
 import { CloudflareError, MissingAuthError } from "@integrations/fallback-http/index.ts";
 import { createMangaDexClient } from "@integrations/mangadex/client/index.ts";
@@ -33,7 +34,8 @@ Commands:
   resume <manga>                Re-enable a paused subscription
   import <file>                 Bootstrap subscriptions from a flat-text list
   export [--out <file>]         Dump active subscriptions as plain text
-  history [--manga <m>]         Display download history
+  history [--manga <m>] [--source <s>] [--limit <n>]  Display download history (default limit 50)
+  history clear [--manga <m>] [--source <s>] [--yes]  Delete history records
   help                          Show this help
   version                       Show version
 
@@ -202,8 +204,50 @@ const handlers: Record<string, Handler> = {
   export: () => {
     throw new NotImplementedError("export");
   },
-  history: () => {
-    throw new NotImplementedError("history");
+  history: async (rest, ctx) => {
+    // Sub-command dispatch: `history clear [...]` vs `history [list flags]`
+    const sub = rest[0];
+    if (sub === "clear") {
+      const { values } = parseArgs({
+        args: rest.slice(1),
+        allowPositionals: false,
+        strict: true,
+        options: {
+          manga: { type: "string" },
+          source: { type: "string" },
+          yes: { type: "boolean" },
+        },
+      });
+      await runHistoryClear(
+        {
+          manga: typeof values.manga === "string" ? values.manga : undefined,
+          source: typeof values.source === "string" ? values.source : undefined,
+          yes: values.yes === true,
+        },
+        ctx.db,
+      );
+    } else {
+      const { values } = parseArgs({
+        args: rest,
+        allowPositionals: false,
+        strict: true,
+        options: {
+          manga: { type: "string" },
+          source: { type: "string" },
+          limit: { type: "string" },
+        },
+      });
+      const rawLimit = values.limit;
+      const limit = typeof rawLimit === "string" && /^\d+$/.test(rawLimit) ? Number(rawLimit) : 50;
+      await runHistoryList(
+        {
+          manga: typeof values.manga === "string" ? values.manga : undefined,
+          source: typeof values.source === "string" ? values.source : undefined,
+          limit,
+        },
+        ctx.db,
+      );
+    }
   },
 };
 

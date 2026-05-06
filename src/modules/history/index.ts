@@ -5,13 +5,17 @@ export type {
   DownloadRow,
   GetChapterIdsFilter,
   HistoryFilter,
+  HistoryQuery,
   IsVolumeFullyDownloadedFilter,
   RecordResult,
 } from "./types.ts";
 
 export {
+  clearHistory,
+  countHistory,
   getDownloadedChapterIds,
   isVolumeFullyDownloaded,
   listHistory,
+  listHistoryPaged,
   recordDownloadedChapters,
 } from "./service.ts";
