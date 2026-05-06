@@ -127,6 +127,16 @@ export function queryHistory(db: Db, filter?: HistoryFilter): DownloadRecord[] {
   return raw.map(toRecord);
 }
 
+/**
+ * Escape SQLite LIKE special characters so user input is treated as a literal
+ * substring and not as a pattern. We use backslash as the escape character and
+ * pair it with `ESCAPE '\\'` in every LIKE clause below.
+ */
+function escapeLikePattern(input: string): string {
+  // Escape backslash first to avoid double-escaping, then % and _.
+  return input.replace(/[\\%_]/g, "\\$&");
+}
+
 /** List downloads with LIKE title matching, source filter, and a row limit. */
 export function queryHistoryList(db: Db, query: HistoryQuery): DownloadRecord[] {
   const conditions: string[] = [];
@@ -134,8 +144,8 @@ export function queryHistoryList(db: Db, query: HistoryQuery): DownloadRecord[] 
   const params: (string | number)[] = [];
 
   if (query.mangaTitle !== undefined) {
-    conditions.push("manga_title LIKE ? COLLATE NOCASE");
-    params.push(`%${query.mangaTitle}%`);
+    conditions.push("manga_title LIKE ? ESCAPE '\\' COLLATE NOCASE");
+    params.push(`%${escapeLikePattern(query.mangaTitle)}%`);
   }
   if (query.source !== undefined) {
     conditions.push("source = ?");
@@ -168,8 +178,8 @@ export function countHistoryMatches(db: Db, query: Omit<HistoryQuery, "limit">):
   const params: (string | number)[] = [];
 
   if (query.mangaTitle !== undefined) {
-    conditions.push("manga_title LIKE ? COLLATE NOCASE");
-    params.push(`%${query.mangaTitle}%`);
+    conditions.push("manga_title LIKE ? ESCAPE '\\' COLLATE NOCASE");
+    params.push(`%${escapeLikePattern(query.mangaTitle)}%`);
   }
   if (query.source !== undefined) {
     conditions.push("source = ?");
@@ -190,8 +200,8 @@ export function deleteHistory(db: Db, query: Omit<HistoryQuery, "limit">): numbe
   const params: (string | number)[] = [];
 
   if (query.mangaTitle !== undefined) {
-    conditions.push("manga_title LIKE ? COLLATE NOCASE");
-    params.push(`%${query.mangaTitle}%`);
+    conditions.push("manga_title LIKE ? ESCAPE '\\' COLLATE NOCASE");
+    params.push(`%${escapeLikePattern(query.mangaTitle)}%`);
   }
   if (query.source !== undefined) {
     conditions.push("source = ?");

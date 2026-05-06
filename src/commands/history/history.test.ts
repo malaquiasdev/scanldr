@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { EventEmitter } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -150,6 +151,34 @@ describe("runHistoryList", () => {
     expect(lines[0]).toContain("mangadex");
   });
 
+  test("--manga with % special char escapes wildcard", async () => {
+    seed([
+      { chapterId: "ch-001", mangaTitle: "100% Pure Love", downloadedAt: 1_000 },
+      { chapterId: "ch-002", mangaTitle: "100 Ghosts", downloadedAt: 2_000 },
+    ]);
+
+    const { out } = await capture(() =>
+      runHistoryList({ manga: "100%", source: undefined, limit: 50 }, db),
+    );
+    const lines = out.trim().split("\n");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("100% Pure Love");
+  });
+
+  test("--manga with _ special char escapes wildcard", async () => {
+    seed([
+      { chapterId: "ch-001", mangaTitle: "one_piece", downloadedAt: 1_000 },
+      { chapterId: "ch-002", mangaTitle: "oneXpiece", downloadedAt: 2_000 },
+    ]);
+
+    const { out } = await capture(() =>
+      runHistoryList({ manga: "one_piece", source: undefined, limit: 50 }, db),
+    );
+    const lines = out.trim().split("\n");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("one_piece");
+  });
+
   test("--manga and --source combined (AND)", async () => {
     seed([
       { chapterId: "ch-001", mangaTitle: "Dandadan", source: "mangakakalot", downloadedAt: 1_000 },
@@ -236,6 +265,111 @@ describe("runHistoryClear", () => {
       runHistoryList({ manga: undefined, source: undefined, limit: 50 }, db),
     );
     expect(err).toBe("(no entries)\n");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Interactive prompt tests — mock readline so tests don't block on stdin
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Returns a cleanup fn that restores readline.createInterface to the real
+   * implementation. Always call it in a finally block.
+   */
+  function mockReadline(answer: string): () => void {
+    const fakeRl = new EventEmitter() as EventEmitter & { close(): void };
+    fakeRl.close = () => {};
+
+    mock.module("node:readline", () => ({
+      createInterface: () => {
+        // Emit "line" asynchronously so the Promise chain resolves naturally.
+        setImmediate(() => fakeRl.emit("line", answer));
+        return fakeRl;
+      },
+    }));
+
+    return () => {
+      mock.restore();
+    };
+  }
+
+  test("reinforced DELETE prompt confirms when input is exactly 'DELETE'", async () => {
+    seed([{ chapterId: "ch-001", downloadedAt: 1_000 }]);
+    const origIsTTY = process.stdin.isTTY;
+    // biome-ignore lint/suspicious/noExplicitAny: patching isTTY for test
+    (process.stdin as any).isTTY = true;
+    const restoreRl = mockReadline("DELETE");
+    try {
+      const { out } = await capture(() =>
+        runHistoryClear({ manga: undefined, source: undefined, yes: false }, db),
+      );
+      expect(out).toContain("Deleted 1 record");
+    } finally {
+      restoreRl();
+      // biome-ignore lint/suspicious/noExplicitAny: restoring isTTY
+      (process.stdin as any).isTTY = origIsTTY;
+    }
+  });
+
+  test.each([["delete"], ["D"], ["yes"], [""]])(
+    "reinforced DELETE prompt aborts on input %p",
+    async (answer) => {
+      seed([{ chapterId: "ch-001", downloadedAt: 1_000 }]);
+      const origIsTTY = process.stdin.isTTY;
+      // biome-ignore lint/suspicious/noExplicitAny: patching isTTY for test
+      (process.stdin as any).isTTY = true;
+      const restoreRl = mockReadline(answer);
+      try {
+        const { out, err } = await capture(() =>
+          runHistoryClear({ manga: undefined, source: undefined, yes: false }, db),
+        );
+        expect(out).toBe("");
+        expect(err).toContain("Aborted");
+      } finally {
+        restoreRl();
+        // biome-ignore lint/suspicious/noExplicitAny: restoring isTTY
+        (process.stdin as any).isTTY = origIsTTY;
+      }
+    },
+  );
+
+  test("filtered confirm prompt accepts 'y' and deletes", async () => {
+    seed([
+      { chapterId: "ch-001", mangaTitle: "Dandadan", downloadedAt: 1_000 },
+      { chapterId: "ch-002", mangaTitle: "One Piece", downloadedAt: 2_000 },
+    ]);
+    const origIsTTY = process.stdin.isTTY;
+    // biome-ignore lint/suspicious/noExplicitAny: patching isTTY for test
+    (process.stdin as any).isTTY = true;
+    const restoreRl = mockReadline("y");
+    try {
+      const { out } = await capture(() =>
+        runHistoryClear({ manga: "Dandadan", source: undefined, yes: false }, db),
+      );
+      expect(out).toContain("Deleted 1 record");
+    } finally {
+      restoreRl();
+      // biome-ignore lint/suspicious/noExplicitAny: restoring isTTY
+      (process.stdin as any).isTTY = origIsTTY;
+    }
+  });
+
+  test("filtered confirm prompt aborts on 'n'", async () => {
+    seed([{ chapterId: "ch-001", mangaTitle: "Dandadan", downloadedAt: 1_000 }]);
+    const origIsTTY = process.stdin.isTTY;
+    // biome-ignore lint/suspicious/noExplicitAny: patching isTTY for test
+    (process.stdin as any).isTTY = true;
+    const restoreRl = mockReadline("n");
+    try {
+      const { out, err } = await capture(() =>
+        runHistoryClear({ manga: "Dandadan", source: undefined, yes: false }, db),
+      );
+      expect(out).toBe("");
+      expect(err).toContain("Aborted");
+    } finally {
+      restoreRl();
+      // biome-ignore lint/suspicious/noExplicitAny: restoring isTTY
+      (process.stdin as any).isTTY = origIsTTY;
+    }
   });
 
   test("non-TTY without --yes throws CliError with helpful message", async () => {
