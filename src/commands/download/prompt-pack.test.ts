@@ -80,8 +80,11 @@ describe("runPackPrompts — prompt text written to stderr before readline", () 
           } else if (callCount === 2) {
             // Second call: "Volume number?" → blank
             cb("");
+          } else if (callCount === 3) {
+            // Third call: "Cover URL?" → blank (skip cover)
+            cb("");
           } else {
-            // Third call: "Delete?" → capture then answer
+            // Fourth call: "Delete?" → capture then answer
             stderrWhenDeletePrompted = [...stderrOutput];
             cb("n");
           }
@@ -110,6 +113,9 @@ describe("runPackPrompts — prompt text written to stderr before readline", () 
           } else if (callCount === 2) {
             // "Volume number?" → capture stderr first then answer
             stderrWhenVolumePrompted = [...stderrOutput];
+            cb("");
+          } else if (callCount === 3) {
+            // "Cover URL?" → blank
             cb("");
           } else {
             cb("n");
@@ -146,7 +152,8 @@ describe("runPackPrompts — volume-number prompt", () => {
           else if (callCount === 2) {
             volumePromptShown = true;
             cb("");                             // Volume number (blank)
-          } else cb("n");                       // Delete?
+          } else if (callCount === 3) cb("");   // Cover URL? (blank)
+          else cb("n");                         // Delete?
         },
         close: () => {},
       }),
@@ -167,7 +174,8 @@ describe("runPackPrompts — volume-number prompt", () => {
         once: (_event: string, cb: (line: string) => void) => {
           callCount++;
           if (callCount === 1) cb("y");
-          else if (callCount === 2) cb("");     // blank
+          else if (callCount === 2) cb("");     // volume number blank
+          else if (callCount === 3) cb("");     // cover URL blank
           else cb("n");
         },
         close: () => {},
@@ -189,6 +197,7 @@ describe("runPackPrompts — volume-number prompt", () => {
           callCount++;
           if (callCount === 1) cb("y");
           else if (callCount === 2) cb("13");  // volume number
+          else if (callCount === 3) cb("");    // cover URL blank
           else cb("n");
         },
         close: () => {},
@@ -210,6 +219,7 @@ describe("runPackPrompts — volume-number prompt", () => {
           callCount++;
           if (callCount === 1) cb("y");
           else if (callCount === 2) cb("13-final special_1.0");
+          else if (callCount === 3) cb("");    // cover URL blank
           else cb("n");
         },
         close: () => {},
@@ -234,6 +244,7 @@ describe("runPackPrompts — volume-number prompt", () => {
           if (callCount === 1) cb("y");
           else if (callCount === 2) cb("../../evil");  // invalid
           else if (callCount === 3) cb("13");          // valid on retry
+          else if (callCount === 4) cb("");            // cover URL blank
           else cb("n");
         },
         close: () => {},
@@ -381,7 +392,8 @@ describe("runPackPrompts — overwrite check against effective (post-prompt) fil
           callCount++;
           if (callCount === 1) cb("y");   // Pack?
           else if (callCount === 2) cb("13"); // Volume number → collides
-          else if (callCount === 3) {
+          else if (callCount === 3) cb(""); // Cover URL? → blank
+          else if (callCount === 4) {
             overwritePromptShown = true;
             cb("y"); // Overwrite?
           } else cb("n"); // Delete?
@@ -414,7 +426,8 @@ describe("runPackPrompts — overwrite check against effective (post-prompt) fil
           callCount++;
           if (callCount === 1) cb("y");   // Pack?
           else if (callCount === 2) cb("13"); // Volume number
-          else if (callCount === 3) {
+          else if (callCount === 3) cb(""); // Cover URL? → blank
+          else if (callCount === 4) {
             // Should be Delete? not Overwrite?
             overwritePromptShown = stderrOutput.join("").includes("Overwrite");
             cb("n"); // Delete?
@@ -433,6 +446,198 @@ describe("runPackPrompts — overwrite check against effective (post-prompt) fil
     expect(overwritePromptShown).toBe(false);
     expect(result.shouldPack).toBe(true);
     expect(result.volumeName).toBe("13");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// --cover-url flag path (non-interactive, non-TTY)
+// ---------------------------------------------------------------------------
+
+describe("runPackPrompts — --cover-url flag path", () => {
+  afterEach(() => {
+    restoreStderr();
+    mock.restore();
+  });
+
+  test("--cover-url with valid URL fetches cover and includes in result", async () => {
+    captureStderr();
+    const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+
+    mock.module("./cover.ts", () => ({
+      fetchCover: async (_url: string) => ({ bytes: JPEG_BYTES, ext: ".jpg" }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      nonTty: true,
+      packFlag: true,
+      coverUrl: "https://example.com/cover.jpg",
+    });
+
+    expect(result.cover).toBeDefined();
+    expect(result.cover?.ext).toBe(".jpg");
+    expect(result.cover?.bytes).toEqual(JPEG_BYTES);
+  });
+
+  test("--cover-url with invalid scheme fails fast (no re-prompt)", async () => {
+    captureStderr();
+
+    mock.module("./cover.ts", () => ({
+      fetchCover: async (_url: string) => {
+        throw new Error("Only http(s) URLs allowed");
+      },
+    }));
+
+    // Track if any readline prompt fires — it must not
+    let promptFired = false;
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, _cb: (line: string) => void) => {
+          promptFired = true;
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    // Flag path warns and continues without cover — does NOT re-prompt
+    const result = await runPackPrompts({
+      ...baseOpts,
+      nonTty: true,
+      packFlag: true,
+      coverUrl: "file:///etc/passwd",
+    });
+
+    expect(promptFired).toBe(false);
+    expect(result.cover).toBeUndefined();
+  });
+
+  test("--cover-url with HTTP 404 fails fast (no re-prompt)", async () => {
+    captureStderr();
+
+    mock.module("./cover.ts", () => ({
+      fetchCover: async (_url: string) => {
+        throw new Error("Cover fetch failed: HTTP 404");
+      },
+    }));
+
+    let promptFired = false;
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, _cb: (line: string) => void) => {
+          promptFired = true;
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      nonTty: true,
+      packFlag: true,
+      coverUrl: "https://example.com/missing.jpg",
+    });
+
+    expect(promptFired).toBe(false);
+    expect(result.cover).toBeUndefined();
+  });
+
+  test("--cover-url empty string skips cover (matches empty prompt behavior)", async () => {
+    captureStderr();
+    let fetchCalled = false;
+
+    mock.module("./cover.ts", () => ({
+      fetchCover: async (_url: string) => {
+        fetchCalled = true;
+        return { bytes: new Uint8Array([0xff, 0xd8]), ext: ".jpg" };
+      },
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      nonTty: true,
+      packFlag: true,
+      coverUrl: "",
+    });
+
+    expect(fetchCalled).toBe(false);
+    expect(result.cover).toBeUndefined();
+  });
+
+  test("--cover-url empty string skips cover in TTY mode (no prompt fired)", async () => {
+    captureStderr();
+    let fetchCalled = false;
+    let coverPromptCalled = false;
+
+    mock.module("./cover.ts", () => ({
+      fetchCover: async (_url: string) => {
+        fetchCalled = true;
+        return { bytes: new Uint8Array([0xff, 0xd8]), ext: ".jpg" };
+      },
+    }));
+
+    // packFlag+packNameProvided skip pack/volume prompts; only delete prompt remains.
+    // Track readline calls to confirm cover prompt never fires (cover prompt reads a URL line,
+    // but any readline call here is the delete prompt — we answer "n" and assert cover was skipped).
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          coverPromptCalled = true;
+          cb("n"); // answer delete prompt
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      nonTty: false,
+      packFlag: true,
+      packNameProvided: true,
+      coverUrl: "",
+    });
+
+    expect(fetchCalled).toBe(false);
+    expect(result.cover).toBeUndefined();
+    // readline fired for delete prompt only — not for cover URL fetch
+    expect(coverPromptCalled).toBe(true); // delete prompt did fire (TTY mode)
+  });
+
+  test("--cover-url whitespace-only skips cover in TTY mode (trim semantics)", async () => {
+    captureStderr();
+    let fetchCalled = false;
+
+    mock.module("./cover.ts", () => ({
+      fetchCover: async (_url: string) => {
+        fetchCalled = true;
+        return { bytes: new Uint8Array([0xff, 0xd8]), ext: ".jpg" };
+      },
+    }));
+
+    mock.module("node:readline", () => ({
+      createInterface: () => ({
+        once: (_event: string, cb: (line: string) => void) => {
+          cb("n"); // answer delete prompt
+        },
+        close: () => {},
+      }),
+    }));
+
+    const { runPackPrompts } = await import("./prompt-pack.ts");
+    const result = await runPackPrompts({
+      ...baseOpts,
+      nonTty: false,
+      packFlag: true,
+      packNameProvided: true,
+      coverUrl: "   ",
+    });
+
+    expect(fetchCalled).toBe(false);
+    expect(result.cover).toBeUndefined();
   });
 });
 
@@ -456,9 +661,10 @@ describe("runPackPrompts — effectiveOutputName uses slug-volume convention (is
       createInterface: () => ({
         once: (_event: string, cb: (line: string) => void) => {
           callCount++;
-          if (callCount === 1) cb("y");   // Pack?
+          if (callCount === 1) cb("y");      // Pack?
           else if (callCount === 2) cb("13"); // Volume number
-          else cb("n"); // Delete?
+          else if (callCount === 3) cb("");   // Cover URL? → blank
+          else cb("n");                       // Delete?
         },
         close: () => {},
       }),
@@ -487,9 +693,10 @@ describe("runPackPrompts — effectiveOutputName uses slug-volume convention (is
       createInterface: () => ({
         once: (_event: string, cb: (line: string) => void) => {
           callCount++;
-          if (callCount === 1) cb("y");  // Pack?
+          if (callCount === 1) cb("y");   // Pack?
           else if (callCount === 2) cb(""); // blank → default
-          else cb("n"); // Delete?
+          else if (callCount === 3) cb(""); // Cover URL? → blank
+          else cb("n");                     // Delete?
         },
         close: () => {},
       }),

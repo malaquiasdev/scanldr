@@ -117,6 +117,18 @@ export async function packVolume(input: PackVolumeInput): Promise<PackVolumeResu
 
   const allEntries: Record<string, Uint8Array> = {};
 
+  // Write cover first so it sorts before any chapter-NNN/ entries alphabetically.
+  // "00_cover" < "chapter-" in ASCII, so any reader that picks the first-sorted
+  // file as the volume thumbnail will display the cover image.
+  if (input.cover) {
+    const coverName = `00_cover${input.cover.ext}`;
+    allEntries[coverName] = input.cover.bytes;
+    logger.info(
+      { event: "pack.cover_added", context: "pack", file: coverName, bytes: input.cover.bytes.byteLength },
+      "cover image added",
+    );
+  }
+
   for (const ch of sorted) {
     logger.info(
       { event: "pack.chapter_read", context: "pack", num: ch.num, path: ch.outputPath },
