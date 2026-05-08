@@ -11,37 +11,33 @@ function readFixture(name: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// parseVolumeMapping — naruto synthetic fixture (≥50 chapters required)
-// Series: naruto (non-DMCA series). Fixture: manga-page-naruto-synthetic.html.
-// SYNTHETIC: modeled from real DOM structure; live capture blocked by CF auth.
+// parseVolumeMapping — naruto real fixture (DOM drift, see #95)
+// Verbatim capture of https://www.mangakakalot.gg/manga/naruto.
+// mangakakalot.gg migrated this series' chapter list to a client-side API fetch:
+// the response contains <div id="chapter-list-container" data-api-url="..."> and
+// no inline <ul class="row-content-chapter">. Drift detector (#74) must fire.
+// Future API-based parser tracked by #95.
 // ---------------------------------------------------------------------------
 
-describe("parseVolumeMapping — naruto synthetic fixture", () => {
-  it("returns at least 1 volume bucket", () => {
-    const html = readFixture("manga-page-naruto-synthetic.html");
-    const map = parseVolumeMapping(html);
-    expect(map.length).toBeGreaterThanOrEqual(1);
+describe("parseVolumeMapping — naruto real fixture (DOM drift)", () => {
+  it("throws MangakakalotParseError against verbatim production HTML", () => {
+    const html = readFixture("manga-page-naruto-real.html");
+    expect(() => parseVolumeMapping(html, "https://www.mangakakalot.gg/manga/naruto")).toThrow(
+      MangakakalotParseError,
+    );
   });
 
-  it("returns at least 50 chapters total across all buckets", () => {
-    const html = readFixture("manga-page-naruto-synthetic.html");
-    const map = parseVolumeMapping(html);
-    const totalChapters = map.reduce((sum, b) => sum + b.chapters.length, 0);
-    expect(totalChapters).toBeGreaterThanOrEqual(50);
-  });
-
-  it("volumes are sorted numerically ascending", () => {
-    const html = readFixture("manga-page-naruto-synthetic.html");
-    const map = parseVolumeMapping(html);
-    const numericVolumes = map.filter((b) => b.volume !== "unknown").map((b) => Number(b.volume));
-    expect(numericVolumes).toEqual([...numericVolumes].sort((a, b) => a - b));
-  });
-
-  it("composite id follows <slug>/<chapter-slug> convention", () => {
-    const html = readFixture("manga-page-naruto-synthetic.html");
-    const map = parseVolumeMapping(html);
-    const firstChapter = map[0]?.chapters[0];
-    expect(firstChapter?.id).toMatch(/^naruto\/chapter-\d+$/);
+  it("thrown error reports the chapter list selector and url", () => {
+    expect.assertions(3);
+    const html = readFixture("manga-page-naruto-real.html");
+    try {
+      parseVolumeMapping(html, "https://www.mangakakalot.gg/manga/naruto");
+    } catch (err) {
+      expect(err).toBeInstanceOf(MangakakalotParseError);
+      const parseErr = err as MangakakalotParseError;
+      expect(parseErr.selector).toBe("ul.row-content-chapter li");
+      expect(parseErr.url).toBe("https://www.mangakakalot.gg/manga/naruto");
+    }
   });
 });
 
