@@ -124,7 +124,12 @@ export async function packVolume(input: PackVolumeInput): Promise<PackVolumeResu
     const coverName = `00_cover${input.cover.ext}`;
     allEntries[coverName] = input.cover.bytes;
     logger.info(
-      { event: "pack.cover_added", context: "pack", file: coverName, bytes: input.cover.bytes.byteLength },
+      {
+        event: "pack.cover_added",
+        context: "pack",
+        file: coverName,
+        bytes: input.cover.bytes.byteLength,
+      },
       "cover image added",
     );
   }

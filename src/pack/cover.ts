@@ -91,7 +91,7 @@ export async function fetchCover(url: string, opts: FetchCoverOptions = {}): Pro
   }
 
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(`Only http(s) URLs allowed`);
+    throw new Error("Only http(s) URLs allowed");
   }
 
   const fetchFn = opts.fetch ?? globalThis.fetch.bind(globalThis);
@@ -102,9 +102,7 @@ export async function fetchCover(url: string, opts: FetchCoverOptions = {}): Pro
   try {
     res = await fetchFn(url, { headers });
   } catch (err) {
-    throw new Error(
-      `Cover fetch failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    throw new Error(`Cover fetch failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   if (res.status < 200 || res.status >= 300) {

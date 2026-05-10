@@ -4,8 +4,12 @@ import { join } from "node:path";
 import { CliError } from "@plugins/errors/index.ts";
 import { createLogger } from "@plugins/logger/index.ts";
 import { zipSync } from "fflate";
-import { buildVolumeFilename, defaultVolumeName, deleteIndividualFiles, packVolume } from "./pack.ts";
-import { runPackPrompts } from "./prompt-pack.ts";
+import {
+  buildVolumeFilename,
+  defaultVolumeName,
+  deleteIndividualFiles,
+  packVolume,
+} from "./pack.ts";
 
 const TMP = join(import.meta.dir, "__pack_test_tmp__");
 const logger = createLogger({ level: "warn", format: "human" });
@@ -276,85 +280,6 @@ describe("packVolume", () => {
     }
 
     await rm(dir, { recursive: true, force: true });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// runPackPrompts — unit tests (non-interactive paths only)
-// ---------------------------------------------------------------------------
-
-describe("runPackPrompts", () => {
-  const baseOpts = {
-    slug: "dandadan",
-    outputName: "dandadan-volume-103-111.cbz",
-    defaultVolumeStem: "103-111",
-    checkExists: async () => false,
-    nonTty: false,
-    packFlag: false,
-    packNameProvided: false,
-    packReplace: false,
-    packOverwrite: false,
-    logger,
-  };
-
-  test("N == 1 → skip (shouldPack: false)", async () => {
-    const result = await runPackPrompts({ ...baseOpts, chapterCount: 1 });
-    expect(result).toEqual({ shouldPack: false, shouldDelete: false });
-  });
-
-  test("non-TTY without --pack flag → skip", async () => {
-    const result = await runPackPrompts({
-      ...baseOpts,
-      chapterCount: 5,
-      nonTty: true,
-    });
-    expect(result).toEqual({ shouldPack: false, shouldDelete: false });
-  });
-
-  test("non-TTY with --pack-replace → pack + delete, no prompt", async () => {
-    const result = await runPackPrompts({
-      ...baseOpts,
-      chapterCount: 5,
-      nonTty: true,
-      packFlag: true,
-      packReplace: true,
-    });
-    expect(result).toEqual({ shouldPack: true, shouldDelete: true });
-  });
-
-  test("non-TTY with --pack flag only → pack, keep individuals", async () => {
-    const result = await runPackPrompts({
-      ...baseOpts,
-      chapterCount: 5,
-      nonTty: true,
-      packFlag: true,
-    });
-    expect(result).toEqual({ shouldPack: true, shouldDelete: false });
-  });
-
-  test("non-TTY + file exists + no --pack-overwrite → throws CliError", async () => {
-    await expect(
-      runPackPrompts({
-        ...baseOpts,
-        chapterCount: 5,
-        nonTty: true,
-        packFlag: true,
-        checkExists: async () => true,
-        packOverwrite: false,
-      }),
-    ).rejects.toThrow(/already exists/i);
-  });
-
-  test("non-TTY + file exists + --pack-overwrite → pack succeeds", async () => {
-    const result = await runPackPrompts({
-      ...baseOpts,
-      chapterCount: 5,
-      nonTty: true,
-      packFlag: true,
-      checkExists: async () => true,
-      packOverwrite: true,
-    });
-    expect(result.shouldPack).toBe(true);
   });
 });
 

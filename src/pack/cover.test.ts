@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeFile, mkdir } from "node:fs/promises";
 import { MAX_COVER_BYTES, fetchCover } from "./cover.ts";
 
 type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -42,7 +42,9 @@ describe("fetchCover — URL validation", () => {
   });
 
   test("data: scheme is rejected", async () => {
-    await expect(fetchCover("data:image/png;base64,abc")).rejects.toThrow("Only http(s) URLs allowed");
+    await expect(fetchCover("data:image/png;base64,abc")).rejects.toThrow(
+      "Only http(s) URLs allowed",
+    );
   });
 
   test("totally invalid URL is rejected", async () => {
@@ -205,8 +207,8 @@ describe("fetchCover — auth.json integration", () => {
     await fetchCover("https://example.com/cover.jpg", { fetch: mockFetch, authPath });
 
     expect(capturedHeaders["user-agent"]).toBe("FakeUA/1.0");
-    expect(capturedHeaders["cookie"]).toContain("_session=abc123");
-    expect(capturedHeaders["cookie"]).toContain("__cf_bm=xyz");
+    expect(capturedHeaders.cookie).toContain("_session=abc123");
+    expect(capturedHeaders.cookie).toContain("__cf_bm=xyz");
   });
 
   test("missing auth.json falls back to bare UA without throwing", async () => {
@@ -214,7 +216,7 @@ describe("fetchCover — auth.json integration", () => {
       const h = init?.headers as Record<string, string> | undefined;
       // Should have a user-agent but no cookie
       expect(h?.["user-agent"]).toBeDefined();
-      expect(h?.["cookie"]).toBeUndefined();
+      expect(h?.cookie).toBeUndefined();
       return makeResponse({ status: 200, contentType: "image/jpeg" });
     });
 

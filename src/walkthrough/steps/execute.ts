@@ -1,7 +1,7 @@
-import { fetchCover } from "../../commands/download/cover.ts";
-import { packVolume as realPackVolume } from "../../commands/download/pack.ts";
-import type { PackedChapter } from "../../commands/download/pack.ts";
 import { downloadBundle as realDownloadBundle } from "../../modules/downloader/index.ts";
+import { fetchCover } from "../../pack/index.ts";
+import { packVolume as realPackVolume } from "../../pack/index.ts";
+import type { PackedChapter } from "../../pack/index.ts";
 import type { Logger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import type { SourceDescriptor } from "../../sources/types.ts";
