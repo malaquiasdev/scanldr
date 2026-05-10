@@ -85,25 +85,38 @@ export async function executeWalkthrough(
         `downloading ${bundle.label}`,
       );
 
-      const chapterInput = await adapter.fetchChapterInput(bundle.id);
+      let chapterInputs: import("../../modules/downloader/types.ts").ChapterInput[];
 
+      if (bundle.kind === "volume") {
+        // Expand volume into constituent chapters
+        const ids = bundle.chapterIds ?? [];
+        const nums = bundle.chapterNums ?? [];
+        chapterInputs = await Promise.all(
+          ids.map((chapterId, i) => adapter.fetchChapterInput(chapterId, nums[i])),
+        );
+      } else {
+        // Chapter mode: single fetch
+        chapterInputs = [await adapter.fetchChapterInput(bundle.id, bundle.num)];
+      }
+
+      const totalPages = chapterInputs.reduce((acc, ci) => acc + ci.pages.length, 0);
       logger.info(
         {
           event: "walkthrough.download_page_done",
           context: "walkthrough",
           bundle_id: bundle.id,
-          pages_count: chapterInput.pages.length,
+          pages_count: totalPages,
         },
-        `resolved ${chapterInput.pages.length} pages for ${bundle.label}`,
+        `resolved ${totalPages} pages for ${bundle.label}`,
       );
 
       const result = await downloader.downloadBundle({
         outDir,
         format: "cbz",
         slug,
-        kind: mode === "volume" ? "volume" : "chapter",
-        bundleNumber: bundle.id.replace(/[^a-z0-9.]/gi, "-"),
-        chapters: [chapterInput],
+        kind: bundle.kind === "volume" ? "volume" : "chapter",
+        bundleNumber: bundle.num.replace(/[^a-z0-9.]/gi, "-"),
+        chapters: chapterInputs,
         imageConcurrency: 4,
         delayMs: 0,
         dryRun: false,
@@ -111,7 +124,7 @@ export async function executeWalkthrough(
       });
 
       outputs.push(result.outputPath);
-      packedChapters.push({ num: bundle.id, outputPath: result.outputPath });
+      packedChapters.push({ num: bundle.num, outputPath: result.outputPath });
 
       logger.info(
         {

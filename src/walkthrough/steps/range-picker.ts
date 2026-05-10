@@ -25,15 +25,22 @@ export async function pickRange(opts: RangePickerOptions): Promise<BundleItem[]>
       message: "Select volumes to download:",
       choices: volumes.map((v, i) => ({
         name: `[${i + 1}] ${v.label}`,
-        value: v.id,
+        value: `vol:${v.volume}`,
       })),
       validate: (items: readonly { value: string }[]) =>
         items.length > 0 || "Select at least one item",
     });
 
-    const selected = volumes.filter((v) => selectedIds.includes(v.id));
-    if (selected.length === 0) throw new Error("No bundles selected");
-    return selected.map((v) => ({ label: v.label, id: v.id }));
+    const selected = volumes.filter((v) => selectedIds.includes(`vol:${v.volume}`));
+    if (selected.length === 0) throw new WalkthroughError("No bundles selected");
+    return selected.map((v) => ({
+      kind: "volume" as const,
+      label: v.label,
+      id: `vol:${v.volume}`,
+      num: v.volume,
+      chapterIds: v.chapterIds,
+      chapterNums: v.chapterNums,
+    }));
   }
 
   // chapter mode
@@ -55,6 +62,11 @@ export async function pickRange(opts: RangePickerOptions): Promise<BundleItem[]>
   });
 
   const selected = chapters.filter((ch) => selectedIds.includes(ch.id));
-  if (selected.length === 0) throw new Error("No bundles selected");
-  return selected.map((ch) => ({ label: ch.label, id: ch.id }));
+  if (selected.length === 0) throw new WalkthroughError("No bundles selected");
+  return selected.map((ch) => ({
+    kind: "chapter" as const,
+    label: ch.label,
+    id: ch.id,
+    num: ch.num,
+  }));
 }

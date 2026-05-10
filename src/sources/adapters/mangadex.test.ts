@@ -73,27 +73,34 @@ describe("MangaDexAdapter", () => {
     expect(hits).toHaveLength(0);
   });
 
-  test("listChapters maps ChapterRef to ChapterListing with title when present", async () => {
+  test("listChapters maps ChapterRef to ChapterListing with num and title when present", async () => {
     const adapter = createMangaDexAdapter({ logger, client: makeFakeClient() });
     const chapters = await adapter.listChapters("mdx-naruto");
     expect(chapters).toHaveLength(2);
     expect(chapters[0]).toMatchObject({
       id: "ch-uuid-1",
+      num: "1",
       label: "Chapter 1 — Enter Naruto",
     });
     // Chapter without title should just show number
     expect(chapters[1]).toMatchObject({
       id: "ch-uuid-2",
+      num: "2",
       label: "Chapter 2",
     });
   });
 
-  test("listVolumes maps VolumeRef to VolumeListing", async () => {
+  test("listVolumes maps VolumeRef to VolumeListing with chapterIds and chapterNums", async () => {
     const adapter = createMangaDexAdapter({ logger, client: makeFakeClient() });
     const volumes = await adapter.listVolumes("mdx-naruto");
     expect(volumes).toHaveLength(2);
     expect(volumes[0]?.label).toMatch(/Volume 1/);
-    expect(volumes[0]?.id).toContain("vol:1:");
+    expect(volumes[0]?.volume).toBe("1");
+    // chapterIds from aggregate
+    expect(volumes[0]?.chapterIds).toEqual(["ch-uuid-1", "ch-uuid-2"]);
+    // chapterNums from feedChapters lookup
+    expect(volumes[0]?.chapterNums).toEqual(["1", "2"]);
+    expect(volumes[0]?.chapterIds?.length).toBe(volumes[0]?.chapterNums?.length);
   });
 
   test("listVolumes throws WalkthroughError when aggregate returns empty", async () => {

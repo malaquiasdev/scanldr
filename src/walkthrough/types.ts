@@ -28,25 +28,38 @@ export interface SearchHit {
 export interface ChapterListing {
   /** Opaque id passed back to the adapter to fetch pages (e.g. composite "slug/chapter-slug") */
   id: string;
+  /** Human chapter number, e.g. "1", "103.5" */
+  num: string;
   /** Human-readable label, e.g. "Chapter 1 — My First Adventure" */
   label: string;
 }
 
 /** DTO returned by adapter.listVolumes() */
 export interface VolumeListing {
-  /** Opaque id for the volume (used as BundleItem.id) */
-  id: string;
+  /** Volume number as a string, e.g. "1", "3.5" */
+  volume: string;
   /** Human-readable label, e.g. "Volume 3 (Ch. 20–30)" */
   label: string;
+  /** Ordered list of constituent chapter ids (to pass to fetchChapterInput) */
+  chapterIds: string[];
+  /** Matching chapter numbers (parallel array, same length as chapterIds) */
+  chapterNums: string[];
 }
 
 export type ModeSelection = "chapter" | "volume";
 
 export interface BundleItem {
+  kind: "chapter" | "volume";
   /** Display label shown to user e.g. "Chapter 1" or "Volume 3" */
   label: string;
-  /** Opaque id used by Phase 3 to fetch pages */
+  /** For chapter mode: the chapter id. For volume mode: synthetic display key (e.g. "vol:1") */
   id: string;
+  /** Chapter number (chapter mode) OR volume number (volume mode) */
+  num: string;
+  /** Volume mode only: ordered constituent chapter ids */
+  chapterIds?: string[];
+  /** Volume mode only: matching chapter numbers (parallel to chapterIds) */
+  chapterNums?: string[];
 }
 
 export interface AuthResult {

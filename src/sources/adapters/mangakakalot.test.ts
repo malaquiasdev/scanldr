@@ -85,20 +85,28 @@ describe("MangakakalotAdapter", () => {
     expect(hits).toHaveLength(0);
   });
 
-  test("listChapters maps ChapterRef to ChapterListing", async () => {
+  test("listChapters maps ChapterRef to ChapterListing with num from source", async () => {
     const adapter = createMangakakalotAdapter({ logger, client: makeFakeClient() });
     const chapters = await adapter.listChapters("naruto");
     expect(chapters).toHaveLength(2);
-    expect(chapters[0]).toMatchObject({ id: "naruto/chapter-1", label: "Chapter 1" });
-    expect(chapters[1]).toMatchObject({ id: "naruto/chapter-2", label: "Chapter 2" });
+    expect(chapters[0]).toMatchObject({ id: "naruto/chapter-1", num: "1", label: "Chapter 1" });
+    expect(chapters[1]).toMatchObject({ id: "naruto/chapter-2", num: "2", label: "Chapter 2" });
   });
 
-  test("listVolumes maps VolumeBucket to VolumeListing", async () => {
+  test("listVolumes maps VolumeBucket to VolumeListing with chapterIds and chapterNums", async () => {
     const adapter = createMangakakalotAdapter({ logger, client: makeFakeClient() });
     const volumes = await adapter.listVolumes("naruto");
     expect(volumes).toHaveLength(2);
     expect(volumes[0]?.label).toMatch(/Volume 1/);
-    expect(volumes[0]?.id).toContain("vol:1:");
+    expect(volumes[0]?.volume).toBe("1");
+    // chapterIds populated in source order
+    expect(volumes[0]?.chapterIds).toEqual(["naruto/chapter-1", "naruto/chapter-2"]);
+    // chapterNums parallel to chapterIds
+    expect(volumes[0]?.chapterNums).toEqual(["1", "2"]);
+    expect(volumes[0]?.chapterIds?.length).toBe(volumes[0]?.chapterNums?.length);
+    // second volume
+    expect(volumes[1]?.chapterIds).toEqual(["naruto/chapter-3"]);
+    expect(volumes[1]?.chapterNums).toEqual(["3"]);
   });
 
   test("listVolumes throws WalkthroughError when volume map is empty", async () => {

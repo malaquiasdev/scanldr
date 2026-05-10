@@ -29,12 +29,22 @@ function isValidAuthFile(path: string): boolean {
   }
 }
 
-/** Write session atomically (write .tmp → rename). */
+/** Write session atomically (write .tmp → rename). On rename failure, cleans up .tmp. */
 async function persistSession(session: AuthSession, authPath: string): Promise<void> {
   await mkdir(dirname(authPath), { recursive: true, mode: 0o700 });
   const tmpPath = `${authPath}.tmp`;
   await writeFile(tmpPath, JSON.stringify(session, null, 2), { encoding: "utf8", mode: 0o600 });
-  await rename(tmpPath, authPath);
+  try {
+    await rename(tmpPath, authPath);
+  } catch (renameErr) {
+    try {
+      const { unlink } = await import("node:fs/promises");
+      await unlink(tmpPath);
+    } catch {
+      // best-effort cleanup — ignore unlink errors
+    }
+    throw renameErr;
+  }
 }
 
 /** Step 3: check auth state. Prompt for cURL paste when needed and persist via auth service. */
@@ -91,6 +101,6 @@ export async function checkAuth(opts: AuthCheckOptions): Promise<AuthResult> {
   }
 
   throw new WalkthroughError(
-    "Could not parse cURL paste after 3 attempts. Run the walkthrough again.",
+    `Could not parse cURL paste after ${MAX_PASTE_RETRIES} attempts. Run the walkthrough again.`,
   );
 }

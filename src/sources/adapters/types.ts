@@ -18,6 +18,7 @@ export interface SourceAdapter {
   /**
    * Resolve a chapter id (from listChapters/listVolumes) to a ChapterInput
    * ready for the downloader service.
+   * @param chapterNum optional chapter number string (e.g. "103.5") — used to populate ChapterInput.num.
    */
-  fetchChapterInput(chapterId: string): Promise<ChapterInput>;
+  fetchChapterInput(chapterId: string, chapterNum?: string): Promise<ChapterInput>;
 }

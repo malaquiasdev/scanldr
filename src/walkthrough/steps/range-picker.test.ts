@@ -11,17 +11,27 @@ const mockHit: SearchHit = {
 };
 
 const mockChapters: ChapterListing[] = [
-  { id: "mock-1-ch-1", label: "Chapter 1" },
-  { id: "mock-1-ch-2", label: "Chapter 2" },
-  { id: "mock-1-ch-3", label: "Chapter 3" },
-  { id: "mock-1-ch-4", label: "Chapter 4" },
-  { id: "mock-1-ch-5", label: "Chapter 5" },
+  { id: "mock-1-ch-1", num: "1", label: "Chapter 1" },
+  { id: "mock-1-ch-2", num: "2", label: "Chapter 2" },
+  { id: "mock-1-ch-3", num: "3", label: "Chapter 3" },
+  { id: "mock-1-ch-4", num: "4", label: "Chapter 4" },
+  { id: "mock-1-ch-5", num: "5", label: "Chapter 5" },
 ];
 
 const mockVolumes: VolumeListing[] = [
-  { id: "mock-1-vol-1", label: "Volume 1" },
-  { id: "mock-1-vol-2", label: "Volume 2" },
-  { id: "mock-1-vol-3", label: "Volume 3" },
+  { volume: "1", label: "Volume 1", chapterIds: ["mock-1-ch-1"], chapterNums: ["1"] },
+  {
+    volume: "2",
+    label: "Volume 2",
+    chapterIds: ["mock-1-ch-2", "mock-1-ch-3"],
+    chapterNums: ["2", "3"],
+  },
+  {
+    volume: "3",
+    label: "Volume 3",
+    chapterIds: ["mock-1-ch-4", "mock-1-ch-5"],
+    chapterNums: ["4", "5"],
+  },
 ];
 
 function makeFakeAdapter(chapters: ChapterListing[], volumes: VolumeListing[]): SourceAdapter {
@@ -75,7 +85,7 @@ describe("pickRange", () => {
 
   test("volume mode returns volume bundles with Volume labels", async () => {
     mock.module("../prompts.ts", () => ({
-      checkbox: async () => ["mock-1-vol-1"],
+      checkbox: async () => ["vol:1"],
       select: async () => "",
       input: async () => "",
       confirm: async () => false,

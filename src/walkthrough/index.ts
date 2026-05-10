@@ -4,6 +4,7 @@ import { getAdapter } from "../sources/adapters/index.ts";
 import { checkAuth } from "./steps/auth-check.ts";
 import { promptCoverUrl } from "./steps/cover-prompt.ts";
 import { executeWalkthrough } from "./steps/execute.ts";
+import type { ExecuteDeps } from "./steps/execute.ts";
 import { pickMode } from "./steps/mode-picker.ts";
 import { promptPack } from "./steps/pack-prompt.ts";
 import { pickRange } from "./steps/range-picker.ts";
@@ -22,6 +23,8 @@ export interface RunWalkthroughOptions extends WalkthroughInput {
   outDir?: string;
   /** Override adapter factory (tests inject fakes). */
   adapterFactory?: (sourceId: string, opts: { logger: Logger }) => SourceAdapter;
+  /** Override downloader/packer deps (tests inject fakes). */
+  executeDeps?: ExecuteDeps;
 }
 
 /** Returned when walkthrough errors out in a handled way (WalkthroughError). */
@@ -86,17 +89,20 @@ export async function runWalkthrough(
     };
 
     // Step 9 — execute
-    await executeWalkthrough({
-      source,
-      hit,
-      mode,
-      selectedBundles,
-      groupIntoVolume,
-      coverUrl,
-      outDir,
-      adapter,
-      logger: opts.logger,
-    });
+    await executeWalkthrough(
+      {
+        source,
+        hit,
+        mode,
+        selectedBundles,
+        groupIntoVolume,
+        coverUrl,
+        outDir,
+        adapter,
+        logger: opts.logger,
+      },
+      opts.executeDeps,
+    );
 
     return result;
   } catch (err) {

@@ -16,7 +16,7 @@ const plan: WalkthroughResult = {
   source,
   hit: { id: "hit-1", title: "Naruto", originalLanguage: "ja", year: 1999 },
   mode: "chapter",
-  selectedBundles: [{ label: "Chapter 1", id: "hit-1-ch-1" }],
+  selectedBundles: [{ kind: "chapter", label: "Chapter 1", id: "hit-1-ch-1", num: "1" }],
   groupIntoVolume: false,
   coverUrl: null,
 };
@@ -150,5 +150,76 @@ describe("executeWalkthrough", () => {
     });
 
     expect(packCalls).toHaveLength(0);
+  });
+
+  test("volume mode: fetchChapterInput called once per chapter id, downloader called once with all inputs", async () => {
+    const fetchedIds: string[] = [];
+    const adapter = makeFakeAdapter({
+      fetchChapterInput: async (id, num) => {
+        fetchedIds.push(id);
+        return { ...fakeChapterInput, id, num: Number(num ?? "0") };
+      },
+    });
+
+    const volumeBundle = {
+      kind: "volume" as const,
+      label: "Volume 1",
+      id: "vol:1",
+      num: "1",
+      chapterIds: ["c1", "c2", "c3"],
+      chapterNums: ["1", "2", "3"],
+    };
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      mode: "volume",
+      selectedBundles: [volumeBundle],
+      groupIntoVolume: true,
+      outDir,
+      adapter,
+      logger,
+    };
+
+    const fakeDownloader = makeFakeDownloader();
+    const result = await executeWalkthrough(opts, {
+      downloader: fakeDownloader,
+      packer: makeFakePacker(),
+    });
+
+    expect(fetchedIds).toEqual(["c1", "c2", "c3"]);
+    expect(result.failed).toBe(0);
+    // downloader called once with all 3 chapter inputs
+    expect((fakeDownloader.downloadBundle as ReturnType<typeof mock>).mock.calls.length).toBe(1);
+    const rawCall = (fakeDownloader.downloadBundle as ReturnType<typeof mock>).mock
+      .calls[0] as unknown[];
+    const downloadArg = rawCall[0] as { chapters: unknown[] };
+    expect(downloadArg.chapters).toHaveLength(3);
+  });
+
+  test("pack filename uses bundle.num (numeric), not bundle.id (opaque)", async () => {
+    const capturedChapters: Array<{ num: string }> = [];
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      selectedBundles: [
+        { kind: "chapter", label: "Chapter 103.5", id: "naruto/chapter-103.5", num: "103.5" },
+      ],
+      groupIntoVolume: true,
+      outDir,
+      adapter: makeFakeAdapter(),
+      logger,
+    };
+
+    await executeWalkthrough(opts, {
+      downloader: makeFakeDownloader(),
+      packer: makeFakePacker({
+        packVolume: mock(async (input) => {
+          capturedChapters.push(...input.chapters);
+          return { outputPath: join(outDir, "out.cbz"), byteSize: 1 };
+        }),
+      }),
+    });
+
+    expect(capturedChapters[0]?.num).toBe("103.5");
+    expect(capturedChapters[0]?.num).not.toContain("/");
   });
 });

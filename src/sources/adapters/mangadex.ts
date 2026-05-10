@@ -65,19 +65,33 @@ export function createMangaDexAdapter(opts: MangaDexAdapterOptions): SourceAdapt
     }));
   }
 
+  function buildChapterLabel(ch: {
+    id: string;
+    chapter: string | null;
+    title: string | null;
+  }): string {
+    if (ch.chapter !== null) {
+      return `Chapter ${ch.chapter}${ch.title ? ` — ${ch.title}` : ""}`;
+    }
+    return ch.id;
+  }
+
   async function listChapters(hitId: string): Promise<ChapterListing[]> {
     const client = getClient();
     const chapters = await client.feedChapters(hitId, DEFAULT_LANGUAGES);
     return chapters.map((ch) => ({
       id: ch.id,
-      label:
-        ch.chapter !== null ? `Chapter ${ch.chapter}${ch.title ? ` — ${ch.title}` : ""}` : ch.id,
+      num: ch.chapter ?? ch.id,
+      label: buildChapterLabel(ch),
     }));
   }
 
   async function listVolumes(hitId: string): Promise<VolumeListing[]> {
     const client = getClient();
-    const volumes = await client.aggregateVolumes(hitId, DEFAULT_LANGUAGES);
+    const [volumes, chapters] = await Promise.all([
+      client.aggregateVolumes(hitId, DEFAULT_LANGUAGES),
+      client.feedChapters(hitId, DEFAULT_LANGUAGES),
+    ]);
 
     if (volumes.length === 0) {
       throw new WalkthroughError(
@@ -85,13 +99,21 @@ export function createMangaDexAdapter(opts: MangaDexAdapterOptions): SourceAdapt
       );
     }
 
+    // Build lookup: chapterId → chapter number string
+    const chapterNumById = new Map<string, string>();
+    for (const ch of chapters) {
+      chapterNumById.set(ch.id, ch.chapter ?? ch.id);
+    }
+
     return volumes.map((v) => ({
-      id: `vol:${v.volume}:${hitId}`,
+      volume: v.volume,
       label: buildVolumeLabel(v),
+      chapterIds: v.chapterIds,
+      chapterNums: v.chapterIds.map((id) => chapterNumById.get(id) ?? id),
     }));
   }
 
-  async function fetchChapterInput(chapterId: string): Promise<ChapterInput> {
+  async function fetchChapterInput(chapterId: string, chapterNum?: string): Promise<ChapterInput> {
     const http = getHttp();
     const server = await getAtHomeServer(http, chapterId, "data", logger);
 
@@ -106,9 +128,19 @@ export function createMangaDexAdapter(opts: MangaDexAdapterOptions): SourceAdapt
       quality: "data",
     });
 
+    const numRaw = chapterNum ?? "0";
+    const numParsed = Number(numRaw);
+    const num = Number.isNaN(numParsed) ? 0 : numParsed;
+    if (Number.isNaN(Number(numRaw))) {
+      logger.warn(
+        { event: "walkthrough.chapter_num_parse_failed", context: "walkthrough", chapterNum },
+        "could not parse chapter number; defaulting to 0",
+      );
+    }
+
     return {
       id: chapterId,
-      num: 0,
+      num,
       pages,
       imageFetcher,
     };

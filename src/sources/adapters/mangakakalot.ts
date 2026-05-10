@@ -24,8 +24,8 @@ export interface MangakakalotAdapterOptions {
 }
 
 function buildChapterLabel(ref: FallbackChapterRef, index: number): string {
-  if (ref.chapter !== null) return `Chapter ${ref.chapter}`;
-  return `Chapter ${index + 1}`;
+  const num = ref.chapter !== null ? ref.chapter : String(index + 1);
+  return `Chapter ${num}`;
 }
 
 function buildVolumeLabel(bucket: VolumeBucket): string {
@@ -74,10 +74,14 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
   async function listChapters(hitId: string): Promise<ChapterListing[]> {
     const client = await getClientPromise();
     const chapters = await client.getChapterList(hitId);
-    return chapters.map((ch, i) => ({
-      id: ch.id,
-      label: buildChapterLabel({ id: ch.id, chapter: ch.chapter }, i),
-    }));
+    return chapters.map((ch, i) => {
+      const num = ch.chapter ?? String(i + 1);
+      return {
+        id: ch.id,
+        num,
+        label: buildChapterLabel({ id: ch.id, chapter: ch.chapter }, i),
+      };
+    });
   }
 
   async function listVolumes(hitId: string): Promise<VolumeListing[]> {
@@ -90,14 +94,21 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
       );
     }
 
-    return volumeMap.map((bucket) => ({
-      // Encode volume key + hitId so execute step can expand chapters
-      id: `vol:${bucket.volume}:${hitId}`,
-      label: buildVolumeLabel(bucket),
-    }));
+    return volumeMap.map((bucket, bucketIndex) => {
+      const chapterIds = bucket.chapters.map((ch) => ch.id);
+      const chapterNums = bucket.chapters.map(
+        (ch, i) => ch.chapter ?? String(bucketIndex * 1000 + i + 1),
+      );
+      return {
+        volume: bucket.volume,
+        label: buildVolumeLabel(bucket),
+        chapterIds,
+        chapterNums,
+      };
+    });
   }
 
-  async function fetchChapterInput(chapterId: string): Promise<ChapterInput> {
+  async function fetchChapterInput(chapterId: string, chapterNum?: string): Promise<ChapterInput> {
     const [client, http] = await Promise.all([getClientPromise(), getHttpPromise()]);
     const imageRefs = await client.getChapterImages(chapterId);
 
@@ -113,9 +124,19 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
       return new Uint8Array(buf);
     };
 
+    const numRaw = chapterNum ?? "0";
+    const numParsed = Number(numRaw);
+    const num = Number.isNaN(numParsed) ? 0 : numParsed;
+    if (Number.isNaN(Number(numRaw))) {
+      logger.warn(
+        { event: "walkthrough.chapter_num_parse_failed", context: "walkthrough", chapterNum },
+        "could not parse chapter number; defaulting to 0",
+      );
+    }
+
     return {
       id: chapterId,
-      num: 0,
+      num,
       pages,
       imageFetcher,
     };
