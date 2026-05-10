@@ -258,6 +258,35 @@ describe("chaptersToVolumeMap", () => {
     expect(map[0]?.volume).toBe("unknown");
   });
 
+  it("non-numeric volume string (e.g. 'Special') is routed to 'unknown' bucket", () => {
+    const chapters = [makeChapter({ id: "test/ch-1", chapter: "1", volume: "Special" })];
+    const map = chaptersToVolumeMap(chapters);
+    expect(map).toHaveLength(1);
+    expect(map[0]?.volume).toBe("unknown");
+  });
+
+  it("whitespace-only volume string is routed to 'unknown' bucket", () => {
+    const chapters = [makeChapter({ id: "test/ch-1", chapter: "1", volume: "   " })];
+    const map = chaptersToVolumeMap(chapters);
+    expect(map).toHaveLength(1);
+    expect(map[0]?.volume).toBe("unknown");
+  });
+
+  it("mix of numeric, null, and non-numeric volumes → numeric buckets ascending then 'unknown'", () => {
+    const chapters = [
+      makeChapter({ id: "test/ch-1", chapter: "1", volume: "1" }),
+      makeChapter({ id: "test/ch-2", chapter: "2", volume: null }),
+      makeChapter({ id: "test/ch-3", chapter: "3", volume: "Extra" }),
+      makeChapter({ id: "test/ch-4", chapter: "4", volume: "2" }),
+      makeChapter({ id: "test/ch-5", chapter: "5", volume: "side-story" }),
+    ];
+    const map = chaptersToVolumeMap(chapters);
+    expect(map.map((b) => b.volume)).toEqual(["1", "2", "unknown"]);
+    // null + "Extra" + "side-story" all land in unknown (3 chapters)
+    const unknown = map.find((b) => b.volume === "unknown");
+    expect(unknown?.chapters).toHaveLength(3);
+  });
+
   it("chapters within a numeric bucket are sorted ascending", () => {
     const chapters = [
       makeChapter({ id: "test/ch-3", chapter: "3", volume: "1" }),

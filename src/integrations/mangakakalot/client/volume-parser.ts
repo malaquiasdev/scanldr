@@ -86,7 +86,14 @@ export function chaptersToVolumeMap(chapters: ChapterRef[]): VolumeMap {
   const buckets = new Map<string, FallbackChapterRef[]>();
 
   for (const ch of chapters) {
-    const vol = ch.volume?.trim() ? String(Number(ch.volume)) : "unknown";
+    const rawVol = ch.volume?.trim();
+    let vol: string;
+    if (!rawVol) {
+      vol = "unknown";
+    } else {
+      const num = Number(rawVol);
+      vol = Number.isFinite(num) ? String(num) : "unknown";
+    }
     const existing = buckets.get(vol) ?? [];
     existing.push({ id: ch.id, chapter: ch.chapter });
     buckets.set(vol, existing);
