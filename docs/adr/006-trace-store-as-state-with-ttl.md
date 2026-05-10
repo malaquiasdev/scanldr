@@ -4,8 +4,8 @@
 **Status:** Accepted
 
 **Related:**
-- Supersedes [ADR-003](003-sqlite-download-history.md)
-- Withdraws [ADR-004](004-subscriptions-in-sqlite.md)
+- Supersedes [ADR-003](./003-sqlite-download-history.md)
+- Withdraws [ADR-004](./004-subscriptions-in-sqlite.md)
 - Implements the logging architecture decision captured in epic #116
 
 ## Context
@@ -63,3 +63,13 @@ The trace store is the **structured sink** for the logger. The **terminal sink s
 - **Keep `downloads` and `subscriptions`** — rejected. The new walkthrough-centric design removes the library-management surface entirely. See ADR-003 (superseded) and ADR-004 (withdrawn).
 - **Retain logs indefinitely** — rejected. Unbounded disk pressure and PII risk (cookies, clearance tokens in fields).
 - **File-based NDJSON logs instead of SQLite** — rejected. SQLite is already a hard dependency for traces, and queryability (filter by `run_id`, `level`, `event`) matters for support scenarios.
+
+## Known follow-ups (independent of this ADR)
+
+The following issues capture deferred work that was scoped out of the epic phases but is relevant to the new architecture:
+
+- [#121](https://github.com/malaquiasdev/scanldr/issues/121) — mangadex `feedChapters` pagination.
+- [#122](https://github.com/malaquiasdev/scanldr/issues/122) — mangakakalot synthetic chapter num when source returns null.
+- [#123](https://github.com/malaquiasdev/scanldr/issues/123) — cover injection in volume mode.
+- [#124](https://github.com/malaquiasdev/scanldr/issues/124) — mangadex hardcoded `DEFAULT_CONFIG`.
+- A future `export traces` command (deferred from Phase 1).

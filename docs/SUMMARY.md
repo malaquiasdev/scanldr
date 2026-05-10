@@ -3,8 +3,7 @@
 This document is the central index of all technical documentation for **scanldr**. It covers everything from high-level architecture to detailed flow diagrams.
 
 ## Overview
-- [System Overview](overviewer.md)
-- [Software Architecture (C4 Model)](architecture_c4.md)
+- [System Overview](architecture_c4.md)
 
 ## Architecture Decision Records (ADRs)
 - [ADR-001: Cookie Replay over Playwright Stealth](adr/001-cookie-replay-strategy.md)
@@ -23,6 +22,10 @@ This document is the central index of all technical documentation for **scanldr*
 - [Download Flow](flows/download_flow.md)
 - [Update Flow](flows/update_flow.md)
 - [Sync Flow](flows/sync_flow.md)
+
+## Historical Overview (pre-epic #116)
+
+- [System Overview](overviewer.md) _(pre-epic #116 — historical record)_
 
 ## Historical Data Models (pre-epic #116)
 
