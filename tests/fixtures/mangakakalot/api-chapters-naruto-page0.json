@@ -1,0 +1,358 @@
+{
+  "success": true,
+  "data": {
+    "chapters": [
+      {
+        "chapter_name": "Chapter 700.6",
+        "chapter_slug": "chapter-700-6",
+        "chapter_num": 700.6,
+        "updated_at": "2025-10-07T13:34:02.000000Z",
+        "view": 5122
+      },
+      {
+        "chapter_name": "Chapter 700.5",
+        "chapter_slug": "chapter-700-5",
+        "chapter_num": 700.5,
+        "updated_at": "2024-11-01T01:28:16.000000Z",
+        "view": 488797
+      },
+      {
+        "chapter_name": "Chapter 700.3",
+        "chapter_slug": "chapter-700-3",
+        "chapter_num": 700.3,
+        "updated_at": "2025-10-07T13:33:51.000000Z",
+        "view": 760
+      },
+      {
+        "chapter_name": "Chapter 700.2",
+        "chapter_slug": "chapter-700-2",
+        "chapter_num": 700.2,
+        "updated_at": "2025-10-07T13:33:41.000000Z",
+        "view": 1027
+      },
+      {
+        "chapter_name": "Chapter 700.1",
+        "chapter_slug": "chapter-700-1",
+        "chapter_num": 700.1,
+        "updated_at": "2024-11-01T01:27:15.000000Z",
+        "view": 258328
+      },
+      {
+        "chapter_name": "Chapter 700",
+        "chapter_slug": "chapter-700",
+        "chapter_num": 700,
+        "updated_at": "2024-11-01T01:26:10.000000Z",
+        "view": 282258
+      },
+      {
+        "chapter_name": "Chapter 699.5",
+        "chapter_slug": "chapter-699-5",
+        "chapter_num": 699.5,
+        "updated_at": "2024-11-01T01:25:07.000000Z",
+        "view": 212660
+      },
+      {
+        "chapter_name": "Chapter 699.1",
+        "chapter_slug": "chapter-699-1",
+        "chapter_num": 699.1,
+        "updated_at": "2024-11-01T01:24:46.000000Z",
+        "view": 168781
+      },
+      {
+        "chapter_name": "Chapter 699",
+        "chapter_slug": "chapter-699",
+        "chapter_num": 699,
+        "updated_at": "2024-11-01T01:23:44.000000Z",
+        "view": 162353
+      },
+      {
+        "chapter_name": "Chapter 698.5",
+        "chapter_slug": "chapter-698-5",
+        "chapter_num": 698.5,
+        "updated_at": "2025-10-07T13:33:37.000000Z",
+        "view": 1102
+      },
+      {
+        "chapter_name": "Chapter 698.1",
+        "chapter_slug": "chapter-698-1",
+        "chapter_num": 698.1,
+        "updated_at": "2024-11-01T01:22:35.000000Z",
+        "view": 122514
+      },
+      {
+        "chapter_name": "Chapter 698",
+        "chapter_slug": "chapter-698",
+        "chapter_num": 698,
+        "updated_at": "2024-11-01T01:21:52.000000Z",
+        "view": 113354
+      },
+      {
+        "chapter_name": "Chapter 697.5",
+        "chapter_slug": "chapter-697-5",
+        "chapter_num": 697.5,
+        "updated_at": "2025-10-07T13:33:31.000000Z",
+        "view": 958
+      },
+      {
+        "chapter_name": "Chapter 697.1",
+        "chapter_slug": "chapter-697-1",
+        "chapter_num": 697.1,
+        "updated_at": "2024-11-01T01:20:28.000000Z",
+        "view": 86507
+      },
+      {
+        "chapter_name": "Chapter 697",
+        "chapter_slug": "chapter-697",
+        "chapter_num": 697,
+        "updated_at": "2024-11-01T01:19:02.000000Z",
+        "view": 93055
+      },
+      {
+        "chapter_name": "Chapter 696.5",
+        "chapter_slug": "chapter-696-5",
+        "chapter_num": 696.5,
+        "updated_at": "2025-10-07T13:33:26.000000Z",
+        "view": 358
+      },
+      {
+        "chapter_name": "Chapter 696.1",
+        "chapter_slug": "chapter-696-1",
+        "chapter_num": 696.1,
+        "updated_at": "2024-11-01T01:18:03.000000Z",
+        "view": 81621
+      },
+      {
+        "chapter_name": "Chapter 696",
+        "chapter_slug": "chapter-696",
+        "chapter_num": 696,
+        "updated_at": "2024-11-01T01:16:58.000000Z",
+        "view": 89319
+      },
+      {
+        "chapter_name": "Chapter 695.5",
+        "chapter_slug": "chapter-695-5",
+        "chapter_num": 695.5,
+        "updated_at": "2025-10-07T13:33:20.000000Z",
+        "view": 961
+      },
+      {
+        "chapter_name": "Chapter 695.1",
+        "chapter_slug": "chapter-695-1",
+        "chapter_num": 695.1,
+        "updated_at": "2024-11-01T01:15:35.000000Z",
+        "view": 82937
+      },
+      {
+        "chapter_name": "Chapter 695",
+        "chapter_slug": "chapter-695",
+        "chapter_num": 695,
+        "updated_at": "2024-11-01T01:14:29.000000Z",
+        "view": 94075
+      },
+      {
+        "chapter_name": "Chapter 694.1",
+        "chapter_slug": "chapter-694-1",
+        "chapter_num": 694.1,
+        "updated_at": "2024-11-01T01:13:12.000000Z",
+        "view": 91983
+      },
+      {
+        "chapter_name": "Chapter 694",
+        "chapter_slug": "chapter-694",
+        "chapter_num": 694,
+        "updated_at": "2024-11-01T01:11:55.000000Z",
+        "view": 101399
+      },
+      {
+        "chapter_name": "Chapter 693.5",
+        "chapter_slug": "chapter-693-5",
+        "chapter_num": 693.5,
+        "updated_at": "2025-10-07T13:33:13.000000Z",
+        "view": 924
+      },
+      {
+        "chapter_name": "Chapter 693.1",
+        "chapter_slug": "chapter-693-1",
+        "chapter_num": 693.1,
+        "updated_at": "2024-11-01T01:10:24.000000Z",
+        "view": 80378
+      },
+      {
+        "chapter_name": "Chapter 693",
+        "chapter_slug": "chapter-693",
+        "chapter_num": 693,
+        "updated_at": "2024-11-01T01:09:01.000000Z",
+        "view": 89398
+      },
+      {
+        "chapter_name": "Chapter 692.5",
+        "chapter_slug": "chapter-692-5",
+        "chapter_num": 692.5,
+        "updated_at": "2025-10-07T13:33:08.000000Z",
+        "view": 878
+      },
+      {
+        "chapter_name": "Chapter 692.1",
+        "chapter_slug": "chapter-692-1",
+        "chapter_num": 692.1,
+        "updated_at": "2024-11-01T01:07:51.000000Z",
+        "view": 78473
+      },
+      {
+        "chapter_name": "Chapter 692",
+        "chapter_slug": "chapter-692",
+        "chapter_num": 692,
+        "updated_at": "2024-11-01T01:06:52.000000Z",
+        "view": 90977
+      },
+      {
+        "chapter_name": "Chapter 691.5",
+        "chapter_slug": "chapter-691-5",
+        "chapter_num": 691.5,
+        "updated_at": "2025-10-07T13:33:02.000000Z",
+        "view": 870
+      },
+      {
+        "chapter_name": "Chapter 691.1",
+        "chapter_slug": "chapter-691-1",
+        "chapter_num": 691.1,
+        "updated_at": "2024-11-01T01:05:49.000000Z",
+        "view": 83284
+      },
+      {
+        "chapter_name": "Chapter 691",
+        "chapter_slug": "chapter-691",
+        "chapter_num": 691,
+        "updated_at": "2024-11-01T01:04:35.000000Z",
+        "view": 92990
+      },
+      {
+        "chapter_name": "Chapter 690.5",
+        "chapter_slug": "chapter-690-5",
+        "chapter_num": 690.5,
+        "updated_at": "2025-10-07T13:32:57.000000Z",
+        "view": 508
+      },
+      {
+        "chapter_name": "Chapter 690.1",
+        "chapter_slug": "chapter-690-1",
+        "chapter_num": 690.1,
+        "updated_at": "2024-11-01T01:03:04.000000Z",
+        "view": 79916
+      },
+      {
+        "chapter_name": "Chapter 690",
+        "chapter_slug": "chapter-690",
+        "chapter_num": 690,
+        "updated_at": "2024-11-01T01:02:05.000000Z",
+        "view": 88625
+      },
+      {
+        "chapter_name": "Chapter 689.5",
+        "chapter_slug": "chapter-689-5",
+        "chapter_num": 689.5,
+        "updated_at": "2025-10-07T13:32:51.000000Z",
+        "view": 840
+      },
+      {
+        "chapter_name": "Chapter 689.1",
+        "chapter_slug": "chapter-689-1",
+        "chapter_num": 689.1,
+        "updated_at": "2024-11-01T01:00:56.000000Z",
+        "view": 86346
+      },
+      {
+        "chapter_name": "Chapter 689",
+        "chapter_slug": "chapter-689",
+        "chapter_num": 689,
+        "updated_at": "2024-11-01T00:59:41.000000Z",
+        "view": 97933
+      },
+      {
+        "chapter_name": "Chapter 688.5",
+        "chapter_slug": "chapter-688-5",
+        "chapter_num": 688.5,
+        "updated_at": "2025-10-07T13:32:44.000000Z",
+        "view": 392
+      },
+      {
+        "chapter_name": "Chapter 688.1",
+        "chapter_slug": "chapter-688-1",
+        "chapter_num": 688.1,
+        "updated_at": "2024-11-01T00:58:09.000000Z",
+        "view": 78468
+      },
+      {
+        "chapter_name": "Chapter 688",
+        "chapter_slug": "chapter-688",
+        "chapter_num": 688,
+        "updated_at": "2024-11-01T00:57:19.000000Z",
+        "view": 83386
+      },
+      {
+        "chapter_name": "Chapter 687.5",
+        "chapter_slug": "chapter-687-5",
+        "chapter_num": 687.5,
+        "updated_at": "2025-10-07T13:32:34.000000Z",
+        "view": 575
+      },
+      {
+        "chapter_name": "Chapter 687.1",
+        "chapter_slug": "chapter-687-1",
+        "chapter_num": 687.1,
+        "updated_at": "2024-11-01T00:55:25.000000Z",
+        "view": 75074
+      },
+      {
+        "chapter_name": "Chapter 687",
+        "chapter_slug": "chapter-687",
+        "chapter_num": 687,
+        "updated_at": "2024-11-01T00:54:40.000000Z",
+        "view": 81917
+      },
+      {
+        "chapter_name": "Chapter 686.5",
+        "chapter_slug": "chapter-686-5",
+        "chapter_num": 686.5,
+        "updated_at": "2025-10-07T13:32:28.000000Z",
+        "view": 991
+      },
+      {
+        "chapter_name": "Chapter 686.1",
+        "chapter_slug": "chapter-686-1",
+        "chapter_num": 686.1,
+        "updated_at": "2024-11-01T00:53:21.000000Z",
+        "view": 73673
+      },
+      {
+        "chapter_name": "Chapter 686",
+        "chapter_slug": "chapter-686",
+        "chapter_num": 686,
+        "updated_at": "2024-11-01T00:52:24.000000Z",
+        "view": 80686
+      },
+      {
+        "chapter_name": "Chapter 685.5",
+        "chapter_slug": "chapter-685-5",
+        "chapter_num": 685.5,
+        "updated_at": "2025-10-07T13:32:23.000000Z",
+        "view": 893
+      },
+      {
+        "chapter_name": "Chapter 685.1",
+        "chapter_slug": "chapter-685-1",
+        "chapter_num": 685.1,
+        "updated_at": "2024-11-01T00:51:13.000000Z",
+        "view": 73452
+      },
+      {
+        "chapter_name": "Chapter 685",
+        "chapter_slug": "chapter-685",
+        "chapter_num": 685,
+        "updated_at": "2024-11-01T00:50:09.000000Z",
+        "view": 78942
+      }
+    ],
+    "pagination": { "total": 787, "limit": 50, "offset": 0, "has_more": true }
+  }
+}

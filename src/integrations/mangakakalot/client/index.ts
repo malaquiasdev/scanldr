@@ -6,10 +6,15 @@ import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts"
 import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
 import type { ImageRef } from "@modules/downloader/types.ts";
 import type { Logger } from "@plugins/logger/index.ts";
-import { parseChapterImages, parseChapterListFromApi, parseSearchResults } from "./parser.ts";
+import {
+  detectChapterApiPlaceholder,
+  parseChapterImages,
+  parseChapterListFromApi,
+  parseSearchResults,
+} from "./parser.ts";
 import type { MangakakalotClient, VolumeMap } from "./types.ts";
 import { MangakakalotParseError } from "./types.ts";
-import { parseVolumeMapping } from "./volume-parser.ts";
+import { chaptersToVolumeMap, parseVolumeMapping } from "./volume-parser.ts";
 
 export type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 export type { ImageRef } from "@modules/downloader/types.ts";
@@ -128,6 +133,26 @@ export function createMangakakalotClient(opts: {
   async function getVolumeMap(slug: string): Promise<VolumeMap> {
     const url = `${SITE_ROOT}/manga/${encodeURIComponent(slug)}`;
     const html = await fetchHtml(url);
+
+    // Route 1: if HTML embeds the chapter-list-container API placeholder,
+    // fetch via API and map to VolumeMap. This is the path Naruto takes today.
+    const placeholder = detectChapterApiPlaceholder(html);
+    if (placeholder) {
+      logger.info(
+        {
+          event: "mangakakalot.api_placeholder_detected",
+          context: "mangakakalot",
+          slug,
+          placeholderSlug: placeholder.slug,
+        },
+        "manga page uses client-side API placeholder; fetching chapter list from API",
+      );
+      const chapters = await getChapterList(placeholder.slug);
+      return chaptersToVolumeMap(chapters);
+    }
+
+    // Route 2: inline chapter list (current path for dandadan/jjk/etc).
+    // Drift detector still fires when neither inline list nor API placeholder is present.
     return runParser(url, () => parseVolumeMapping(html, url));
   }
 

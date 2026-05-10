@@ -1,0 +1,358 @@
+{
+  "success": true,
+  "data": {
+    "chapters": [
+      {
+        "chapter_name": "Chapter 382",
+        "chapter_slug": "chapter-382",
+        "chapter_num": 382,
+        "updated_at": "2024-10-31T17:49:40.000000Z",
+        "view": 77365
+      },
+      {
+        "chapter_name": "Chapter 381",
+        "chapter_slug": "chapter-381",
+        "chapter_num": 381,
+        "updated_at": "2024-10-31T17:46:56.000000Z",
+        "view": 76349
+      },
+      {
+        "chapter_name": "Chapter 380",
+        "chapter_slug": "chapter-380",
+        "chapter_num": 380,
+        "updated_at": "2024-10-31T17:45:28.000000Z",
+        "view": 75100
+      },
+      {
+        "chapter_name": "Chapter 379",
+        "chapter_slug": "chapter-379",
+        "chapter_num": 379,
+        "updated_at": "2024-10-31T17:44:02.000000Z",
+        "view": 73169
+      },
+      {
+        "chapter_name": "Chapter 378",
+        "chapter_slug": "chapter-378",
+        "chapter_num": 378,
+        "updated_at": "2024-10-31T17:43:03.000000Z",
+        "view": 68973
+      },
+      {
+        "chapter_name": "Chapter 377",
+        "chapter_slug": "chapter-377",
+        "chapter_num": 377,
+        "updated_at": "2024-10-31T17:41:58.000000Z",
+        "view": 70804
+      },
+      {
+        "chapter_name": "Chapter 376",
+        "chapter_slug": "chapter-376",
+        "chapter_num": 376,
+        "updated_at": "2024-10-31T17:40:46.000000Z",
+        "view": 70523
+      },
+      {
+        "chapter_name": "Chapter 375",
+        "chapter_slug": "chapter-375",
+        "chapter_num": 375,
+        "updated_at": "2024-10-31T17:39:50.000000Z",
+        "view": 70741
+      },
+      {
+        "chapter_name": "Chapter 374",
+        "chapter_slug": "chapter-374",
+        "chapter_num": 374,
+        "updated_at": "2024-10-31T17:37:58.000000Z",
+        "view": 71354
+      },
+      {
+        "chapter_name": "Chapter 373",
+        "chapter_slug": "chapter-373",
+        "chapter_num": 373,
+        "updated_at": "2024-10-31T17:36:43.000000Z",
+        "view": 73338
+      },
+      {
+        "chapter_name": "Chapter 372",
+        "chapter_slug": "chapter-372",
+        "chapter_num": 372,
+        "updated_at": "2024-10-31T17:35:26.000000Z",
+        "view": 71787
+      },
+      {
+        "chapter_name": "Chapter 371",
+        "chapter_slug": "chapter-371",
+        "chapter_num": 371,
+        "updated_at": "2024-10-31T17:33:43.000000Z",
+        "view": 72487
+      },
+      {
+        "chapter_name": "Chapter 370",
+        "chapter_slug": "chapter-370",
+        "chapter_num": 370,
+        "updated_at": "2024-10-31T17:32:19.000000Z",
+        "view": 73626
+      },
+      {
+        "chapter_name": "Chapter 369",
+        "chapter_slug": "chapter-369",
+        "chapter_num": 369,
+        "updated_at": "2024-10-31T17:31:21.000000Z",
+        "view": 74230
+      },
+      {
+        "chapter_name": "Chapter 368",
+        "chapter_slug": "chapter-368",
+        "chapter_num": 368,
+        "updated_at": "2024-10-31T17:30:16.000000Z",
+        "view": 73829
+      },
+      {
+        "chapter_name": "Chapter 367",
+        "chapter_slug": "chapter-367",
+        "chapter_num": 367,
+        "updated_at": "2024-10-31T17:29:11.000000Z",
+        "view": 77227
+      },
+      {
+        "chapter_name": "Chapter 366",
+        "chapter_slug": "chapter-366",
+        "chapter_num": 366,
+        "updated_at": "2024-10-31T17:28:05.000000Z",
+        "view": 72039
+      },
+      {
+        "chapter_name": "Chapter 365",
+        "chapter_slug": "chapter-365",
+        "chapter_num": 365,
+        "updated_at": "2024-10-31T17:27:01.000000Z",
+        "view": 70538
+      },
+      {
+        "chapter_name": "Chapter 364",
+        "chapter_slug": "chapter-364",
+        "chapter_num": 364,
+        "updated_at": "2024-10-31T17:25:38.000000Z",
+        "view": 70968
+      },
+      {
+        "chapter_name": "Chapter 363",
+        "chapter_slug": "chapter-363",
+        "chapter_num": 363,
+        "updated_at": "2024-10-31T17:24:17.000000Z",
+        "view": 72961
+      },
+      {
+        "chapter_name": "Chapter 362",
+        "chapter_slug": "chapter-362",
+        "chapter_num": 362,
+        "updated_at": "2024-10-31T17:22:51.000000Z",
+        "view": 69655
+      },
+      {
+        "chapter_name": "Chapter 361",
+        "chapter_slug": "chapter-361",
+        "chapter_num": 361,
+        "updated_at": "2024-10-31T17:21:26.000000Z",
+        "view": 69030
+      },
+      {
+        "chapter_name": "Chapter 360",
+        "chapter_slug": "chapter-360",
+        "chapter_num": 360,
+        "updated_at": "2024-10-31T17:20:20.000000Z",
+        "view": 69185
+      },
+      {
+        "chapter_name": "Chapter 359",
+        "chapter_slug": "chapter-359",
+        "chapter_num": 359,
+        "updated_at": "2024-10-31T17:18:03.000000Z",
+        "view": 68419
+      },
+      {
+        "chapter_name": "Chapter 358",
+        "chapter_slug": "chapter-358",
+        "chapter_num": 358,
+        "updated_at": "2024-10-31T17:16:39.000000Z",
+        "view": 70597
+      },
+      {
+        "chapter_name": "Chapter 357",
+        "chapter_slug": "chapter-357",
+        "chapter_num": 357,
+        "updated_at": "2024-10-31T17:14:48.000000Z",
+        "view": 74358
+      },
+      {
+        "chapter_name": "Chapter 356",
+        "chapter_slug": "chapter-356",
+        "chapter_num": 356,
+        "updated_at": "2024-10-31T17:13:50.000000Z",
+        "view": 69544
+      },
+      {
+        "chapter_name": "Chapter 355",
+        "chapter_slug": "chapter-355",
+        "chapter_num": 355,
+        "updated_at": "2024-10-31T17:12:38.000000Z",
+        "view": 71420
+      },
+      {
+        "chapter_name": "Chapter 354",
+        "chapter_slug": "chapter-354",
+        "chapter_num": 354,
+        "updated_at": "2024-10-31T17:11:12.000000Z",
+        "view": 72964
+      },
+      {
+        "chapter_name": "Chapter 353",
+        "chapter_slug": "chapter-353",
+        "chapter_num": 353,
+        "updated_at": "2024-10-31T17:09:39.000000Z",
+        "view": 76752
+      },
+      {
+        "chapter_name": "Chapter 352",
+        "chapter_slug": "chapter-352",
+        "chapter_num": 352,
+        "updated_at": "2024-10-31T17:07:57.000000Z",
+        "view": 71138
+      },
+      {
+        "chapter_name": "Chapter 351",
+        "chapter_slug": "chapter-351",
+        "chapter_num": 351,
+        "updated_at": "2024-10-31T17:06:55.000000Z",
+        "view": 71548
+      },
+      {
+        "chapter_name": "Chapter 350",
+        "chapter_slug": "chapter-350",
+        "chapter_num": 350,
+        "updated_at": "2024-10-31T17:05:16.000000Z",
+        "view": 72929
+      },
+      {
+        "chapter_name": "Chapter 349",
+        "chapter_slug": "chapter-349",
+        "chapter_num": 349,
+        "updated_at": "2024-10-31T17:04:14.000000Z",
+        "view": 71087
+      },
+      {
+        "chapter_name": "Chapter 348",
+        "chapter_slug": "chapter-348",
+        "chapter_num": 348,
+        "updated_at": "2024-10-31T17:02:43.000000Z",
+        "view": 72073
+      },
+      {
+        "chapter_name": "Chapter 347",
+        "chapter_slug": "chapter-347",
+        "chapter_num": 347,
+        "updated_at": "2024-10-31T17:01:31.000000Z",
+        "view": 76436
+      },
+      {
+        "chapter_name": "Chapter 346",
+        "chapter_slug": "chapter-346",
+        "chapter_num": 346,
+        "updated_at": "2024-10-31T17:00:21.000000Z",
+        "view": 78241
+      },
+      {
+        "chapter_name": "Chapter 345.1",
+        "chapter_slug": "chapter-345-1",
+        "chapter_num": 345.1,
+        "updated_at": "2024-10-31T16:58:53.000000Z",
+        "view": 69655
+      },
+      {
+        "chapter_name": "Chapter 345",
+        "chapter_slug": "chapter-345",
+        "chapter_num": 345,
+        "updated_at": "2024-10-31T16:57:38.000000Z",
+        "view": 72486
+      },
+      {
+        "chapter_name": "Chapter 344",
+        "chapter_slug": "chapter-344",
+        "chapter_num": 344,
+        "updated_at": "2024-10-31T16:56:39.000000Z",
+        "view": 74928
+      },
+      {
+        "chapter_name": "Chapter 343",
+        "chapter_slug": "chapter-343",
+        "chapter_num": 343,
+        "updated_at": "2024-10-31T16:55:39.000000Z",
+        "view": 78601
+      },
+      {
+        "chapter_name": "Chapter 342",
+        "chapter_slug": "chapter-342",
+        "chapter_num": 342,
+        "updated_at": "2024-10-31T16:53:54.000000Z",
+        "view": 81736
+      },
+      {
+        "chapter_name": "Chapter 341",
+        "chapter_slug": "chapter-341",
+        "chapter_num": 341,
+        "updated_at": "2024-10-31T16:52:11.000000Z",
+        "view": 78594
+      },
+      {
+        "chapter_name": "Chapter 340",
+        "chapter_slug": "chapter-340",
+        "chapter_num": 340,
+        "updated_at": "2024-10-31T16:50:45.000000Z",
+        "view": 76884
+      },
+      {
+        "chapter_name": "Chapter 339",
+        "chapter_slug": "chapter-339",
+        "chapter_num": 339,
+        "updated_at": "2024-10-31T16:49:48.000000Z",
+        "view": 79722
+      },
+      {
+        "chapter_name": "Chapter 338",
+        "chapter_slug": "chapter-338",
+        "chapter_num": 338,
+        "updated_at": "2024-10-31T16:48:01.000000Z",
+        "view": 77366
+      },
+      {
+        "chapter_name": "Chapter 337",
+        "chapter_slug": "chapter-337",
+        "chapter_num": 337,
+        "updated_at": "2024-10-31T16:45:59.000000Z",
+        "view": 74527
+      },
+      {
+        "chapter_name": "Chapter 336",
+        "chapter_slug": "chapter-336",
+        "chapter_num": 336,
+        "updated_at": "2024-10-31T16:44:32.000000Z",
+        "view": 72153
+      },
+      {
+        "chapter_name": "Chapter 335",
+        "chapter_slug": "chapter-335",
+        "chapter_num": 335,
+        "updated_at": "2024-10-31T16:43:26.000000Z",
+        "view": 74443
+      },
+      {
+        "chapter_name": "Chapter 334",
+        "chapter_slug": "chapter-334",
+        "chapter_num": 334,
+        "updated_at": "2024-10-31T16:42:06.000000Z",
+        "view": 75032
+      }
+    ],
+    "pagination": { "total": 787, "limit": 50, "offset": 400, "has_more": true }
+  }
+}

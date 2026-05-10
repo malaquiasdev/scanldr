@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { MangakakalotParseError } from "./types.ts";
-import { parseVolumeMapping } from "./volume-parser.ts";
+import { chaptersToVolumeMap, parseVolumeMapping } from "./volume-parser.ts";
 
 const fixturesDir = join(import.meta.dir, "../../../../tests/fixtures/mangakakalot");
 
@@ -194,5 +194,77 @@ describe("parseVolumeMapping — edge cases", () => {
     const vol13 = map.find((b) => b.volume === "13");
     const nums = vol13?.chapters.map((c) => Number(c.chapter)) ?? [];
     expect(nums).toEqual([...nums].sort((a, b) => a - b));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// chaptersToVolumeMap
+// ---------------------------------------------------------------------------
+
+function makeChapter(overrides: {
+  id: string;
+  chapter: string;
+  volume?: string | null;
+}) {
+  return {
+    id: overrides.id,
+    volume: overrides.volume ?? null,
+    chapter: overrides.chapter,
+    title: null,
+    translatedLanguage: "en",
+    scanlationGroup: null,
+    readableAt: "2024-01-01T00:00:00.000000Z",
+    externalUrl: null,
+  };
+}
+
+describe("chaptersToVolumeMap", () => {
+  it("empty array → empty VolumeMap", () => {
+    expect(chaptersToVolumeMap([])).toEqual([]);
+  });
+
+  it("all volume:null → single 'unknown' bucket sorted ascending", () => {
+    const chapters = [
+      makeChapter({ id: "naruto/ch-10", chapter: "10" }),
+      makeChapter({ id: "naruto/ch-1", chapter: "1" }),
+      makeChapter({ id: "naruto/ch-5", chapter: "5" }),
+    ];
+    const map = chaptersToVolumeMap(chapters);
+    expect(map).toHaveLength(1);
+    expect(map[0]?.volume).toBe("unknown");
+    expect(map[0]?.chapters.map((c) => c.chapter)).toEqual(["1", "5", "10"]);
+  });
+
+  it("passes chapter id through unchanged", () => {
+    const chapters = [makeChapter({ id: "naruto/chapter-700", chapter: "700" })];
+    const map = chaptersToVolumeMap(chapters);
+    expect(map[0]?.chapters[0]?.id).toBe("naruto/chapter-700");
+  });
+
+  it("mix of numeric volumes → numeric buckets ascending, unknown last", () => {
+    const chapters = [
+      makeChapter({ id: "test/ch-1", chapter: "1", volume: "1" }),
+      makeChapter({ id: "test/ch-2", chapter: "2", volume: "3" }),
+      makeChapter({ id: "test/ch-3", chapter: "3", volume: null }),
+      makeChapter({ id: "test/ch-4", chapter: "4", volume: "2" }),
+    ];
+    const map = chaptersToVolumeMap(chapters);
+    expect(map.map((b) => b.volume)).toEqual(["1", "2", "3", "unknown"]);
+  });
+
+  it("empty string volume treated as unknown", () => {
+    const chapters = [makeChapter({ id: "test/ch-1", chapter: "1", volume: "" })];
+    const map = chaptersToVolumeMap(chapters);
+    expect(map[0]?.volume).toBe("unknown");
+  });
+
+  it("chapters within a numeric bucket are sorted ascending", () => {
+    const chapters = [
+      makeChapter({ id: "test/ch-3", chapter: "3", volume: "1" }),
+      makeChapter({ id: "test/ch-1", chapter: "1", volume: "1" }),
+      makeChapter({ id: "test/ch-2", chapter: "2", volume: "1" }),
+    ];
+    const map = chaptersToVolumeMap(chapters);
+    expect(map[0]?.chapters.map((c) => c.chapter)).toEqual(["1", "2", "3"]);
   });
 });

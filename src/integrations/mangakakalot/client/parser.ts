@@ -174,6 +174,31 @@ export function parseChapterListFromApi(
 }
 
 /**
+ * Detects the client-side chapter-list API placeholder in a manga detail page HTML.
+ *
+ * mangakakalot.gg has migrated some series (e.g. naruto) to a placeholder div:
+ *   <div id="chapter-list-container" data-comic-slug="X" data-api-url="Y">Loading...</div>
+ *
+ * When present, the chapter list must be fetched from the API endpoint instead of
+ * parsed from the HTML. Returns { slug } when the placeholder is well-formed,
+ * or null otherwise.
+ *
+ * Slug must come from data-comic-slug (data-api-url contains "__SLUG__" template).
+ */
+export function detectChapterApiPlaceholder(html: string): { slug: string } | null {
+  const $ = cheerio.load(html);
+  const container = $("#chapter-list-container");
+  if (container.length === 0) return null;
+
+  const apiUrl = container.attr("data-api-url")?.trim() ?? "";
+  const slug = container.attr("data-comic-slug")?.trim() ?? "";
+
+  if (!apiUrl || !slug) return null;
+
+  return { slug };
+}
+
+/**
  * Parses chapter image URLs from a mangakakalot reader page.
  *
  * Throws MangakakalotParseError when zero images are found inside the reader container.
