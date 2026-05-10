@@ -1,11 +1,11 @@
 import { fetchCover } from "../../commands/download/cover.ts";
-import { packVolume } from "../../commands/download/pack.ts";
+import { packVolume as realPackVolume } from "../../commands/download/pack.ts";
 import type { PackedChapter } from "../../commands/download/pack.ts";
-import { downloadBundle } from "../../modules/downloader/index.ts";
+import { downloadBundle as realDownloadBundle } from "../../modules/downloader/index.ts";
 import type { Logger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import type { SourceDescriptor } from "../../sources/types.ts";
-import type { BundleItem, ModeSelection, SearchHit } from "../types.ts";
+import type { BundleItem, Downloader, ModeSelection, Packer, SearchHit } from "../types.ts";
 
 export interface ExecuteWalkthroughInput {
   source: SourceDescriptor;
@@ -19,9 +19,22 @@ export interface ExecuteWalkthroughInput {
   logger: Logger;
 }
 
+export interface ExecuteDeps {
+  downloader: Downloader;
+  packer: Packer;
+}
+
 export interface ExecuteWalkthroughResult {
   outputs: string[];
   failed: number;
+}
+
+/** Returns deps wired to real production modules (lazy import already resolved at module load). */
+export function createDefaultExecuteDeps(): ExecuteDeps {
+  return {
+    downloader: { downloadBundle: realDownloadBundle },
+    packer: { packVolume: realPackVolume },
+  };
 }
 
 /** Derive a slug from a title — lowercase, alphanumeric + hyphens. */
@@ -35,9 +48,11 @@ function toSlug(title: string): string {
 /** Step 9: execute the assembled plan — download pages + pack when requested. */
 export async function executeWalkthrough(
   opts: ExecuteWalkthroughInput,
+  deps: ExecuteDeps = createDefaultExecuteDeps(),
 ): Promise<ExecuteWalkthroughResult> {
   const { source, hit, mode, selectedBundles, groupIntoVolume, coverUrl, outDir, adapter, logger } =
     opts;
+  const { downloader, packer } = deps;
 
   const slug = toSlug(hit.title);
   const outputs: string[] = [];
@@ -82,7 +97,7 @@ export async function executeWalkthrough(
         `resolved ${chapterInput.pages.length} pages for ${bundle.label}`,
       );
 
-      const result = await downloadBundle({
+      const result = await downloader.downloadBundle({
         outDir,
         format: "cbz",
         slug,
@@ -135,7 +150,7 @@ export async function executeWalkthrough(
         }
       }
 
-      const packResult = await packVolume({
+      const packResult = await packer.packVolume({
         slug,
         outDir,
         chapters: packedChapters,

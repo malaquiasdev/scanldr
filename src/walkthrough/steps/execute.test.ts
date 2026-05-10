@@ -5,7 +5,8 @@ import type { ChapterInput } from "../../modules/downloader/types.ts";
 import { createLogger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import { getSource } from "../../sources/index.ts";
-import type { WalkthroughResult } from "../types.ts";
+import type { Downloader, Packer, WalkthroughResult } from "../types.ts";
+import { executeWalkthrough } from "./execute.ts";
 import type { ExecuteWalkthroughInput } from "./execute.ts";
 
 const source = getSource("mangadex");
@@ -41,6 +42,27 @@ function makeFakeAdapter(overrides: Partial<SourceAdapter> = {}): SourceAdapter 
   };
 }
 
+function makeFakeDownloader(overrides: Partial<Downloader> = {}): Downloader {
+  return {
+    downloadBundle: mock(async () => ({
+      chapterIds: ["hit-1-ch-1"],
+      outputPath: join(outDir, "naruto", "naruto-chapter-001.cbz"),
+      byteSize: 100,
+    })),
+    ...overrides,
+  };
+}
+
+function makeFakePacker(overrides: Partial<Packer> = {}): Packer {
+  return {
+    packVolume: mock(async (input) => ({
+      outputPath: join(outDir, "naruto", `${input.slug}-volume-001.cbz`),
+      byteSize: 500,
+    })),
+    ...overrides,
+  };
+}
+
 describe("executeWalkthrough", () => {
   test("calls adapter.fetchChapterInput for each bundle", async () => {
     const fetchedIds: string[] = [];
@@ -51,23 +73,12 @@ describe("executeWalkthrough", () => {
       },
     });
 
-    // Mock downloadBundle so it doesn't actually write to disk
-    mock.module("../../modules/downloader/index.ts", () => ({
-      downloadBundle: async () => ({
-        chapterIds: ["hit-1-ch-1"],
-        outputPath: join(outDir, "naruto", "naruto-chapter-001.cbz"),
-        byteSize: 100,
-      }),
-    }));
+    const opts: ExecuteWalkthroughInput = { ...plan, outDir, adapter, logger };
+    const result = await executeWalkthrough(opts, {
+      downloader: makeFakeDownloader(),
+      packer: makeFakePacker(),
+    });
 
-    const { executeWalkthrough } = await import("./execute.ts");
-    const opts: ExecuteWalkthroughInput = {
-      ...plan,
-      outDir,
-      adapter,
-      logger,
-    };
-    const result = await executeWalkthrough(opts);
     expect(fetchedIds).toContain("hit-1-ch-1");
     expect(result.failed).toBe(0);
   });
@@ -79,20 +90,17 @@ describe("executeWalkthrough", () => {
       },
     });
 
-    mock.module("../../modules/downloader/index.ts", () => ({
-      downloadBundle: async () => {
-        throw new Error("unreachable");
-      },
-    }));
-
-    const { executeWalkthrough } = await import("./execute.ts");
     const opts: ExecuteWalkthroughInput = {
       ...plan,
       outDir,
       adapter: failingAdapter,
       logger,
     };
-    const result = await executeWalkthrough(opts);
+    const result = await executeWalkthrough(opts, {
+      downloader: makeFakeDownloader(),
+      packer: makeFakePacker(),
+    });
+
     expect(result.failed).toBe(1);
     expect(result.outputs).toHaveLength(0);
   });
@@ -100,25 +108,6 @@ describe("executeWalkthrough", () => {
   test("groupIntoVolume=true calls packVolume when no failures", async () => {
     const packCalls: string[] = [];
 
-    mock.module("../../modules/downloader/index.ts", () => ({
-      downloadBundle: async () => ({
-        chapterIds: ["hit-1-ch-1"],
-        outputPath: join(outDir, "naruto", "naruto-chapter-001.cbz"),
-        byteSize: 100,
-      }),
-    }));
-
-    mock.module("../../commands/download/pack.ts", () => ({
-      packVolume: async (input: { slug: string }) => {
-        packCalls.push(input.slug);
-        return { outputPath: join(outDir, "naruto", "naruto-volume-001.cbz"), byteSize: 500 };
-      },
-      deleteIndividualFiles: async () => {},
-      buildVolumeFilename: (slug: string, input: string) => `${slug}-volume-${input}.cbz`,
-      defaultVolumeName: (slug: string) => `${slug}-volume`,
-    }));
-
-    const { executeWalkthrough } = await import("./execute.ts");
     const opts: ExecuteWalkthroughInput = {
       ...plan,
       groupIntoVolume: true,
@@ -126,7 +115,16 @@ describe("executeWalkthrough", () => {
       adapter: makeFakeAdapter(),
       logger,
     };
-    const result = await executeWalkthrough(opts);
+    const result = await executeWalkthrough(opts, {
+      downloader: makeFakeDownloader(),
+      packer: makeFakePacker({
+        packVolume: mock(async (input) => {
+          packCalls.push(input.slug);
+          return { outputPath: join(outDir, "naruto", "naruto-volume-001.cbz"), byteSize: 500 };
+        }),
+      }),
+    });
+
     expect(packCalls).toContain("naruto");
     expect(result.failed).toBe(0);
   });
@@ -134,25 +132,6 @@ describe("executeWalkthrough", () => {
   test("groupIntoVolume=false does not call packVolume", async () => {
     const packCalls: string[] = [];
 
-    mock.module("../../modules/downloader/index.ts", () => ({
-      downloadBundle: async () => ({
-        chapterIds: ["hit-1-ch-1"],
-        outputPath: join(outDir, "naruto", "naruto-chapter-001.cbz"),
-        byteSize: 100,
-      }),
-    }));
-
-    mock.module("../../commands/download/pack.ts", () => ({
-      packVolume: async (input: { slug: string }) => {
-        packCalls.push(input.slug);
-        return { outputPath: "", byteSize: 0 };
-      },
-      deleteIndividualFiles: async () => {},
-      buildVolumeFilename: (slug: string, input: string) => `${slug}-volume-${input}.cbz`,
-      defaultVolumeName: (slug: string) => `${slug}-volume`,
-    }));
-
-    const { executeWalkthrough } = await import("./execute.ts");
     const opts: ExecuteWalkthroughInput = {
       ...plan,
       groupIntoVolume: false,
@@ -160,7 +139,16 @@ describe("executeWalkthrough", () => {
       adapter: makeFakeAdapter(),
       logger,
     };
-    await executeWalkthrough(opts);
+    await executeWalkthrough(opts, {
+      downloader: makeFakeDownloader(),
+      packer: makeFakePacker({
+        packVolume: mock(async (input) => {
+          packCalls.push(input.slug);
+          return { outputPath: "", byteSize: 0 };
+        }),
+      }),
+    });
+
     expect(packCalls).toHaveLength(0);
   });
 });
