@@ -1,17 +1,23 @@
-import { getMockedSearchResults } from "../mocks.ts";
+import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import { select } from "../prompts.ts";
 import type { SearchHit } from "../types.ts";
+import { WalkthroughError } from "../types.ts";
 
 export interface SearchResultsPickerOptions {
   query: string;
-  sourceId: string;
+  sourceLabel: string;
+  adapter: SourceAdapter;
 }
 
-/** Step 4: show search results and let user pick one.
- * PHASE 3: replace getMockedSearchResults with real source.search(query). */
+/** Step 4: search the source and let user pick a result. */
 export async function pickSearchResult(opts: SearchResultsPickerOptions): Promise<SearchHit> {
-  // PHASE 3: replace with real source.search(query)
-  const results = getMockedSearchResults(opts.query, opts.sourceId);
+  const results = await opts.adapter.search(opts.query);
+
+  if (results.length === 0) {
+    throw new WalkthroughError(
+      `No results found for "${opts.query}" on ${opts.sourceLabel}. Try a different title.`,
+    );
+  }
 
   const id = await select<string>({
     message: "Select manga:",
@@ -22,6 +28,6 @@ export async function pickSearchResult(opts: SearchResultsPickerOptions): Promis
   });
 
   const found = results.find((r) => r.id === id);
-  if (!found) throw new Error(`Unexpected result id: ${id}`);
+  if (!found) throw new WalkthroughError(`Unexpected result id: ${id}`);
   return found;
 }
