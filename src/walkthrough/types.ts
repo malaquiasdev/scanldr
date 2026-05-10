@@ -1,5 +1,5 @@
-import type { PackVolumeInput, PackVolumeResult } from "../commands/download/types.ts";
 import type { DownloadBundleInput, DownloadBundleResult } from "../modules/downloader/types.ts";
+import type { PackVolumeInput, PackVolumeResult } from "../pack/types.ts";
 import type { SourceDescriptor } from "../sources/types.ts";
 
 /** Minimal surface of the downloader that executeWalkthrough needs. */
