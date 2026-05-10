@@ -4,10 +4,13 @@
 
 ```
 src/
-├── index.ts            # CLI entrypoint
-├── plugins/            # Infrastructure: config/, logger/, db/, errors/, guards/
+├── index.ts            # CLI entrypoint — trace store + logger init → runWalkthrough
+├── walkthrough/        # Orchestrates the 9-step one-shot download walkthrough
+├── sources/            # Source adapter layer (mangadex, mangakakalot wrappers)
+├── pack/               # CBZ/ZIP packaging primitives
+├── plugins/            # Infrastructure: config/, logger/, db/, errors/, guards/, trace/
 ├── modules/            # Business logic: downloader/
-└── integrations/       # External clients: mangadex/, mangakakalot/
+└── integrations/       # External site clients: mangadex/, mangakakalot/
 migrations/             # Versioned SQL migrations (applied in lexicographic order)
 ```
 

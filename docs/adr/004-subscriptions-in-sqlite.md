@@ -2,6 +2,9 @@
 
 **Date:** 2026-05-01
 **Status:** Accepted
+
+> **Status**: Withdrawn on 2026-05-10. The `subscriptions` feature was decommissioned in epic #116 Phase 4. No replacement.
+
 **Supersedes:** the `mangas.txt` design referenced by earlier drafts of `flows/sync_flow.md` and `overviewer.md`.
 
 ## Context
