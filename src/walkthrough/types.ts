@@ -1,17 +1,7 @@
 import type { SourceDescriptor } from "../sources/types.ts";
 
-export type { SourceDescriptor };
-
 export interface WalkthroughInput {
   titlePrefill?: string;
-}
-
-export interface TitleOrUrl {
-  value: string;
-}
-
-export interface SourceSelection {
-  source: SourceDescriptor;
 }
 
 /** One result from a source search. Mirrors MangaCandidate from shared types. */
@@ -29,15 +19,6 @@ export interface BundleItem {
   label: string;
   /** Opaque id used by Phase 3 to fetch pages */
   id: string;
-}
-
-export interface RangeSelection {
-  bundles: BundleItem[];
-}
-
-export interface PackOptions {
-  groupIntoVolume: boolean;
-  coverUrl: string | null;
 }
 
 export interface AuthResult {
