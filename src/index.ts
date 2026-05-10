@@ -11,6 +11,7 @@ import { loadConfig } from "@plugins/config/index.ts";
 import { openDb, runMigrations } from "@plugins/db/index.ts";
 import { CliError } from "@plugins/errors/index.ts";
 import { type LogFormat, type LogLevel, createLogger } from "@plugins/logger/index.ts";
+import { createTraceStore } from "@plugins/trace/index.ts";
 import type { Handler } from "./cli/types.ts";
 
 const VERSION = "0.0.0";
@@ -290,7 +291,7 @@ export function resolveLogConfig(values: {
   const quiet = values.quiet === true;
   const human = values.human === true;
   const json = values.json === true;
-  // --json is kept as a silent no-op alias for backward compat; JSON is now the default.
+  // Default is human. --json opts into structured output. --human is a silent no-op alias.
 
   if (verbose && quiet) {
     throw new CliError("--verbose and --quiet are mutually exclusive", 2);
@@ -300,7 +301,7 @@ export function resolveLogConfig(values: {
   }
 
   const level: LogLevel = quiet ? "warn" : "info";
-  const format: LogFormat = human ? "human" : "json";
+  const format: LogFormat = json ? "json" : "human";
   return { level, format };
 }
 
@@ -363,17 +364,19 @@ export async function main(argv: string[]): Promise<void> {
   }
 
   const { level, format } = resolveLogConfig(values);
-  const logger = createLogger({ level, format });
+
+  const { config } = await loadConfig();
+  const db = openDb(config.db_path);
+  runMigrations(db);
+
+  const traceStore = createTraceStore({ db });
+  const logger = createLogger({ level, format }, traceStore);
 
   const handler = handlers[command];
   if (!handler) {
     process.stderr.write(`Unknown command: ${command}\n\n${USAGE}`);
     process.exit(1);
   }
-
-  const { config } = await loadConfig();
-  const db = openDb(config.db_path);
-  runMigrations(db);
 
   // postArgs is everything after the command — verbatim, so handler's parseArgs
   // sees the real flag values (e.g. --volume "13" not boolean true).

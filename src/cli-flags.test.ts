@@ -3,30 +3,30 @@ import { parseArgs } from "node:util";
 import { normalizePackFlag, resolveLogConfig } from "./index.ts";
 
 describe("resolveLogConfig — flag wiring", () => {
-  test("default: info + json", () => {
-    expect(resolveLogConfig({})).toEqual({ level: "info", format: "json" });
+  test("default: info + human", () => {
+    expect(resolveLogConfig({})).toEqual({ level: "info", format: "human" });
   });
 
-  test("--verbose keeps info level", () => {
-    expect(resolveLogConfig({ verbose: true })).toEqual({ level: "info", format: "json" });
+  test("--verbose keeps info level, format stays human", () => {
+    expect(resolveLogConfig({ verbose: true })).toEqual({ level: "info", format: "human" });
   });
 
-  test("--quiet raises threshold to warn", () => {
-    expect(resolveLogConfig({ quiet: true })).toEqual({ level: "warn", format: "json" });
+  test("--quiet raises threshold to warn, format stays human", () => {
+    expect(resolveLogConfig({ quiet: true })).toEqual({ level: "warn", format: "human" });
   });
 
-  test("--json is a no-op alias (still resolves to json)", () => {
+  test("--json opts into json format", () => {
     expect(resolveLogConfig({ json: true })).toEqual({ level: "info", format: "json" });
   });
 
-  test("--verbose --json combine", () => {
+  test("--verbose --json combine: info level + json format", () => {
     expect(resolveLogConfig({ verbose: true, json: true })).toEqual({
       level: "info",
       format: "json",
     });
   });
 
-  test("--human switches format to human", () => {
+  test("--human is a silent no-op alias (resolves to human)", () => {
     expect(resolveLogConfig({ human: true })).toEqual({ level: "info", format: "human" });
   });
 
