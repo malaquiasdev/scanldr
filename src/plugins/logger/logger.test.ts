@@ -84,6 +84,30 @@ describe("createLogger — human format", () => {
     expect(obj.url).toBe("https://example.com");
   });
 
+  test("redacts cf_clearance in human format", () => {
+    const { logger, sink } = makeLogger("info", "human");
+    logger.info({ cf_clearance: "abcd1234efgh5678" }, "req");
+    const line = sink.lines[0] as string;
+    expect(line).toContain("[REDACTED]");
+    expect(line).not.toContain("abcd1234efgh5678");
+  });
+
+  test("redacts useragent in human format", () => {
+    const { logger, sink } = makeLogger("info", "human");
+    logger.info({ useragent: "Mozilla/5.0 (Windows NT 10.0)" }, "req");
+    const line = sink.lines[0] as string;
+    expect(line).toContain("[REDACTED]");
+    expect(line).not.toContain("Mozilla/5.0 (Windows NT 10.0)");
+  });
+
+  test("redacts authorization in human format", () => {
+    const { logger, sink } = makeLogger("info", "human");
+    logger.info({ authorization: "Bearer eyJhbGciOiJIUzI1NiJ9" }, "req");
+    const line = sink.lines[0] as string;
+    expect(line).toContain("[REDACTED]");
+    expect(line).not.toContain("Bearer eyJhbGciOiJIUzI1NiJ9");
+  });
+
   test("empty fields object emits no trailing space or empty object", () => {
     const { logger, sink } = makeLogger("info", "human");
     logger.warn({}, "clean");

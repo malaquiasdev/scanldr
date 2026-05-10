@@ -37,6 +37,20 @@ describe("resolveLogConfig — flag wiring", () => {
   test("--verbose + --quiet together throws CLI error (mutual exclusion)", () => {
     expect(() => resolveLogConfig({ verbose: true, quiet: true })).toThrow(/mutually exclusive/i);
   });
+
+  test("--human + --quiet: format and level are orthogonal", () => {
+    expect(resolveLogConfig({ human: true, quiet: true })).toEqual({
+      level: "warn",
+      format: "human",
+    });
+  });
+
+  test("--human + --verbose: format and level are orthogonal", () => {
+    expect(resolveLogConfig({ human: true, verbose: true })).toEqual({
+      level: "info",
+      format: "human",
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
