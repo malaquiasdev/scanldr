@@ -36,7 +36,9 @@ export function createLogger(options: LoggerOptions): Logger {
       write(`${JSON.stringify(payload)}\n`);
       return;
     }
-    write(`${ts} ${level} ${msg}\n`);
+    const safeFields = redact(fields) as Record<string, unknown>;
+    const fieldsStr = Object.keys(safeFields).length > 0 ? ` ${JSON.stringify(safeFields)}` : "";
+    write(`${ts} ${level} ${msg}${fieldsStr}\n`);
   }
 
   return {
