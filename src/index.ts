@@ -289,12 +289,13 @@ export function resolveLogConfig(values: {
   const verbose = values.verbose === true;
   const quiet = values.quiet === true;
   const human = values.human === true;
+  const json = values.json === true;
   // --json is kept as a silent no-op alias for backward compat; JSON is now the default.
 
   if (verbose && quiet) {
     throw new CliError("--verbose and --quiet are mutually exclusive", 2);
   }
-  if (human && values.json === true) {
+  if (human && json) {
     throw new CliError("--human and --json are mutually exclusive", 2);
   }
 
