@@ -38,25 +38,27 @@ describe("runMigrations", () => {
       .get() as { name: string } | null;
     expect(row?.name).toBe("_migrations");
 
+    // Phase 4: migration 004 drops downloads and subscriptions — they must NOT exist after full run.
     const downloads = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='downloads'")
       .get() as { name: string } | null;
-    expect(downloads?.name).toBe("downloads");
+    expect(downloads).toBeNull();
 
     const subscriptions = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='subscriptions'")
       .get() as { name: string } | null;
-    expect(subscriptions?.name).toBe("subscriptions");
+    expect(subscriptions).toBeNull();
 
-    const idx = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_unique_chapter'")
+    // The traces table (migration 003) must exist.
+    const traces = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='traces'")
       .get() as { name: string } | null;
-    expect(idx?.name).toBe("idx_unique_chapter");
+    expect(traces?.name).toBe("traces");
 
     const rows = db
       .prepare<{ name: string }, []>("SELECT name FROM _migrations ORDER BY name")
       .all();
-    expect(rows.length).toBeGreaterThanOrEqual(2);
+    expect(rows.length).toBeGreaterThanOrEqual(4);
     expect(rows[0]?.name).toBe("001_create_downloads.sql");
     expect(rows[1]?.name).toBe("002_create_subscriptions.sql");
   });
@@ -91,16 +93,18 @@ describe("runMigrations", () => {
 
     runMigrations(db);
 
-    // Only 002 should have been applied now (plus the pre-existing 001)
+    // 002, 003, 004 should have been applied now (plus the pre-existing 001)
     const rows = db
       .prepare<{ name: string }, []>("SELECT name FROM _migrations ORDER BY name")
       .all();
     expect(rows.map((r) => r.name)).toContain("002_create_subscriptions.sql");
+    expect(rows.map((r) => r.name)).toContain("004_drop_subscriptions_and_downloads.sql");
 
+    // Phase 4: migration 004 drops subscriptions after 002 creates it.
     const subscriptions = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='subscriptions'")
       .get() as { name: string } | null;
-    expect(subscriptions?.name).toBe("subscriptions");
+    expect(subscriptions).toBeNull();
   });
 
   test("re-run is idempotent — second runMigrations is a no-op", () => {
