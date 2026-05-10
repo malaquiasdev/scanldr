@@ -284,17 +284,23 @@ export function resolveLogConfig(values: {
   verbose?: unknown;
   quiet?: unknown;
   json?: unknown;
+  human?: unknown;
 }): { level: LogLevel; format: LogFormat } {
   const verbose = values.verbose === true;
   const quiet = values.quiet === true;
+  const human = values.human === true;
   const json = values.json === true;
+  // --json is kept as a silent no-op alias for backward compat; JSON is now the default.
 
   if (verbose && quiet) {
     throw new CliError("--verbose and --quiet are mutually exclusive", 2);
   }
+  if (human && json) {
+    throw new CliError("--human and --json are mutually exclusive", 2);
+  }
 
   const level: LogLevel = quiet ? "warn" : "info";
-  const format: LogFormat = json ? "json" : "human";
+  const format: LogFormat = human ? "human" : "json";
   return { level, format };
 }
 
@@ -342,6 +348,7 @@ export async function main(argv: string[]): Promise<void> {
       verbose: { type: "boolean" },
       quiet: { type: "boolean", short: "q" },
       json: { type: "boolean" },
+      human: { type: "boolean" },
     },
   });
 

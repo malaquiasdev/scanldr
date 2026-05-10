@@ -3,19 +3,19 @@ import { parseArgs } from "node:util";
 import { normalizePackFlag, resolveLogConfig } from "./index.ts";
 
 describe("resolveLogConfig — flag wiring", () => {
-  test("default: info + human", () => {
-    expect(resolveLogConfig({})).toEqual({ level: "info", format: "human" });
+  test("default: info + json", () => {
+    expect(resolveLogConfig({})).toEqual({ level: "info", format: "json" });
   });
 
   test("--verbose keeps info level", () => {
-    expect(resolveLogConfig({ verbose: true })).toEqual({ level: "info", format: "human" });
+    expect(resolveLogConfig({ verbose: true })).toEqual({ level: "info", format: "json" });
   });
 
   test("--quiet raises threshold to warn", () => {
-    expect(resolveLogConfig({ quiet: true })).toEqual({ level: "warn", format: "human" });
+    expect(resolveLogConfig({ quiet: true })).toEqual({ level: "warn", format: "json" });
   });
 
-  test("--json switches format", () => {
+  test("--json is a no-op alias (still resolves to json)", () => {
     expect(resolveLogConfig({ json: true })).toEqual({ level: "info", format: "json" });
   });
 
@@ -26,8 +26,30 @@ describe("resolveLogConfig — flag wiring", () => {
     });
   });
 
+  test("--human switches format to human", () => {
+    expect(resolveLogConfig({ human: true })).toEqual({ level: "info", format: "human" });
+  });
+
+  test("--human + --json throws CLI error (mutually exclusive)", () => {
+    expect(() => resolveLogConfig({ human: true, json: true })).toThrow(/mutually exclusive/i);
+  });
+
   test("--verbose + --quiet together throws CLI error (mutual exclusion)", () => {
     expect(() => resolveLogConfig({ verbose: true, quiet: true })).toThrow(/mutually exclusive/i);
+  });
+
+  test("--human + --quiet: format and level are orthogonal", () => {
+    expect(resolveLogConfig({ human: true, quiet: true })).toEqual({
+      level: "warn",
+      format: "human",
+    });
+  });
+
+  test("--human + --verbose: format and level are orthogonal", () => {
+    expect(resolveLogConfig({ human: true, verbose: true })).toEqual({
+      level: "info",
+      format: "human",
+    });
   });
 });
 

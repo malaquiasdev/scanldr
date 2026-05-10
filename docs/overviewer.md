@@ -284,7 +284,8 @@ Flags:
 | Flag | Effect |
 |---|---|
 | `--quiet` / `-q` | Raise the threshold to `warn`. Info lines are suppressed. |
-| `--json` | Emit one JSON object per log line (newline-delimited). Useful for piping into log shippers. |
+| `--json` | No-op alias kept for backward compatibility. JSON is the default format. |
+| `--human` | Switch to human-readable format: `<ts> <level> <msg> <fields-json>`. Fields are appended as a JSON object; omitted when empty. Sensitive keys are still redacted. |
 
 All log lines follow the pino convention: structured fields first, human message last — `logger.warn({ event, context, ...fields }, msg)`.
 

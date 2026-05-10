@@ -30,13 +30,14 @@ export function createLogger(options: LoggerOptions): Logger {
   function emit(level: LogLevel, fields: Record<string, unknown>, msg: string): void {
     if (LEVELS[level] > threshold) return;
     const ts = now();
+    const safeFields = redact(fields) as Record<string, unknown>;
     if (options.format === "json") {
-      const safeFields = redact(fields) as Record<string, unknown>;
       const payload = { ts, level, msg, ...safeFields };
       write(`${JSON.stringify(payload)}\n`);
       return;
     }
-    write(`${ts} ${level} ${msg}\n`);
+    const fieldsStr = Object.keys(safeFields).length > 0 ? ` ${JSON.stringify(safeFields)}` : "";
+    write(`${ts} ${level} ${msg}${fieldsStr}\n`);
   }
 
   return {

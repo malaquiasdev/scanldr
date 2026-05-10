@@ -53,18 +53,76 @@ describe("createLogger — thresholds", () => {
     expect(sink.lines).toEqual([`${FIXED_TS} error e\n`, `${FIXED_TS} warn w\n`]);
   });
 });
+// Threshold tests use human format (default in makeLogger) with empty fields,
+// so they exercise the no-trailing-artefact path.
 
 describe("createLogger — human format", () => {
-  test("emits `<ts> <level> <message>`", () => {
+  test("emits `<ts> <level> <message>` with no trailing artefact when fields are empty", () => {
     const { logger, sink } = makeLogger("info", "human");
     logger.info({}, "hello world");
     expect(sink.lines).toEqual([`${FIXED_TS} info hello world\n`]);
   });
 
-  test("ignores fields in human format", () => {
+  test("appends JSON fields after message", () => {
     const { logger, sink } = makeLogger("info", "human");
-    logger.info({ foo: "bar", cookies: "secret" }, "msg");
-    expect(sink.lines).toEqual([`${FIXED_TS} info msg\n`]);
+    logger.info({ attempt: 1, waitMs: 500 }, "retrying");
+    expect(sink.lines).toHaveLength(1);
+    const line = sink.lines[0] as string;
+    expect(line.startsWith(`${FIXED_TS} info retrying `)).toBe(true);
+    expect(line.endsWith("\n")).toBe(true);
+    const fieldsStr = line.slice(`${FIXED_TS} info retrying `.length, -1);
+    expect(JSON.parse(fieldsStr)).toEqual({ attempt: 1, waitMs: 500 });
+  });
+
+  test("redacts cookies/cf_clearance/useragent/authorization in human format", () => {
+    const { logger, sink } = makeLogger("info", "human");
+    logger.info({ cookies: "secret", url: "https://example.com" }, "req");
+    const line = sink.lines[0] as string;
+    const fieldsStr = line.slice(`${FIXED_TS} info req `.length, -1);
+    const obj = JSON.parse(fieldsStr);
+    expect(obj.cookies).toBe("[REDACTED]");
+    expect(obj.url).toBe("https://example.com");
+  });
+
+  test("redacts cf_clearance in human format", () => {
+    const { logger, sink } = makeLogger("info", "human");
+    logger.info({ cf_clearance: "abcd1234efgh5678" }, "req");
+    const line = sink.lines[0] as string;
+    expect(line).toContain("[REDACTED]");
+    expect(line).not.toContain("abcd1234efgh5678");
+  });
+
+  test("redacts useragent in human format", () => {
+    const { logger, sink } = makeLogger("info", "human");
+    logger.info({ useragent: "Mozilla/5.0 (Windows NT 10.0)" }, "req");
+    const line = sink.lines[0] as string;
+    expect(line).toContain("[REDACTED]");
+    expect(line).not.toContain("Mozilla/5.0 (Windows NT 10.0)");
+  });
+
+  test("redacts authorization in human format", () => {
+    const { logger, sink } = makeLogger("info", "human");
+    logger.info({ authorization: "Bearer eyJhbGciOiJIUzI1NiJ9" }, "req");
+    const line = sink.lines[0] as string;
+    expect(line).toContain("[REDACTED]");
+    expect(line).not.toContain("Bearer eyJhbGciOiJIUzI1NiJ9");
+  });
+
+  test("empty fields object emits no trailing space or empty object", () => {
+    const { logger, sink } = makeLogger("info", "human");
+    logger.warn({}, "clean");
+    expect(sink.lines[0]).toBe(`${FIXED_TS} warn clean\n`);
+  });
+
+  test("each human call is exactly one newline-delimited line", () => {
+    const { logger, sink } = makeLogger("info", "human");
+    logger.error({ x: 1 }, "a");
+    logger.warn({}, "b");
+    expect(sink.lines).toHaveLength(2);
+    for (const line of sink.lines) {
+      expect(line.endsWith("\n")).toBe(true);
+      expect(line.indexOf("\n")).toBe(line.length - 1);
+    }
   });
 });
 
