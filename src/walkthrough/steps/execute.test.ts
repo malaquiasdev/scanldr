@@ -196,6 +196,83 @@ describe("executeWalkthrough", () => {
     expect(downloadArg.chapters).toHaveLength(3);
   });
 
+  test("volume mode → packer.packVolume is NOT called", async () => {
+    const packer = makeFakePacker();
+    const volumeBundle = {
+      kind: "volume" as const,
+      label: "Volume 1",
+      id: "vol:1",
+      num: "1",
+      chapterIds: ["c1", "c2"],
+      chapterNums: ["1", "2"],
+    };
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      mode: "volume",
+      selectedBundles: [volumeBundle],
+      groupIntoVolume: true,
+      coverUrl: null,
+      outDir,
+      adapter: makeFakeAdapter(),
+      logger,
+    };
+
+    const result = await executeWalkthrough(opts, {
+      downloader: makeFakeDownloader(),
+      packer,
+    });
+
+    expect((packer.packVolume as ReturnType<typeof mock>).mock.calls.length).toBe(0);
+    // downloader-produced path is the final artifact
+    expect(result.outputs).toHaveLength(1);
+    expect(result.failed).toBe(0);
+  });
+
+  test("volume mode with coverUrl → cover-skipped warn emitted", async () => {
+    const warnEvents: string[] = [];
+    const capturingLogger = createLogger({
+      level: "warn",
+      format: "human",
+      write: noop,
+    });
+    // Override warn to capture events; msg is always provided by executeWalkthrough
+    const origWarn = capturingLogger.warn.bind(capturingLogger);
+    capturingLogger.warn = (obj: Record<string, unknown>, msg: string) => {
+      if (typeof obj === "object" && obj !== null && "event" in obj) {
+        warnEvents.push(obj.event as string);
+      }
+      return origWarn(obj, msg);
+    };
+
+    const volumeBundle = {
+      kind: "volume" as const,
+      label: "Volume 1",
+      id: "vol:1",
+      num: "1",
+      chapterIds: ["c1"],
+      chapterNums: ["1"],
+    };
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      mode: "volume",
+      selectedBundles: [volumeBundle],
+      groupIntoVolume: true,
+      coverUrl: "https://example.com/cover.jpg",
+      outDir,
+      adapter: makeFakeAdapter(),
+      logger: capturingLogger,
+    };
+
+    await executeWalkthrough(opts, {
+      downloader: makeFakeDownloader(),
+      packer: makeFakePacker(),
+    });
+
+    expect(warnEvents).toContain("walkthrough.cover_skipped_volume_mode");
+  });
+
   test("pack filename uses bundle.num (numeric), not bundle.id (opaque)", async () => {
     const capturedChapters: Array<{ num: string }> = [];
     const opts: ExecuteWalkthroughInput = {

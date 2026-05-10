@@ -150,8 +150,8 @@ describe("runWalkthrough — full happy path", () => {
     expect(result.groupIntoVolume).toBe(true);
     // one volume selected → downloader called once with all chapters in that volume
     expect((fakeDownloader.downloadBundle as ReturnType<typeof mock>).mock.calls.length).toBe(1);
-    // volume auto-packs → packer called once
-    expect((fakePacker.packVolume as ReturnType<typeof mock>).mock.calls.length).toBe(1);
+    // volume mode: downloader already produces the final cbz — packer must NOT be called
+    expect((fakePacker.packVolume as ReturnType<typeof mock>).mock.calls.length).toBe(0);
   });
 
   test("mode=chapter + group=false → cover-prompt skipped, coverUrl is null, packer not called", async () => {

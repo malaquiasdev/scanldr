@@ -149,7 +149,13 @@ export async function executeWalkthrough(
     }
   }
 
-  if (groupIntoVolume && packedChapters.length > 0 && failed === 0) {
+  // volume mode: the downloader already produced a final cbz per volume — do NOT re-pack.
+  // groupIntoVolume stays true in the caller (walkthrough/index.ts) for semantic reasons
+  // (cover prompt, range selection), but the pack step must be skipped here.
+  // chapter mode + groupIntoVolume=true: pack multiple chapter cbz files into one volume cbz.
+  const shouldPack = mode !== "volume" && groupIntoVolume;
+
+  if (shouldPack && packedChapters.length > 0 && failed === 0) {
     try {
       let cover: { bytes: Uint8Array; ext: string } | undefined;
       if (coverUrl !== null) {
@@ -189,6 +195,13 @@ export async function executeWalkthrough(
         "volume pack failed",
       );
     }
+  } else if (mode === "volume" && coverUrl !== null) {
+    // Cover injection in volume mode is deferred to a future phase.
+    // Warn so the user is not silently misled.
+    logger.warn(
+      { event: "walkthrough.cover_skipped_volume_mode", context: "walkthrough", coverUrl },
+      "cover not applied: volume mode artifacts are produced by the downloader directly",
+    );
   }
 
   return { outputs, failed };

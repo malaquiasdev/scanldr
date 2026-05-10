@@ -28,6 +28,6 @@ export async function pickSearchResult(opts: SearchResultsPickerOptions): Promis
   });
 
   const found = results.find((r) => r.id === id);
-  if (!found) throw new Error(`Unexpected result id: ${id}`);
+  if (!found) throw new WalkthroughError(`Unexpected result id: ${id}`);
   return found;
 }
