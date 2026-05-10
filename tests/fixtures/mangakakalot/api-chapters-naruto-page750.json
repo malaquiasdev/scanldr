@@ -1,0 +1,267 @@
+{
+  "success": true,
+  "data": {
+    "chapters": [
+      {
+        "chapter_name": "Chapter 35",
+        "chapter_slug": "chapter-35",
+        "chapter_num": 35,
+        "updated_at": "2024-10-31T10:02:16.000000Z",
+        "view": 89220
+      },
+      {
+        "chapter_name": "Chapter 34",
+        "chapter_slug": "chapter-34",
+        "chapter_num": 34,
+        "updated_at": "2024-10-31T10:01:03.000000Z",
+        "view": 105779
+      },
+      {
+        "chapter_name": "Chapter 33",
+        "chapter_slug": "chapter-33",
+        "chapter_num": 33,
+        "updated_at": "2024-10-31T09:59:43.000000Z",
+        "view": 89007
+      },
+      {
+        "chapter_name": "Chapter 32",
+        "chapter_slug": "chapter-32",
+        "chapter_num": 32,
+        "updated_at": "2024-10-31T09:58:37.000000Z",
+        "view": 87841
+      },
+      {
+        "chapter_name": "Chapter 31",
+        "chapter_slug": "chapter-31",
+        "chapter_num": 31,
+        "updated_at": "2024-10-31T09:57:18.000000Z",
+        "view": 85004
+      },
+      {
+        "chapter_name": "Chapter 30",
+        "chapter_slug": "chapter-30",
+        "chapter_num": 30,
+        "updated_at": "2024-10-31T09:55:53.000000Z",
+        "view": 87151
+      },
+      {
+        "chapter_name": "Chapter 29",
+        "chapter_slug": "chapter-29",
+        "chapter_num": 29,
+        "updated_at": "2024-10-31T09:54:52.000000Z",
+        "view": 89348
+      },
+      {
+        "chapter_name": "Chapter 28",
+        "chapter_slug": "chapter-28",
+        "chapter_num": 28,
+        "updated_at": "2024-10-31T09:53:46.000000Z",
+        "view": 94075
+      },
+      {
+        "chapter_name": "Chapter 27",
+        "chapter_slug": "chapter-27",
+        "chapter_num": 27,
+        "updated_at": "2024-10-31T09:52:23.000000Z",
+        "view": 90177
+      },
+      {
+        "chapter_name": "Chapter 26",
+        "chapter_slug": "chapter-26",
+        "chapter_num": 26,
+        "updated_at": "2024-10-31T09:51:11.000000Z",
+        "view": 86768
+      },
+      {
+        "chapter_name": "Chapter 25",
+        "chapter_slug": "chapter-25",
+        "chapter_num": 25,
+        "updated_at": "2024-10-31T09:49:55.000000Z",
+        "view": 85273
+      },
+      {
+        "chapter_name": "Chapter 24",
+        "chapter_slug": "chapter-24",
+        "chapter_num": 24,
+        "updated_at": "2024-10-31T09:49:05.000000Z",
+        "view": 84763
+      },
+      {
+        "chapter_name": "Chapter 23",
+        "chapter_slug": "chapter-23",
+        "chapter_num": 23,
+        "updated_at": "2024-10-31T09:47:51.000000Z",
+        "view": 85126
+      },
+      {
+        "chapter_name": "Chapter 22",
+        "chapter_slug": "chapter-22",
+        "chapter_num": 22,
+        "updated_at": "2024-10-31T09:44:56.000000Z",
+        "view": 86365
+      },
+      {
+        "chapter_name": "Chapter 21",
+        "chapter_slug": "chapter-21",
+        "chapter_num": 21,
+        "updated_at": "2024-10-31T09:43:15.000000Z",
+        "view": 85439
+      },
+      {
+        "chapter_name": "Chapter 20",
+        "chapter_slug": "chapter-20",
+        "chapter_num": 20,
+        "updated_at": "2024-10-31T09:41:56.000000Z",
+        "view": 88187
+      },
+      {
+        "chapter_name": "Chapter 19",
+        "chapter_slug": "chapter-19",
+        "chapter_num": 19,
+        "updated_at": "2024-10-31T09:40:37.000000Z",
+        "view": 87043
+      },
+      {
+        "chapter_name": "Chapter 18",
+        "chapter_slug": "chapter-18",
+        "chapter_num": 18,
+        "updated_at": "2024-10-31T09:39:41.000000Z",
+        "view": 91739
+      },
+      {
+        "chapter_name": "Chapter 17",
+        "chapter_slug": "chapter-17",
+        "chapter_num": 17,
+        "updated_at": "2024-10-31T09:37:45.000000Z",
+        "view": 93693
+      },
+      {
+        "chapter_name": "Chapter 16",
+        "chapter_slug": "chapter-16",
+        "chapter_num": 16,
+        "updated_at": "2024-10-31T09:36:45.000000Z",
+        "view": 94956
+      },
+      {
+        "chapter_name": "Chapter 15",
+        "chapter_slug": "chapter-15",
+        "chapter_num": 15,
+        "updated_at": "2024-10-31T09:35:34.000000Z",
+        "view": 97200
+      },
+      {
+        "chapter_name": "Chapter 14",
+        "chapter_slug": "chapter-14",
+        "chapter_num": 14,
+        "updated_at": "2024-10-31T09:34:24.000000Z",
+        "view": 98125
+      },
+      {
+        "chapter_name": "Chapter 13",
+        "chapter_slug": "chapter-13",
+        "chapter_num": 13,
+        "updated_at": "2024-10-31T09:33:01.000000Z",
+        "view": 95734
+      },
+      {
+        "chapter_name": "Chapter 12",
+        "chapter_slug": "chapter-12",
+        "chapter_num": 12,
+        "updated_at": "2024-10-31T09:31:47.000000Z",
+        "view": 96969
+      },
+      {
+        "chapter_name": "Chapter 11",
+        "chapter_slug": "chapter-11",
+        "chapter_num": 11,
+        "updated_at": "2024-10-31T09:30:37.000000Z",
+        "view": 103017
+      },
+      {
+        "chapter_name": "Chapter 10",
+        "chapter_slug": "chapter-10",
+        "chapter_num": 10,
+        "updated_at": "2024-10-31T09:28:53.000000Z",
+        "view": 106883
+      },
+      {
+        "chapter_name": "Chapter 9",
+        "chapter_slug": "chapter-9",
+        "chapter_num": 9,
+        "updated_at": "2024-10-31T09:27:37.000000Z",
+        "view": 113402
+      },
+      {
+        "chapter_name": "Chapter 8",
+        "chapter_slug": "chapter-8",
+        "chapter_num": 8,
+        "updated_at": "2024-10-31T09:26:27.000000Z",
+        "view": 113358
+      },
+      {
+        "chapter_name": "Chapter 7",
+        "chapter_slug": "chapter-7",
+        "chapter_num": 7,
+        "updated_at": "2024-10-31T09:24:56.000000Z",
+        "view": 110891
+      },
+      {
+        "chapter_name": "Chapter 6",
+        "chapter_slug": "chapter-6",
+        "chapter_num": 6,
+        "updated_at": "2024-10-31T09:23:42.000000Z",
+        "view": 110603
+      },
+      {
+        "chapter_name": "Chapter 5",
+        "chapter_slug": "chapter-5",
+        "chapter_num": 5,
+        "updated_at": "2024-10-31T09:22:36.000000Z",
+        "view": 117493
+      },
+      {
+        "chapter_name": "Chapter 4",
+        "chapter_slug": "chapter-4",
+        "chapter_num": 4,
+        "updated_at": "2024-10-31T09:21:55.000000Z",
+        "view": 130654
+      },
+      {
+        "chapter_name": "Chapter 3",
+        "chapter_slug": "chapter-3",
+        "chapter_num": 3,
+        "updated_at": "2024-10-31T09:19:59.000000Z",
+        "view": 138533
+      },
+      {
+        "chapter_name": "Chapter 2",
+        "chapter_slug": "chapter-2",
+        "chapter_num": 2,
+        "updated_at": "2024-10-31T09:18:48.000000Z",
+        "view": 157864
+      },
+      {
+        "chapter_name": "Chapter 1",
+        "chapter_slug": "chapter-1",
+        "chapter_num": 1,
+        "updated_at": "2024-10-31T09:17:26.000000Z",
+        "view": 305725
+      },
+      {
+        "chapter_name": "Chapter 0.1",
+        "chapter_slug": "chapter-0-1",
+        "chapter_num": 0.1,
+        "updated_at": "2025-10-07T13:30:20.000000Z",
+        "view": 836
+      },
+      {
+        "chapter_name": "Chapter 0",
+        "chapter_slug": "chapter-0",
+        "chapter_num": 0,
+        "updated_at": "2024-10-31T09:14:24.000000Z",
+        "view": 279104
+      }
+    ],
+    "pagination": { "total": 787, "limit": 50, "offset": 750, "has_more": false }
+  }
+}

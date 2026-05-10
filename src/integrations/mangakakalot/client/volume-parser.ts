@@ -2,6 +2,7 @@
 // Chapter names on the manga page follow the pattern "Vol.X Ch.Y [- Optional Title]"
 // or just "Chapter N [- Optional Title]" (flat list, no volume labels).
 
+import type { ChapterRef } from "@integrations/_shared/manga.ts";
 import * as cheerio from "cheerio";
 import type { FallbackChapterRef, VolumeMap } from "./types.ts";
 import { MangakakalotParseError } from "./types.ts";
@@ -69,6 +70,55 @@ function compositeIdFromUrl(href: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Converts a flat ChapterRef[] (typically from the JSON API) into a VolumeMap.
+ *
+ * Buckets by chapter.volume; null/empty volume → "unknown" bucket.
+ * Output is sorted: numeric volume keys ascending, "unknown" last;
+ * chapters within each bucket sorted ascending by chapter number.
+ *
+ * Composite id format: passes through chapter.id unchanged (already
+ * "<mangaSlug>/<chapter-slug>" from parseChapterListFromApi).
+ */
+export function chaptersToVolumeMap(chapters: ChapterRef[]): VolumeMap {
+  const buckets = new Map<string, FallbackChapterRef[]>();
+
+  for (const ch of chapters) {
+    const rawVol = ch.volume?.trim();
+    let vol: string;
+    if (!rawVol) {
+      vol = "unknown";
+    } else {
+      const num = Number(rawVol);
+      vol = Number.isFinite(num) ? String(num) : "unknown";
+    }
+    const existing = buckets.get(vol) ?? [];
+    existing.push({ id: ch.id, chapter: ch.chapter });
+    buckets.set(vol, existing);
+  }
+
+  const sorted: VolumeMap = [];
+  const numericKeys = [...buckets.keys()]
+    .filter((k) => k !== "unknown")
+    .sort((a, b) => Number(a) - Number(b));
+
+  for (const vol of numericKeys) {
+    const chs = (buckets.get(vol) ?? []).sort(
+      (a, b) => Number(a.chapter ?? 0) - Number(b.chapter ?? 0),
+    );
+    sorted.push({ volume: vol, chapters: chs });
+  }
+
+  if (buckets.has("unknown")) {
+    const chs = (buckets.get("unknown") ?? []).sort(
+      (a, b) => Number(a.chapter ?? 0) - Number(b.chapter ?? 0),
+    );
+    sorted.push({ volume: "unknown", chapters: chs });
+  }
+
+  return sorted;
 }
 
 /**
