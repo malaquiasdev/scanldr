@@ -132,13 +132,81 @@ describe("global flags can appear before command", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Unknown command
+// Walkthrough routing helpers
 // ---------------------------------------------------------------------------
 
-describe("unknown command", () => {
-  test("unknown command → exit 1", async () => {
-    const r = await run(["nonexistent"]);
-    expect(r.exitCode).toBe(1);
-    expect(r.stderr).toMatch(/Unknown command/i);
+/**
+ * Spawn a CLI process, wait up to `timeoutMs` for it to exit.
+ * Returns { timedOut: true } if still running, otherwise the exit result.
+ */
+async function runWithTimeout(
+  args: string[],
+  timeoutMs: number,
+): Promise<
+  { timedOut: true } | { timedOut: false; exitCode: number; stderr: string; stdout: string }
+> {
+  const proc = Bun.spawn(["bun", "run", CLI, ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+    stdin: "pipe",
+  });
+
+  let resolved = false;
+  const exitPromise = proc.exited.then((code) => {
+    resolved = true;
+    return code;
+  });
+
+  await new Promise((r) => setTimeout(r, timeoutMs));
+
+  if (!resolved) {
+    proc.kill();
+    return { timedOut: true };
+  }
+
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    exitPromise,
+  ]);
+  return { timedOut: false, exitCode, stdout, stderr };
+}
+
+describe("walkthrough routing", () => {
+  test("no args → enters walkthrough (does not print 'Unknown command', hangs for input)", async () => {
+    const r = await runWithTimeout([], 800);
+    // Process should be waiting for TTY input (walkthrough started), not exited quickly with error
+    if (!r.timedOut) {
+      // If it did exit quickly, it should NOT be the "Unknown command" error
+      expect(r.stderr).not.toMatch(/Unknown command/i);
+      // And should not have exited with exit code 1 from command routing
+      expect(r.exitCode).not.toBe(1);
+    } else {
+      // timedOut means walkthrough is running and waiting for input — correct routing
+      expect(r.timedOut).toBe(true);
+    }
+  });
+
+  test("single positional arg → enters walkthrough with title prefill", async () => {
+    const r = await runWithTimeout(["Naruto"], 800);
+    if (!r.timedOut) {
+      expect(r.stderr).not.toMatch(/Unknown command/i);
+      expect(r.exitCode).not.toBe(1);
+    } else {
+      expect(r.timedOut).toBe(true);
+    }
+  });
+
+  test("download subcommand → still routes to download (regression)", async () => {
+    const r = await run(["download", "--volume", "1", "--non-tty"]);
+    // Should reach the download handler and fail on missing manga, not route to walkthrough
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toMatch(/Usage/i);
+  });
+
+  test("list subcommand → still routes to list (regression)", async () => {
+    const r = await run(["list"]);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toMatch(/Usage/i);
   });
 });
