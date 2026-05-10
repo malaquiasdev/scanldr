@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { TraceStore } from "@plugins/trace/index.ts";
 import { type LogLevel, createLogger } from "./index.ts";
 
 const FIXED_TS = "2025-01-01T00:00:00.000Z";
@@ -13,14 +14,17 @@ function makeSink() {
   };
 }
 
-function makeLogger(level: LogLevel, format: "human" | "json" = "human") {
+function makeLogger(level: LogLevel, format: "human" | "json" = "human", traceStore?: TraceStore) {
   const sink = makeSink();
-  const logger = createLogger({
-    level,
-    format,
-    write: sink.write,
-    now: () => FIXED_TS,
-  });
+  const logger = createLogger(
+    {
+      level,
+      format,
+      write: sink.write,
+      now: () => FIXED_TS,
+    },
+    traceStore,
+  );
   return { logger, sink };
 }
 
@@ -53,59 +57,20 @@ describe("createLogger — thresholds", () => {
     expect(sink.lines).toEqual([`${FIXED_TS} error e\n`, `${FIXED_TS} warn w\n`]);
   });
 });
-// Threshold tests use human format (default in makeLogger) with empty fields,
-// so they exercise the no-trailing-artefact path.
+// Threshold tests use human format (default in makeLogger) with empty fields.
 
 describe("createLogger — human format", () => {
-  test("emits `<ts> <level> <message>` with no trailing artefact when fields are empty", () => {
+  test("default format is human — emits `<ts> <level> <message>` only", () => {
     const { logger, sink } = makeLogger("info", "human");
     logger.info({}, "hello world");
     expect(sink.lines).toEqual([`${FIXED_TS} info hello world\n`]);
   });
 
-  test("appends JSON fields after message", () => {
+  test("human format with fields emits ONLY `<ts> <level> <message>` — no JSON suffix", () => {
     const { logger, sink } = makeLogger("info", "human");
     logger.info({ attempt: 1, waitMs: 500 }, "retrying");
     expect(sink.lines).toHaveLength(1);
-    const line = sink.lines[0] as string;
-    expect(line.startsWith(`${FIXED_TS} info retrying `)).toBe(true);
-    expect(line.endsWith("\n")).toBe(true);
-    const fieldsStr = line.slice(`${FIXED_TS} info retrying `.length, -1);
-    expect(JSON.parse(fieldsStr)).toEqual({ attempt: 1, waitMs: 500 });
-  });
-
-  test("redacts cookies/cf_clearance/useragent/authorization in human format", () => {
-    const { logger, sink } = makeLogger("info", "human");
-    logger.info({ cookies: "secret", url: "https://example.com" }, "req");
-    const line = sink.lines[0] as string;
-    const fieldsStr = line.slice(`${FIXED_TS} info req `.length, -1);
-    const obj = JSON.parse(fieldsStr);
-    expect(obj.cookies).toBe("[REDACTED]");
-    expect(obj.url).toBe("https://example.com");
-  });
-
-  test("redacts cf_clearance in human format", () => {
-    const { logger, sink } = makeLogger("info", "human");
-    logger.info({ cf_clearance: "abcd1234efgh5678" }, "req");
-    const line = sink.lines[0] as string;
-    expect(line).toContain("[REDACTED]");
-    expect(line).not.toContain("abcd1234efgh5678");
-  });
-
-  test("redacts useragent in human format", () => {
-    const { logger, sink } = makeLogger("info", "human");
-    logger.info({ useragent: "Mozilla/5.0 (Windows NT 10.0)" }, "req");
-    const line = sink.lines[0] as string;
-    expect(line).toContain("[REDACTED]");
-    expect(line).not.toContain("Mozilla/5.0 (Windows NT 10.0)");
-  });
-
-  test("redacts authorization in human format", () => {
-    const { logger, sink } = makeLogger("info", "human");
-    logger.info({ authorization: "Bearer eyJhbGciOiJIUzI1NiJ9" }, "req");
-    const line = sink.lines[0] as string;
-    expect(line).toContain("[REDACTED]");
-    expect(line).not.toContain("Bearer eyJhbGciOiJIUzI1NiJ9");
+    expect(sink.lines[0]).toBe(`${FIXED_TS} info retrying\n`);
   });
 
   test("empty fields object emits no trailing space or empty object", () => {
@@ -127,7 +92,7 @@ describe("createLogger — human format", () => {
 });
 
 describe("createLogger — json format", () => {
-  test("emits NDJSON with ts/level/msg/...fields", () => {
+  test("--json opt-in still produces NDJSON with ts/level/msg/...fields", () => {
     const { logger, sink } = makeLogger("info", "json");
     logger.info({ port: 3000 }, "ready");
     expect(sink.lines).toHaveLength(1);
@@ -148,7 +113,7 @@ describe("createLogger — json format", () => {
   });
 });
 
-describe("createLogger — redaction", () => {
+describe("createLogger — redaction (json format)", () => {
   test("redacts top-level cookies / Authorization / userAgent / cf_clearance", () => {
     const { logger, sink } = makeLogger("warn", "json");
     logger.warn(
@@ -222,5 +187,60 @@ describe("createLogger — redaction", () => {
     expect(obj.Cookies).toBe("[REDACTED]");
     expect(obj.UserAgent).toBe("[REDACTED]");
     expect(obj.CF_CLEARANCE).toBe("[REDACTED]");
+  });
+});
+
+describe("createLogger — trace store injection", () => {
+  function makeFakeStore() {
+    const calls: Parameters<TraceStore["insert"]>[0][] = [];
+    const store: TraceStore = {
+      runId: "00000000-0000-4000-8000-000000000000",
+      insert: (row) => calls.push(row),
+      purge: () => {},
+      close: () => {},
+    };
+    return { store, calls };
+  }
+
+  test("with injected trace store, every emit calls traceStore.insert", () => {
+    const { store, calls } = makeFakeStore();
+    const { logger } = makeLogger("info", "human", store);
+    logger.info({ event: "test.event", x: 1 }, "hello");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.msg).toBe("hello");
+    expect(calls[0]?.level).toBe("info");
+    expect(calls[0]?.ts).toBe(FIXED_TS);
+    expect(calls[0]?.event).toBe("test.event");
+  });
+
+  test("fields_json is set when fields are non-empty", () => {
+    const { store, calls } = makeFakeStore();
+    const { logger } = makeLogger("info", "human", store);
+    logger.warn({ x: 42 }, "msg");
+    expect(calls[0]?.fields_json).toBeDefined();
+    const parsed = JSON.parse(calls[0]?.fields_json as string);
+    expect(parsed.x).toBe(42);
+  });
+
+  test("fields_json is undefined when fields are empty", () => {
+    const { store, calls } = makeFakeStore();
+    const { logger } = makeLogger("info", "human", store);
+    logger.info({}, "empty");
+    expect(calls[0]?.fields_json).toBeUndefined();
+  });
+
+  test("without trace store, logger does not throw and still emits to terminal", () => {
+    const { logger, sink } = makeLogger("info", "human");
+    expect(() => logger.info({ x: 1 }, "no store")).not.toThrow();
+    expect(sink.lines).toHaveLength(1);
+  });
+
+  test("trace store receives redacted fields_json", () => {
+    const { store, calls } = makeFakeStore();
+    const { logger } = makeLogger("info", "json", store);
+    logger.info({ cookies: "secret", url: "ok" }, "req");
+    const parsed = JSON.parse(calls[0]?.fields_json as string);
+    expect(parsed.cookies).toBe("[REDACTED]");
+    expect(parsed.url).toBe("ok");
   });
 });
