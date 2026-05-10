@@ -437,6 +437,49 @@ describe("createMangakakalotClient", () => {
       expect(http.get).toHaveBeenCalledTimes(2);
     });
 
+    it("stops at MAX_API_PAGES (20) when API always returns has_more:true and fires pagination_capped warn", async () => {
+      const infinitePage = JSON.stringify({
+        success: true,
+        data: {
+          chapters: [
+            {
+              chapter_name: "Chapter 1",
+              chapter_slug: "chapter-1",
+              chapter_num: 1,
+              updated_at: "2024-01-01T00:00:00.000000Z",
+              view: 0,
+            },
+          ],
+          pagination: { total: 9999, limit: 1, offset: 0, has_more: true },
+        },
+      });
+
+      const http: FallbackHttpClient = {
+        get: mock(async () => {
+          return new Response(infinitePage, {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }),
+      };
+      const logger = makeLogger();
+      const client = createMangakakalotClient({ http, logger });
+
+      const chapters = await client.getChapterList("infinite-manga");
+
+      // @ts-ignore
+      expect(http.get).toHaveBeenCalledTimes(20);
+
+      // @ts-ignore
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ event: "mangakakalot.pagination_capped" }),
+        expect.any(String),
+      );
+
+      // 1 chapter per page × 20 pages
+      expect(chapters.length).toBe(20);
+    });
+
     it("propagates CloudflareError without swallowing", async () => {
       const { CloudflareError } = await import("@integrations/fallback-http/types.ts");
       const http: FallbackHttpClient = {
