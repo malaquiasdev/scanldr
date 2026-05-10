@@ -2,6 +2,10 @@ import { describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createLogger } from "../../plugins/logger/index.ts";
+
+const noop = () => {};
+const logger = createLogger({ level: "info", format: "human", write: noop });
 
 describe("checkAuth", () => {
   test("requiresAuth: false → returns { ok: true, skipped: true } without prompting", async () => {
@@ -17,7 +21,7 @@ describe("checkAuth", () => {
       confirm: async () => false,
     }));
     const { checkAuth } = await import("./auth-check.ts");
-    const result = await checkAuth({ requiresAuth: false });
+    const result = await checkAuth({ requiresAuth: false, logger });
     expect(result).toEqual({ ok: true, skipped: true });
     expect(promptCalled).toBe(false);
   });
@@ -41,14 +45,15 @@ describe("checkAuth", () => {
     }));
 
     const { checkAuth } = await import("./auth-check.ts");
-    const result = await checkAuth({ requiresAuth: true, dataHome: dir });
+    const result = await checkAuth({ requiresAuth: true, logger, dataHome: dir });
     expect(result).toEqual({ ok: true, skipped: false });
     expect(promptCalled).toBe(false);
   });
 
-  test("requiresAuth: true, no auth file, valid cURL paste → returns { ok: true, skipped: false }", async () => {
+  test("requiresAuth: true, no auth file, valid cURL paste → returns { ok: true, skipped: false, justAuthenticated: true }", async () => {
+    const tmpDir = join(tmpdir(), `scanldr-auth-test-${Date.now()}`);
     mock.module("../prompts.ts", () => ({
-      editor: async () => "curl 'https://example.com' -H 'Cookie: session=abc'",
+      editor: async () => "curl 'https://example.com' -H 'Cookie: cf_clearance=abc; session=xyz'",
       input: async () => "",
       select: async () => "",
       checkbox: async () => [],
@@ -56,11 +61,13 @@ describe("checkAuth", () => {
     }));
 
     const { checkAuth } = await import("./auth-check.ts");
-    const result = await checkAuth({ requiresAuth: true, dataHome: "/nonexistent/path" });
-    expect(result).toEqual({ ok: true, skipped: false });
+    const result = await checkAuth({ requiresAuth: true, logger, dataHome: tmpDir });
+    expect(result.ok).toBe(true);
+    expect(result.skipped).toBe(false);
+    expect(result.justAuthenticated).toBe(true);
   });
 
-  test("requiresAuth: true, invalid paste (no cookie:) — exhausts 2 retries then throws", async () => {
+  test("requiresAuth: true, invalid paste (no cookies) — exhausts 2 retries then throws WalkthroughError", async () => {
     let callCount = 0;
     mock.module("../prompts.ts", () => ({
       editor: async () => {
@@ -74,9 +81,9 @@ describe("checkAuth", () => {
     }));
 
     const { checkAuth } = await import("./auth-check.ts");
-    await expect(checkAuth({ requiresAuth: true, dataHome: "/nonexistent/path" })).rejects.toThrow(
-      /cookie/i,
-    );
+    await expect(
+      checkAuth({ requiresAuth: true, logger, dataHome: "/nonexistent/path" }),
+    ).rejects.toThrow(/attempt/i);
     expect(callCount).toBe(2);
   });
 });

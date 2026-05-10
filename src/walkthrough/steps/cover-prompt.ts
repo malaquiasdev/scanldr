@@ -1,3 +1,4 @@
+import type { Logger } from "../../plugins/logger/index.ts";
 import { input } from "../prompts.ts";
 
 const MAX_URL_RETRIES = 2;
@@ -11,8 +12,12 @@ function isValidUrl(value: string): boolean {
   }
 }
 
+export interface CoverPromptOptions {
+  logger: Logger;
+}
+
 /** Step 8 (when packing): optionally provide a cover image URL. */
-export async function promptCoverUrl(): Promise<string | null> {
+export async function promptCoverUrl(opts: CoverPromptOptions): Promise<string | null> {
   for (let attempt = 0; attempt < MAX_URL_RETRIES; attempt++) {
     const raw = await input({
       message: "Cover image URL? (Enter to skip)",
@@ -27,7 +32,15 @@ export async function promptCoverUrl(): Promise<string | null> {
 
     const remaining = MAX_URL_RETRIES - attempt - 1;
     if (remaining > 0) {
-      process.stderr.write(`Invalid URL. ${remaining} attempt(s) left or press Enter to skip.\n`);
+      opts.logger.warn(
+        {
+          event: "walkthrough.cover_invalid_url",
+          context: "walkthrough",
+          attempt: attempt + 1,
+          url_input: trimmed,
+        },
+        "Invalid URL, please try again",
+      );
     }
   }
 
