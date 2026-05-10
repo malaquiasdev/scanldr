@@ -16,8 +16,6 @@ This document is the central index of all technical documentation for **scanldr*
 ## 📊 Data Models
 - [Auth & Session Model](models/auth_model.md)
 - [Manga & Chapter Model](models/manga_model.md)
-- [Download History Model](models/history_model.md)
-- [Subscriptions / Watchlist Model](models/subscription_model.md)
 
 ## 📝 Architecture Decision Records (ADRs)
 - [ADR-001: Cookie Replay over Playwright Stealth](adr/001-cookie-replay-strategy.md)

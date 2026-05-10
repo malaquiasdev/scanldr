@@ -6,7 +6,7 @@
 src/
 ├── index.ts            # CLI entrypoint
 ├── plugins/            # Infrastructure: config/, logger/, db/, errors/, guards/
-├── modules/            # Business logic: downloader/, history/, subscriptions/
+├── modules/            # Business logic: downloader/
 └── integrations/       # External clients: mangadex/, mangakakalot/
 migrations/             # Versioned SQL migrations (applied in lexicographic order)
 ```

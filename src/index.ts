@@ -16,7 +16,6 @@ const USAGE = `scanldr — offline downloader for manga, HQ, manhwa, and webtoon
 Usage:
   bun start                  Interactive walkthrough
   bun start <title-or-url>   Walkthrough with title pre-filled
-  bun start --debug-trace    Export trace store as NDJSON for debug
 
 Flags:
   --help, -h      Show this help

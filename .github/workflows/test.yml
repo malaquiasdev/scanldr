@@ -24,11 +24,7 @@ jobs:
         run: bun install
 
       - name: Run gates
-        # Run cover.test.ts in its own subprocess first to prevent mock.module leakage
-        # from prompt-pack.test.ts (Bun 1.3.6 does not isolate module mocks between files
-        # when running in the same worker process).
         run: |
-          bun test src/commands/download/cover.test.ts
-          bun test $(find src -name "*.test.ts" ! -name "cover.test.ts")
+          bun test
           bun run typecheck
           bun run check
