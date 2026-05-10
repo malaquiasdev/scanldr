@@ -13,6 +13,7 @@ import { CliError } from "@plugins/errors/index.ts";
 import { type LogFormat, type LogLevel, createLogger } from "@plugins/logger/index.ts";
 import { createTraceStore } from "@plugins/trace/index.ts";
 import type { Handler } from "./cli/types.ts";
+import { runWalkthrough } from "./walkthrough/index.ts";
 
 const VERSION = "0.0.0";
 
@@ -358,7 +359,7 @@ export async function main(argv: string[]): Promise<void> {
     return;
   }
 
-  if (!command || command === "help" || values.help) {
+  if (command === "help" || values.help) {
     process.stdout.write(USAGE);
     return;
   }
@@ -371,6 +372,17 @@ export async function main(argv: string[]): Promise<void> {
 
   const traceStore = createTraceStore({ db });
   const logger = createLogger({ level, format }, traceStore);
+
+  // No subcommand, or a single positional that is NOT a known subcommand key
+  // → launch interactive walkthrough. The positional becomes the title prefill.
+  const isKnownSubcommand = command !== undefined && command in handlers;
+  if (!command || !isKnownSubcommand) {
+    const result = await runWalkthrough({ logger, titlePrefill: command });
+    if (typeof result === "object" && "cancelled" in result && result.cancelled) {
+      process.exit(130);
+    }
+    return;
+  }
 
   const handler = handlers[command];
   if (!handler) {
