@@ -3,6 +3,8 @@
 **Date:** 2026-04-24
 **Status:** Accepted
 
+> **Status**: Superseded by [ADR-006](006-trace-store-as-state-with-ttl.md) on 2026-05-10.
+
 ## Context
 
 The user downloads complete volumes and then deletes the `.cbz` files after reading to free up disk space. The `update` and `sync` commands need to know what has already been downloaded to avoid re-downloading. The output directory cannot be used as the source of truth because the files may have been deleted.
