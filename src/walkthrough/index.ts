@@ -2,6 +2,7 @@ import { createFallbackHttp } from "../integrations/fallback-http/index.ts";
 import type { Logger } from "../plugins/logger/index.ts";
 import type { SourceAdapter } from "../sources/adapters/index.ts";
 import { getAdapter } from "../sources/adapters/index.ts";
+import { refreshSession } from "./steps/auth-check.ts";
 import { checkAuth } from "./steps/auth-check.ts";
 import { promptCoverUrl } from "./steps/cover-prompt.ts";
 import { executeWalkthrough } from "./steps/execute.ts";
@@ -19,6 +20,7 @@ import type {
   WalkthroughResult,
 } from "./types.ts";
 import { WalkthroughError } from "./types.ts";
+import { isCloudflareError, withSessionRetry } from "./with-session-retry.ts";
 
 export type {
   WalkthroughCancelled,
@@ -42,6 +44,11 @@ export interface RunWalkthroughOptions extends WalkthroughInput {
    * Pass null to disable probing (file-presence check only).
    */
   probeClientFactory?: SessionProbeClientFactory | null;
+  /**
+   * Override the refresh function for tests.
+   * When provided, this is used instead of the real refreshSession for retry logic.
+   */
+  refreshFn?: () => Promise<void>;
 }
 
 /** Returned when walkthrough errors out in a handled way (WalkthroughError). */
@@ -85,21 +92,51 @@ export async function runWalkthrough(
       probeClientFactory,
     });
 
+    // Build a refresh closure reused by all adapter-call retry wrappers.
+    // In production this re-reads XDG auth path; in tests opts.refreshFn overrides.
+    const doRefresh: () => Promise<void> = opts.refreshFn
+      ? opts.refreshFn
+      : probeClientFactory
+        ? async () => {
+            const { resolveAuthPath } = await import("../plugins/auth-path/index.ts");
+            const authPath = resolveAuthPath();
+            await refreshSession({ authPath, probeClientFactory, logger: opts.logger });
+          }
+        : async () => {
+            // No probe factory — cannot refresh; surface as error
+            throw new WalkthroughError(
+              "Session expired but no probe factory is configured to refresh it.",
+            );
+          };
+
     // Resolve adapter for this source (after auth check so session is persisted if needed)
     const adapter = resolveAdapter(source.id, { logger: opts.logger });
 
-    // Step 4 — search results
-    const hit = await pickSearchResult({
-      query: title,
-      sourceLabel: source.label,
-      adapter,
-    });
+    // Step 4 — search results (with CF retry)
+    const hit = await withSessionRetry(
+      () =>
+        pickSearchResult({
+          query: title,
+          sourceLabel: source.label,
+          adapter,
+        }),
+      isCloudflareError,
+      doRefresh,
+      opts.logger,
+      "walkthrough.search_retry",
+    );
 
     // Step 5 — mode
     const mode = await pickMode();
 
-    // Step 6 — range
-    const selectedBundles = await pickRange({ hit, mode, adapter });
+    // Step 6 — range (with CF retry)
+    const selectedBundles = await withSessionRetry(
+      () => pickRange({ hit, mode, adapter }),
+      isCloudflareError,
+      doRefresh,
+      opts.logger,
+      "walkthrough.range_retry",
+    );
 
     // Step 7 — pack prompt (chapter mode only)
     // volume mode always packs
@@ -118,7 +155,7 @@ export async function runWalkthrough(
       coverUrl,
     };
 
-    // Step 9 — execute
+    // Step 9 — execute (fetchChapterInput calls are wrapped inside executeWalkthrough)
     await executeWalkthrough(
       {
         source,
@@ -130,6 +167,7 @@ export async function runWalkthrough(
         outDir,
         adapter,
         logger: opts.logger,
+        refreshFn: doRefresh,
       },
       opts.executeDeps,
     );

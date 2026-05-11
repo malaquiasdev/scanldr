@@ -6,6 +6,8 @@ import type { Logger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import type { SourceDescriptor } from "../../sources/types.ts";
 import type { BundleItem, Downloader, ModeSelection, Packer, SearchHit } from "../types.ts";
+import { isCloudflareError, withSessionRetry } from "../with-session-retry.ts";
+import type { RefreshSession } from "../with-session-retry.ts";
 
 export interface ExecuteWalkthroughInput {
   source: SourceDescriptor;
@@ -17,6 +19,12 @@ export interface ExecuteWalkthroughInput {
   outDir: string;
   adapter: SourceAdapter;
   logger: Logger;
+  /**
+   * Session refresh function threaded from the orchestrator.
+   * Used to auto-refresh when fetchChapterInput hits a CF rejection.
+   * When omitted, CF errors during execute are logged as bundle failures and skipped.
+   */
+  refreshFn?: RefreshSession;
 }
 
 export interface ExecuteDeps {
@@ -50,8 +58,18 @@ export async function executeWalkthrough(
   opts: ExecuteWalkthroughInput,
   deps: ExecuteDeps = createDefaultExecuteDeps(),
 ): Promise<ExecuteWalkthroughResult> {
-  const { source, hit, mode, selectedBundles, groupIntoVolume, coverUrl, outDir, adapter, logger } =
-    opts;
+  const {
+    source,
+    hit,
+    mode,
+    selectedBundles,
+    groupIntoVolume,
+    coverUrl,
+    outDir,
+    adapter,
+    logger,
+    refreshFn,
+  } = opts;
   const { downloader, packer } = deps;
 
   const slug = toSlug(hit.title);
@@ -87,16 +105,30 @@ export async function executeWalkthrough(
 
       let chapterInputs: import("../../modules/downloader/types.ts").ChapterInput[];
 
+      // Wrap fetchChapterInput with CF retry when a refreshFn is available.
+      // Falls back to plain call when no refreshFn is injected (tests that omit it).
+      const fetchWithRetry = refreshFn
+        ? (chapterId: string, chapterNum?: string) =>
+            withSessionRetry(
+              () => adapter.fetchChapterInput(chapterId, chapterNum),
+              isCloudflareError,
+              refreshFn,
+              logger,
+              "walkthrough.fetch_chapter_retry",
+            )
+        : (chapterId: string, chapterNum?: string) =>
+            adapter.fetchChapterInput(chapterId, chapterNum);
+
       if (bundle.kind === "volume") {
         // Expand volume into constituent chapters
         const ids = bundle.chapterIds ?? [];
         const nums = bundle.chapterNums ?? [];
         chapterInputs = await Promise.all(
-          ids.map((chapterId, i) => adapter.fetchChapterInput(chapterId, nums[i])),
+          ids.map((chapterId, i) => fetchWithRetry(chapterId, nums[i])),
         );
       } else {
         // Chapter mode: single fetch
-        chapterInputs = [await adapter.fetchChapterInput(bundle.id, bundle.num)];
+        chapterInputs = [await fetchWithRetry(bundle.id, bundle.num)];
       }
 
       const totalPages = chapterInputs.reduce((acc, ci) => acc + ci.pages.length, 0);

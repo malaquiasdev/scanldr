@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { ChapterInput } from "../modules/downloader/types.ts";
 import { createLogger } from "../plugins/logger/index.ts";
 import type { SourceAdapter } from "../sources/adapters/index.ts";
+import { WalkthroughError } from "./types.ts";
 import type { ChapterListing, Downloader, Packer, SearchHit, VolumeListing } from "./types.ts";
 
 const noop = () => {};
@@ -209,6 +210,221 @@ describe("runWalkthrough — full happy path", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({ logger, adapterFactory: fakeAdapterFactory });
     expect(result).toEqual({ cancelled: true });
+  });
+
+  test("non-CF error from search → propagates as { ok: false } without retry", async () => {
+    let selectCall = 0;
+    mock.module("./prompts.ts", () => ({
+      input: async (opts: { default?: string }) => opts.default ?? "Some Manga",
+      select: async () => {
+        selectCall++;
+        if (selectCall === 1) return "mangadex";
+        return "chapter";
+      },
+      checkbox: async () => [],
+      confirm: async () => false,
+      editor: async () => "",
+    }));
+
+    selectCall = 0;
+    let searchCallCount = 0;
+    const failAdapter = makeFakeAdapter({
+      search: async () => {
+        searchCallCount++;
+        throw new Error("unexpected database error");
+      },
+    });
+    let refreshCalled = false;
+    const { runWalkthrough } = await import("./index.ts");
+    // non-CF errors should bubble up, not be swallowed or retried
+    await expect(
+      runWalkthrough({
+        logger,
+        adapterFactory: () => failAdapter,
+        probeClientFactory: null,
+        refreshFn: async () => {
+          refreshCalled = true;
+        },
+      }),
+    ).rejects.toThrow("unexpected database error");
+    expect(searchCallCount).toBe(1);
+    expect(refreshCalled).toBe(false);
+  });
+
+  test("search hits CF first time, refresh succeeds, retry returns hits → success", async () => {
+    let selectCall = 0;
+    mock.module("./prompts.ts", () => ({
+      input: async (opts: { default?: string }) => opts.default ?? "Naruto",
+      select: async () => {
+        selectCall++;
+        if (selectCall === 1) return "mangadex"; // source
+        if (selectCall === 2) return "mock-1"; // search result
+        return "chapter"; // mode
+      },
+      checkbox: async () => ["mock-1-ch-1"],
+      confirm: async () => false,
+      editor: async () => "",
+    }));
+
+    selectCall = 0;
+    let searchCallCount = 0;
+    const cfError = Object.assign(new Error("CF"), { name: "CloudflareError" });
+    const fakeAdapter = makeFakeAdapter({
+      search: async () => {
+        searchCallCount++;
+        if (searchCallCount === 1) throw cfError;
+        return fakeHits;
+      },
+    });
+    let refreshCallCount = 0;
+    const fakeDownloader = makeFakeDownloader();
+    const fakePacker = makeFakePacker();
+    const { runWalkthrough } = await import("./index.ts");
+    const result = await runWalkthrough({
+      logger,
+      outDir,
+      adapterFactory: () => fakeAdapter,
+      probeClientFactory: null,
+      refreshFn: async () => {
+        refreshCallCount++;
+      },
+      executeDeps: { downloader: fakeDownloader, packer: fakePacker },
+    });
+
+    if ("cancelled" in result) throw new Error("Unexpected cancellation");
+    if ("ok" in result) throw new Error(`Unexpected failure: ${result.reason}`);
+    expect(searchCallCount).toBe(2);
+    expect(refreshCallCount).toBe(1);
+  });
+
+  test("search hits CF, refresh fails on second probe → returns { ok: false }", async () => {
+    let selectCall = 0;
+    mock.module("./prompts.ts", () => ({
+      input: async (opts: { default?: string }) => opts.default ?? "Naruto",
+      select: async () => {
+        selectCall++;
+        if (selectCall === 1) return "mangadex";
+        return "chapter";
+      },
+      checkbox: async () => [],
+      confirm: async () => false,
+      editor: async () => "",
+    }));
+
+    selectCall = 0;
+    const cfError = Object.assign(new Error("CF"), { name: "CloudflareError" });
+    const fakeAdapter = makeFakeAdapter({
+      search: async () => {
+        throw cfError;
+      },
+    });
+    const { runWalkthrough } = await import("./index.ts");
+    const result = await runWalkthrough({
+      logger,
+      adapterFactory: () => fakeAdapter,
+      probeClientFactory: null,
+      refreshFn: async () => {
+        throw new WalkthroughError("Session refresh failed twice. Try again later.");
+      },
+    });
+
+    if ("cancelled" in result) throw new Error("Unexpected cancellation");
+    expect("ok" in result && result.ok === false).toBe(true);
+    if ("ok" in result) {
+      expect(result.reason).toMatch(/refresh failed/i);
+    }
+  });
+
+  test("listChapters hits CF, refresh succeeds, retry returns chapters → success", async () => {
+    let selectCall = 0;
+    mock.module("./prompts.ts", () => ({
+      input: async (opts: { default?: string }) => opts.default ?? "Naruto",
+      select: async () => {
+        selectCall++;
+        if (selectCall === 1) return "mangadex";
+        if (selectCall === 2) return "mock-1";
+        return "chapter";
+      },
+      checkbox: async () => ["mock-1-ch-1"],
+      confirm: async () => false,
+      editor: async () => "",
+    }));
+
+    selectCall = 0;
+    let listChaptersCallCount = 0;
+    const cfError = Object.assign(new Error("CF"), { name: "CloudflareError" });
+    const fakeAdapter = makeFakeAdapter({
+      listChapters: async () => {
+        listChaptersCallCount++;
+        if (listChaptersCallCount === 1) throw cfError;
+        return fakeChapters;
+      },
+    });
+    let refreshCallCount = 0;
+    const fakeDownloader = makeFakeDownloader();
+    const fakePacker = makeFakePacker();
+    const { runWalkthrough } = await import("./index.ts");
+    const result = await runWalkthrough({
+      logger,
+      outDir,
+      adapterFactory: () => fakeAdapter,
+      probeClientFactory: null,
+      refreshFn: async () => {
+        refreshCallCount++;
+      },
+      executeDeps: { downloader: fakeDownloader, packer: fakePacker },
+    });
+
+    if ("cancelled" in result) throw new Error("Unexpected cancellation");
+    if ("ok" in result) throw new Error(`Unexpected failure: ${result.reason}`);
+    expect(listChaptersCallCount).toBe(2);
+    expect(refreshCallCount).toBe(1);
+  });
+
+  test("fetchChapterInput hits CF, refresh succeeds, retry completes → success", async () => {
+    let selectCall = 0;
+    mock.module("./prompts.ts", () => ({
+      input: async (opts: { default?: string }) => opts.default ?? "Naruto",
+      select: async () => {
+        selectCall++;
+        if (selectCall === 1) return "mangadex";
+        if (selectCall === 2) return "mock-1";
+        return "chapter";
+      },
+      checkbox: async () => ["mock-1-ch-1"],
+      confirm: async () => false,
+      editor: async () => "",
+    }));
+
+    selectCall = 0;
+    let fetchCallCount = 0;
+    const cfError = Object.assign(new Error("CF"), { name: "CloudflareError" });
+    const fakeAdapter = makeFakeAdapter({
+      fetchChapterInput: async () => {
+        fetchCallCount++;
+        if (fetchCallCount === 1) throw cfError;
+        return fakeChapterInput;
+      },
+    });
+    let refreshCallCount = 0;
+    const fakeDownloader = makeFakeDownloader();
+    const fakePacker = makeFakePacker();
+    const { runWalkthrough } = await import("./index.ts");
+    const result = await runWalkthrough({
+      logger,
+      outDir,
+      adapterFactory: () => fakeAdapter,
+      probeClientFactory: null,
+      refreshFn: async () => {
+        refreshCallCount++;
+      },
+      executeDeps: { downloader: fakeDownloader, packer: fakePacker },
+    });
+
+    if ("cancelled" in result) throw new Error("Unexpected cancellation");
+    if ("ok" in result) throw new Error(`Unexpected failure: ${result.reason}`);
+    expect(fetchCallCount).toBe(2);
+    expect(refreshCallCount).toBe(1);
   });
 
   test("empty search results → returns { ok: false, reason: WalkthroughError message }", async () => {
