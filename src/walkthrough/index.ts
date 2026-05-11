@@ -64,7 +64,7 @@ export async function runWalkthrough(
 
   try {
     // Step 1 — title
-    const title = await promptTitle({ prefill: opts.titlePrefill });
+    const title = await promptTitle();
 
     // Step 2 — source
     const source = await pickSource();

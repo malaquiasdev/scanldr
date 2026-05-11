@@ -107,8 +107,8 @@ describe("walkthrough routing", () => {
     }
   });
 
-  test("single positional arg → enters walkthrough with title prefill", async () => {
-    const r = await runWithTimeout(["Naruto"], 800);
+  test("positional args silently ignored → enters walkthrough", async () => {
+    const r = await runWithTimeout(["zombie", "100"], 800);
     if (!r.timedOut) {
       expect(r.stderr).not.toMatch(/Unknown command/i);
       expect(r.exitCode).not.toBe(1);
@@ -118,10 +118,8 @@ describe("walkthrough routing", () => {
   });
 
   test("any flag combination → walkthrough (not routed to dead subcommand)", async () => {
-    // Passing a known-old subcommand keyword now becomes a title prefill
     const r = await runWithTimeout(["download"], 800);
     if (!r.timedOut) {
-      // Should not exit with "Unknown command" — download is now treated as title prefill
       expect(r.stderr).not.toMatch(/Unknown command/i);
     } else {
       expect(r.timedOut).toBe(true);
