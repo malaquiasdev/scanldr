@@ -64,15 +64,9 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
     throw new MissingAuthError(path);
   }
 
-  logger.info(
-    {
-      event: "fallback_http.session_loaded",
-      context: "fallback-http",
-      path,
-      savedAt: session.savedAt,
-    },
-    "auth session loaded",
-  );
+  // "auth session loaded" log intentionally removed: every adapter and the probe client
+  // each construct a separate fallback-http instance, causing duplicate info lines per run.
+  // The trace store still captures the event if needed via structured fields elsewhere.
 
   // Build cookie header string once — session is immutable for process lifetime.
   // cookieHeader is undefined (not "") when cookies is empty so the header is
