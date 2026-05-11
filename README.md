@@ -36,13 +36,13 @@ bun start --version        # show version
 
 ### Walkthrough steps
 
-1. **Title prompt** — free-text input; pre-filled if a positional argument was passed.
+1. **Title prompt** — free-text input ("Manga title or URL:"); pre-filled if a positional argument was passed.
 2. **Source picker** — choose MangaDex or Mangakakalot.
 3. **Auth check** — if the chosen source requires auth and no valid session exists, prompts for a cURL paste; silently skipped for MangaDex.
 4. **Search results** — visual numbered picker, single select.
 5. **Mode picker** — Chapter or Volume.
 6. **Range picker** — visual multi-select list of available chapters or volumes; no range-string parser.
-7. **Pack prompt** (chapter mode only) — "Group these chapters into a single volume? [Y/n]".
+7. **Pack prompt** (chapter mode only; volume mode always packs) — "Group these chapters into a single volume? [Y/n]".
 8. **Cover URL** (when packing) — optional; press Enter to skip.
 9. **Execute** — download images, pack into `.cbz`, write to output directory.
 
@@ -88,7 +88,7 @@ All other keys in `DEFAULT_CONFIG` (`preferred_languages`, `download_quality`, `
 The logger has two sinks:
 
 - **Terminal** — human-readable output (`${ts} ${level} ${msg}\n`). This is the default.
-- **Trace store** — structured rows written to the `traces` table in SQLite, with 3-day TTL and automatic redaction of cookies and auth tokens.
+- **Trace store** — structured rows written to the `traces` table in SQLite, with 3-day TTL; `cookies`, `cf_clearance`, `useragent`, and `authorization` fields are redacted to `[REDACTED]` before being written.
 
 ```bash
 bun start          # human-readable terminal output (default)
