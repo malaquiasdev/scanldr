@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CloudflareError } from "../../integrations/fallback-http/types.ts";
 import { createLogger } from "../../plugins/logger/index.ts";
 import type { SessionProbeClient, SessionProbeClientFactory } from "../types.ts";
 
@@ -35,9 +36,8 @@ function okResponse(): Promise<Response> {
 function cfRejectionResponse(): Promise<Response> {
   // The probe client's get() throws CloudflareError on 403, but our fake returns the
   // response directly (the real service.ts interprets 403 and throws).
-  // We simulate the service behavior: throw a CloudflareError-like error.
-  const err = Object.assign(new Error("Cloudflare rejected"), { name: "CloudflareError" });
-  return Promise.reject(err);
+  // We simulate the service behavior: throw a real CloudflareError.
+  return Promise.reject(new CloudflareError("https://example.com"));
 }
 
 /** 500 response. */
@@ -315,5 +315,37 @@ describe("checkAuth", () => {
     });
 
     expect(result).toEqual({ ok: true, skipped: false, justAuthenticated: true });
+  });
+
+  test("probe URL contains /search/story/ (representative CF detection — not the homepage)", async () => {
+    const dir = join(tmpdir(), `scanldr-probe-url-${Date.now()}`);
+    const authDir = join(dir, "scanldr");
+    mkdirSync(authDir, { recursive: true });
+    writeFileSync(
+      join(authDir, "auth.json"),
+      JSON.stringify({ cookies: { cf_clearance: "x" }, userAgent: "ua", savedAt: Date.now() }),
+    );
+
+    mock.module("../prompts.ts", () => ({
+      editor: async () => "",
+      input: async () => "",
+      select: async () => "",
+      checkbox: async () => [],
+      confirm: async () => false,
+    }));
+
+    let capturedUrl = "";
+    const client: SessionProbeClient = {
+      get: async (url: string) => {
+        capturedUrl = url;
+        return okResponse();
+      },
+    };
+    const probeClientFactory: SessionProbeClientFactory = async () => client;
+
+    const { checkAuth } = await import("./auth-check.ts");
+    await checkAuth({ requiresAuth: true, logger, dataHome: dir, probeClientFactory });
+
+    expect(capturedUrl).toContain("/search/story/");
   });
 });
