@@ -37,7 +37,7 @@ jobs:
             revert
 
       - if: failure()
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: conventional-title
           message: |
@@ -52,7 +52,7 @@ jobs:
             - `fix(history): corrige unique constraint em chapter_id`
 
       - if: success()
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: conventional-title
           delete: true
@@ -73,7 +73,7 @@ jobs:
           fi
 
       - if: failure()
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: pr-description
           message: |
@@ -90,7 +90,7 @@ jobs:
             ```
 
       - if: success()
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: pr-description
           delete: true
@@ -108,7 +108,7 @@ jobs:
           fi
 
       - if: failure()
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: branch-protection
           message: |
@@ -120,7 +120,7 @@ jobs:
             ```
 
       - if: success()
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: branch-protection
           delete: true
@@ -139,7 +139,7 @@ jobs:
       - if: failure()
         run: echo "TYPECHECK_OUTPUT<<EOF" >> "$GITHUB_ENV" && cat /tmp/typecheck-output.txt >> "$GITHUB_ENV" && echo "EOF" >> "$GITHUB_ENV"
       - if: failure()
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: typecheck
           message: |
@@ -152,7 +152,7 @@ jobs:
             Rode `bun run typecheck` localmente para corrigir.
 
       - if: success()
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: typecheck
           delete: true
@@ -171,7 +171,7 @@ jobs:
       - if: failure()
         run: echo "BIOME_OUTPUT<<EOF" >> "$GITHUB_ENV" && cat /tmp/biome-output.txt >> "$GITHUB_ENV" && echo "EOF" >> "$GITHUB_ENV"
       - if: failure()
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: biome
           message: |
@@ -184,7 +184,7 @@ jobs:
             Rode `bun run check` localmente para corrigir.
 
       - if: success()
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: biome
           delete: true
