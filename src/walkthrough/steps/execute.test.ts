@@ -1,11 +1,13 @@
 import { describe, expect, mock, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CloudflareError } from "../../integrations/fallback-http/types.ts";
 import type { ChapterInput } from "../../modules/downloader/types.ts";
 import { createLogger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import { getSource } from "../../sources/index.ts";
 import type { Downloader, Packer, WalkthroughResult } from "../types.ts";
+import { WalkthroughError } from "../types.ts";
 import { executeWalkthrough } from "./execute.ts";
 import type { ExecuteWalkthroughInput } from "./execute.ts";
 
@@ -271,6 +273,99 @@ describe("executeWalkthrough", () => {
     });
 
     expect(warnEvents).toContain("walkthrough.cover_skipped_volume_mode");
+  });
+
+  test("CF during page download triggers refresh + retry succeeds", async () => {
+    let downloadAttempts = 0;
+    const refreshFn = mock(async () => {});
+    const adapter = makeFakeAdapter();
+    const downloader = makeFakeDownloader({
+      downloadBundle: mock(async (_input) => {
+        downloadAttempts++;
+        if (downloadAttempts === 1) {
+          throw new CloudflareError("https://example.com/page1.jpg");
+        }
+        return {
+          chapterIds: ["hit-1-ch-1"],
+          outputPath: join(outDir, "naruto", "naruto-chapter-001.cbz"),
+          byteSize: 100,
+        };
+      }),
+    });
+
+    const opts: ExecuteWalkthroughInput = { ...plan, outDir, adapter, logger, refreshFn };
+    const result = await executeWalkthrough(opts, { downloader, packer: makeFakePacker() });
+
+    expect(refreshFn).toHaveBeenCalledTimes(1);
+    expect(result.failed).toBe(0);
+    expect(result.outputs).toHaveLength(1);
+  });
+
+  test("CF survives refresh → walkthrough aborts with WalkthroughError", async () => {
+    const refreshFn = mock(async () => {});
+    const downloader = makeFakeDownloader({
+      downloadBundle: mock(async () => {
+        throw new CloudflareError("https://example.com/page1.jpg");
+      }),
+    });
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      outDir,
+      adapter: makeFakeAdapter(),
+      logger,
+      refreshFn,
+    };
+
+    await expect(
+      executeWalkthrough(opts, { downloader, packer: makeFakePacker() }),
+    ).rejects.toBeInstanceOf(WalkthroughError);
+  });
+
+  test("non-CF error → failed incremented, function returns normally", async () => {
+    const refreshFn = mock(async () => {});
+    const downloader = makeFakeDownloader({
+      downloadBundle: mock(async () => {
+        throw new Error("disk full");
+      }),
+    });
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      outDir,
+      adapter: makeFakeAdapter(),
+      logger,
+      refreshFn,
+    };
+    const result = await executeWalkthrough(opts, { downloader, packer: makeFakePacker() });
+
+    expect(refreshFn).not.toHaveBeenCalled();
+    expect(result.failed).toBe(1);
+    expect(result.outputs).toHaveLength(0);
+  });
+
+  test("CF during fetchChapterInput triggers refresh + retry succeeds", async () => {
+    let fetchAttempts = 0;
+    const refreshFn = mock(async () => {});
+    const adapter = makeFakeAdapter({
+      fetchChapterInput: async () => {
+        fetchAttempts++;
+        if (fetchAttempts === 1) {
+          throw new CloudflareError("https://example.com/api/chapter");
+        }
+        return fakeChapterInput;
+      },
+    });
+
+    const opts: ExecuteWalkthroughInput = { ...plan, outDir, adapter, logger, refreshFn };
+    const result = await executeWalkthrough(opts, {
+      downloader: makeFakeDownloader(),
+      packer: makeFakePacker(),
+    });
+
+    expect(refreshFn).toHaveBeenCalledTimes(1);
+    expect(result.failed).toBe(0);
+    expect(result.outputs).toHaveLength(1);
   });
 
   test("pack filename uses bundle.num (numeric), not bundle.id (opaque)", async () => {
