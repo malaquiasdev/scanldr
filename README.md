@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.svg" alt="scanldr" width="800"/>
+</p>
+
 # scanldr
 
 Single-walkthrough CLI to download manga from MangaDex and Mangakakalot, packaged as CBZ archives.
