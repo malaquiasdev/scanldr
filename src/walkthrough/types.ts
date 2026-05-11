@@ -68,7 +68,27 @@ export interface AuthResult {
   skipped: boolean;
   /** true when the user just successfully pasted a new cURL */
   justAuthenticated?: boolean;
+  /** true when the session was stale and auto-refreshed via cURL re-paste */
+  refreshed?: boolean;
 }
+
+/**
+ * Minimal probe surface injected into auth-check.
+ * Keeps the walkthrough layer decoupled from the full fallback-http surface.
+ */
+export interface SessionProbeClient {
+  /**
+   * GET the target URL with authenticated headers.
+   * Resolves with a Response on success, throws on network error or CF rejection.
+   */
+  get(url: string, headers?: Record<string, string>): Promise<Response>;
+}
+
+/**
+ * Factory that creates a SessionProbeClient on demand.
+ * Called lazily by auth-check so auth.json exists when the client is constructed.
+ */
+export type SessionProbeClientFactory = () => Promise<SessionProbeClient>;
 
 export interface WalkthroughResult {
   title: string;

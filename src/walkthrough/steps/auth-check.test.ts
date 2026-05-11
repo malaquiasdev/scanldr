@@ -1,11 +1,57 @@
 import { describe, expect, mock, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createLogger } from "../../plugins/logger/index.ts";
+import type { SessionProbeClient, SessionProbeClientFactory } from "../types.ts";
 
 const noop = () => {};
 const logger = createLogger({ level: "info", format: "human", write: noop });
+
+/** Build a fake probe client from a sequence of response factories. */
+function fakeProbeSequence(responses: Array<() => Promise<Response>>): SessionProbeClientFactory {
+  let idx = 0;
+  const client: SessionProbeClient = {
+    get: async (_url: string) => {
+      const factory = responses[idx++];
+      if (!factory) throw new Error("fakeProbeSequence exhausted");
+      return factory();
+    },
+  };
+  return async () => client;
+}
+
+/** 200 with real-looking HTML — session is valid. */
+function okResponse(): Promise<Response> {
+  return Promise.resolve(
+    new Response("<html><body>Manga list</body></html>", {
+      status: 200,
+      headers: { "content-type": "text/html" },
+    }),
+  );
+}
+
+/** 403 — triggers CloudflareError in the probe. */
+function cfRejectionResponse(): Promise<Response> {
+  // The probe client's get() throws CloudflareError on 403, but our fake returns the
+  // response directly (the real service.ts interprets 403 and throws).
+  // We simulate the service behavior: throw a CloudflareError-like error.
+  const err = Object.assign(new Error("Cloudflare rejected"), { name: "CloudflareError" });
+  return Promise.reject(err);
+}
+
+/** 500 response. */
+function serverErrorResponse(): Promise<Response> {
+  return Promise.resolve(new Response("Internal Server Error", { status: 500 }));
+}
+
+/** Network error (connection refused). */
+function networkError(): Promise<Response> {
+  return Promise.reject(new Error("connect ECONNREFUSED 127.0.0.1:80"));
+}
+
+/** Valid cURL paste string. */
+const VALID_CURL = "curl 'https://example.com' -H 'Cookie: cf_clearance=abc; session=xyz'";
 
 describe("checkAuth", () => {
   test("requiresAuth: false → returns { ok: true, skipped: true } without prompting", async () => {
@@ -26,7 +72,7 @@ describe("checkAuth", () => {
     expect(promptCalled).toBe(false);
   });
 
-  test("requiresAuth: true with existing valid auth → returns { ok: true, skipped: false } without prompting", async () => {
+  test("requiresAuth: true with existing valid auth → returns { ok: true, skipped: false } without prompting (no probe)", async () => {
     const dir = join(tmpdir(), `scanldr-test-${Date.now()}`);
     const authDir = join(dir, "scanldr");
     mkdirSync(authDir, { recursive: true });
@@ -53,7 +99,7 @@ describe("checkAuth", () => {
   test("requiresAuth: true, no auth file, valid cURL paste → returns { ok: true, skipped: false, justAuthenticated: true }", async () => {
     const tmpDir = join(tmpdir(), `scanldr-auth-test-${Date.now()}`);
     mock.module("../prompts.ts", () => ({
-      editor: async () => "curl 'https://example.com' -H 'Cookie: cf_clearance=abc; session=xyz'",
+      editor: async () => VALID_CURL,
       input: async () => "",
       select: async () => "",
       checkbox: async () => [],
@@ -85,5 +131,189 @@ describe("checkAuth", () => {
       checkAuth({ requiresAuth: true, logger, dataHome: "/nonexistent/path" }),
     ).rejects.toThrow(/attempt/i);
     expect(callCount).toBe(2);
+  });
+
+  // --- Probe tests ---
+
+  test("probe success: valid session → returns { ok: true, skipped: false }; NO cURL prompt shown", async () => {
+    const dir = join(tmpdir(), `scanldr-probe-ok-${Date.now()}`);
+    const authDir = join(dir, "scanldr");
+    mkdirSync(authDir, { recursive: true });
+    writeFileSync(
+      join(authDir, "auth.json"),
+      JSON.stringify({ cookies: { cf_clearance: "x" }, userAgent: "ua", savedAt: Date.now() }),
+    );
+
+    let promptCalled = false;
+    mock.module("../prompts.ts", () => ({
+      editor: async () => {
+        promptCalled = true;
+        return "";
+      },
+      input: async () => "",
+      select: async () => "",
+      checkbox: async () => [],
+      confirm: async () => false,
+    }));
+
+    const { checkAuth } = await import("./auth-check.ts");
+    const result = await checkAuth({
+      requiresAuth: true,
+      logger,
+      dataHome: dir,
+      probeClientFactory: fakeProbeSequence([okResponse]),
+    });
+
+    expect(result).toEqual({ ok: true, skipped: false });
+    expect(promptCalled).toBe(false);
+  });
+
+  test("probe stale → re-prompt → persist → re-probe ok → returns { ok: true, refreshed: true }", async () => {
+    const dir = join(tmpdir(), `scanldr-probe-stale-${Date.now()}`);
+    const authDir = join(dir, "scanldr");
+    mkdirSync(authDir, { recursive: true });
+    const authJsonPath = join(authDir, "auth.json");
+    writeFileSync(
+      authJsonPath,
+      JSON.stringify({ cookies: { cf_clearance: "old" }, userAgent: "ua", savedAt: Date.now() }),
+    );
+
+    let promptCount = 0;
+    mock.module("../prompts.ts", () => ({
+      editor: async () => {
+        promptCount++;
+        return VALID_CURL;
+      },
+      input: async () => "",
+      select: async () => "",
+      checkbox: async () => [],
+      confirm: async () => false,
+    }));
+
+    // First probe: CF rejection. Second probe (after paste): ok.
+    const probeClientFactory = fakeProbeSequence([cfRejectionResponse, okResponse]);
+
+    const { checkAuth } = await import("./auth-check.ts");
+    const result = await checkAuth({
+      requiresAuth: true,
+      logger,
+      dataHome: dir,
+      probeClientFactory,
+    });
+
+    expect(result).toEqual({ ok: true, skipped: false, refreshed: true });
+    expect(promptCount).toBe(1);
+    // auth.json was deleted then re-written — must still exist with new content
+    expect(existsSync(authJsonPath)).toBe(true);
+    const written = JSON.parse(readFileSync(authJsonPath, "utf-8")) as {
+      cookies: Record<string, string>;
+    };
+    expect(written.cookies).toHaveProperty("cf_clearance", "abc");
+  });
+
+  test("probe stale → re-prompt → re-probe stale again → throws WalkthroughError", async () => {
+    const dir = join(tmpdir(), `scanldr-probe-stale-twice-${Date.now()}`);
+    const authDir = join(dir, "scanldr");
+    mkdirSync(authDir, { recursive: true });
+    writeFileSync(
+      join(authDir, "auth.json"),
+      JSON.stringify({ cookies: { cf_clearance: "old" }, userAgent: "ua", savedAt: Date.now() }),
+    );
+
+    mock.module("../prompts.ts", () => ({
+      editor: async () => VALID_CURL,
+      input: async () => "",
+      select: async () => "",
+      checkbox: async () => [],
+      confirm: async () => false,
+    }));
+
+    const probeClientFactory = fakeProbeSequence([cfRejectionResponse, cfRejectionResponse]);
+
+    const { checkAuth } = await import("./auth-check.ts");
+    await expect(
+      checkAuth({ requiresAuth: true, logger, dataHome: dir, probeClientFactory }),
+    ).rejects.toThrow(/Session refresh failed twice/);
+  });
+
+  test("probe network error → throws WalkthroughError; auth.json is NOT deleted", async () => {
+    const dir = join(tmpdir(), `scanldr-probe-net-${Date.now()}`);
+    const authDir = join(dir, "scanldr");
+    mkdirSync(authDir, { recursive: true });
+    const authJsonPath = join(authDir, "auth.json");
+    writeFileSync(
+      authJsonPath,
+      JSON.stringify({ cookies: { cf_clearance: "x" }, userAgent: "ua", savedAt: Date.now() }),
+    );
+
+    mock.module("../prompts.ts", () => ({
+      editor: async () => VALID_CURL,
+      input: async () => "",
+      select: async () => "",
+      checkbox: async () => [],
+      confirm: async () => false,
+    }));
+
+    const probeClientFactory = fakeProbeSequence([networkError]);
+
+    const { checkAuth } = await import("./auth-check.ts");
+    await expect(
+      checkAuth({ requiresAuth: true, logger, dataHome: dir, probeClientFactory }),
+    ).rejects.toThrow(/Could not reach Mangakakalot/);
+
+    // auth.json must still be intact
+    expect(existsSync(authJsonPath)).toBe(true);
+  });
+
+  test("probe 5xx → throws WalkthroughError; auth.json is NOT deleted", async () => {
+    const dir = join(tmpdir(), `scanldr-probe-5xx-${Date.now()}`);
+    const authDir = join(dir, "scanldr");
+    mkdirSync(authDir, { recursive: true });
+    const authJsonPath = join(authDir, "auth.json");
+    writeFileSync(
+      authJsonPath,
+      JSON.stringify({ cookies: { cf_clearance: "x" }, userAgent: "ua", savedAt: Date.now() }),
+    );
+
+    mock.module("../prompts.ts", () => ({
+      editor: async () => VALID_CURL,
+      input: async () => "",
+      select: async () => "",
+      checkbox: async () => [],
+      confirm: async () => false,
+    }));
+
+    const probeClientFactory = fakeProbeSequence([serverErrorResponse]);
+
+    const { checkAuth } = await import("./auth-check.ts");
+    await expect(
+      checkAuth({ requiresAuth: true, logger, dataHome: dir, probeClientFactory }),
+    ).rejects.toThrow(/unexpected status \(500\)/);
+
+    expect(existsSync(authJsonPath)).toBe(true);
+  });
+
+  test("first-run (no auth.json): paste → persist → probe ok → returns { ok: true, justAuthenticated: true }", async () => {
+    const dir = join(tmpdir(), `scanldr-fresh-probe-${Date.now()}`);
+
+    mock.module("../prompts.ts", () => ({
+      editor: async () => VALID_CURL,
+      input: async () => "",
+      select: async () => "",
+      checkbox: async () => [],
+      confirm: async () => false,
+    }));
+
+    const probeClientFactory = fakeProbeSequence([okResponse]);
+
+    const { checkAuth } = await import("./auth-check.ts");
+    const result = await checkAuth({
+      requiresAuth: true,
+      logger,
+      dataHome: dir,
+      probeClientFactory,
+    });
+
+    expect(result).toEqual({ ok: true, skipped: false, justAuthenticated: true });
   });
 });
