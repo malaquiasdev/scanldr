@@ -6,6 +6,7 @@ import type { Logger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import type { SourceDescriptor } from "../../sources/types.ts";
 import type { BundleItem, Downloader, ModeSelection, Packer, SearchHit } from "../types.ts";
+import { WalkthroughError } from "../types.ts";
 import { isCloudflareError, withSessionRetry } from "../with-session-retry.ts";
 import type { RefreshSession } from "../with-session-retry.ts";
 
@@ -93,81 +94,87 @@ export async function executeWalkthrough(
 
   for (const bundle of selectedBundles) {
     try {
-      logger.info(
-        {
-          event: "walkthrough.download_start",
-          context: "walkthrough",
-          bundle_id: bundle.id,
-          label: bundle.label,
-        },
-        `downloading ${bundle.label}`,
-      );
+      const doBundle = async () => {
+        logger.info(
+          {
+            event: "walkthrough.download_start",
+            context: "walkthrough",
+            bundle_id: bundle.id,
+            label: bundle.label,
+          },
+          `downloading ${bundle.label}`,
+        );
 
-      let chapterInputs: import("../../modules/downloader/types.ts").ChapterInput[];
+        let chapterInputs: import("../../modules/downloader/types.ts").ChapterInput[];
 
-      // Wrap fetchChapterInput with CF retry when a refreshFn is available.
-      // Falls back to plain call when no refreshFn is injected (tests that omit it).
-      const fetchWithRetry = refreshFn
-        ? (chapterId: string, chapterNum?: string) =>
-            withSessionRetry(
-              () => adapter.fetchChapterInput(chapterId, chapterNum),
-              isCloudflareError,
-              refreshFn,
-              logger,
-              "walkthrough.fetch_chapter_retry",
-            )
-        : (chapterId: string, chapterNum?: string) =>
-            adapter.fetchChapterInput(chapterId, chapterNum);
+        if (bundle.kind === "volume") {
+          // Expand volume into constituent chapters
+          const ids = bundle.chapterIds ?? [];
+          const nums = bundle.chapterNums ?? [];
+          chapterInputs = await Promise.all(
+            ids.map((chapterId, i) => adapter.fetchChapterInput(chapterId, nums[i])),
+          );
+        } else {
+          // Chapter mode: single fetch
+          chapterInputs = [await adapter.fetchChapterInput(bundle.id, bundle.num)];
+        }
 
-      if (bundle.kind === "volume") {
-        // Expand volume into constituent chapters
-        const ids = bundle.chapterIds ?? [];
-        const nums = bundle.chapterNums ?? [];
-        chapterInputs = await Promise.all(
-          ids.map((chapterId, i) => fetchWithRetry(chapterId, nums[i])),
+        const totalPages = chapterInputs.reduce((acc, ci) => acc + ci.pages.length, 0);
+        logger.info(
+          {
+            event: "walkthrough.download_page_done",
+            context: "walkthrough",
+            bundle_id: bundle.id,
+            pages_count: totalPages,
+          },
+          `resolved ${totalPages} pages for ${bundle.label}`,
+        );
+
+        const result = await downloader.downloadBundle({
+          outDir,
+          format: "cbz",
+          slug,
+          kind: bundle.kind === "volume" ? "volume" : "chapter",
+          bundleNumber: bundle.num.replace(/[^a-z0-9.]/gi, "-"),
+          chapters: chapterInputs,
+          imageConcurrency: 4,
+          delayMs: 0,
+          dryRun: false,
+          logger,
+        });
+
+        outputs.push(result.outputPath);
+        packedChapters.push({ num: bundle.num, outputPath: result.outputPath });
+
+        logger.info(
+          {
+            event: "walkthrough.download_bundle_done",
+            context: "walkthrough",
+            bundle_id: bundle.id,
+            output_path: result.outputPath,
+          },
+          `downloaded ${bundle.label}`,
+        );
+      };
+
+      // Wrap the entire per-bundle work (fetchChapterInput + downloadBundle) in a single
+      // withSessionRetry call when refreshFn is available. Any CloudflareError raised during
+      // metadata fetch OR page downloads triggers one session refresh and retries the whole bundle.
+      if (refreshFn) {
+        await withSessionRetry(
+          doBundle,
+          isCloudflareError,
+          refreshFn,
+          logger,
+          "walkthrough.bundle_retry",
         );
       } else {
-        // Chapter mode: single fetch
-        chapterInputs = [await fetchWithRetry(bundle.id, bundle.num)];
+        await doBundle();
       }
-
-      const totalPages = chapterInputs.reduce((acc, ci) => acc + ci.pages.length, 0);
-      logger.info(
-        {
-          event: "walkthrough.download_page_done",
-          context: "walkthrough",
-          bundle_id: bundle.id,
-          pages_count: totalPages,
-        },
-        `resolved ${totalPages} pages for ${bundle.label}`,
-      );
-
-      const result = await downloader.downloadBundle({
-        outDir,
-        format: "cbz",
-        slug,
-        kind: bundle.kind === "volume" ? "volume" : "chapter",
-        bundleNumber: bundle.num.replace(/[^a-z0-9.]/gi, "-"),
-        chapters: chapterInputs,
-        imageConcurrency: 4,
-        delayMs: 0,
-        dryRun: false,
-        logger,
-      });
-
-      outputs.push(result.outputPath);
-      packedChapters.push({ num: bundle.num, outputPath: result.outputPath });
-
-      logger.info(
-        {
-          event: "walkthrough.download_bundle_done",
-          context: "walkthrough",
-          bundle_id: bundle.id,
-          output_path: result.outputPath,
-        },
-        `downloaded ${bundle.label}`,
-      );
     } catch (err) {
+      // CF survived refresh → WalkthroughError thrown by withSessionRetry.
+      // Subsequent bundles would fail the same way; abort the entire walkthrough.
+      if (err instanceof WalkthroughError) throw err;
       failed++;
       logger.warn(
         {
