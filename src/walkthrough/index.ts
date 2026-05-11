@@ -1,3 +1,4 @@
+import { createFallbackHttp } from "../integrations/fallback-http/index.ts";
 import type { Logger } from "../plugins/logger/index.ts";
 import type { SourceAdapter } from "../sources/adapters/index.ts";
 import { getAdapter } from "../sources/adapters/index.ts";
@@ -11,10 +12,20 @@ import { pickRange } from "./steps/range-picker.ts";
 import { pickSearchResult } from "./steps/search-results-picker.ts";
 import { pickSource } from "./steps/source-picker.ts";
 import { promptTitle } from "./steps/title-prompt.ts";
-import type { WalkthroughCancelled, WalkthroughInput, WalkthroughResult } from "./types.ts";
+import type {
+  SessionProbeClientFactory,
+  WalkthroughCancelled,
+  WalkthroughInput,
+  WalkthroughResult,
+} from "./types.ts";
 import { WalkthroughError } from "./types.ts";
 
-export type { WalkthroughCancelled, WalkthroughInput, WalkthroughResult } from "./types.ts";
+export type {
+  WalkthroughCancelled,
+  WalkthroughInput,
+  WalkthroughResult,
+  SessionProbeClientFactory,
+} from "./types.ts";
 export { WalkthroughError } from "./types.ts";
 
 export interface RunWalkthroughOptions extends WalkthroughInput {
@@ -25,6 +36,12 @@ export interface RunWalkthroughOptions extends WalkthroughInput {
   adapterFactory?: (sourceId: string, opts: { logger: Logger }) => SourceAdapter;
   /** Override downloader/packer deps (tests inject fakes). */
   executeDeps?: ExecuteDeps;
+  /**
+   * Override the session probe client factory (tests inject fakes).
+   * Production default: real fallback-http client created lazily after auth.json is written.
+   * Pass null to disable probing (file-presence check only).
+   */
+  probeClientFactory?: SessionProbeClientFactory | null;
 }
 
 /** Returned when walkthrough errors out in a handled way (WalkthroughError). */
@@ -52,8 +69,21 @@ export async function runWalkthrough(
     // Step 2 — source
     const source = await pickSource();
 
-    // Step 3 — auth check
-    await checkAuth({ requiresAuth: source.requiresAuth, logger: opts.logger });
+    // Step 3 — auth check (probe session when factory provided; production uses real fallback-http)
+    const probeClientFactory: SessionProbeClientFactory | undefined =
+      opts.probeClientFactory === null
+        ? undefined
+        : (opts.probeClientFactory ??
+          ((): SessionProbeClientFactory => {
+            // Default production factory: create a new fallback-http client each call so it
+            // reads the auth.json that was just written by the paste prompt.
+            return () => createFallbackHttp({ logger: opts.logger });
+          })());
+    await checkAuth({
+      requiresAuth: source.requiresAuth,
+      logger: opts.logger,
+      probeClientFactory,
+    });
 
     // Resolve adapter for this source (after auth check so session is persisted if needed)
     const adapter = resolveAdapter(source.id, { logger: opts.logger });

@@ -59,7 +59,7 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
   } catch {
     logger.warn(
       { event: "fallback_http.missing_auth", context: "fallback-http", path, reason: "corrupt" },
-      `auth session at ${path} is corrupt; re-run scanldr auth`,
+      `auth session at ${path} is corrupt; the walkthrough will re-prompt for a fresh paste`,
     );
     throw new MissingAuthError(path);
   }

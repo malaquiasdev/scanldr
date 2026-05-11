@@ -1,5 +1,6 @@
 // Types and error classes for the fallback HTTP client.
 // Per ADR-001: replays all captured cookies + UA on every request.
+// The walkthrough auth-check step handles capturing and refreshing the session.
 
 import type { Logger } from "@plugins/logger/index.ts";
 
@@ -9,7 +10,9 @@ export type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promi
 export class MissingAuthError extends Error {
   override readonly name = "MissingAuthError";
   constructor(public readonly path: string) {
-    super(`Auth session not found at ${path}. Run \`scanldr auth\` to capture one.`);
+    super(
+      `Auth session not found at ${path}. Run \`bun start\` to capture one through the interactive walkthrough.`,
+    );
   }
 }
 
@@ -17,13 +20,13 @@ export class CloudflareError extends Error {
   override readonly name = "CloudflareError";
   constructor(public readonly url: string) {
     super(
-      `Cloudflare rejected the request to ${url}. Run \`scanldr auth\` to refresh the session.`,
+      `Cloudflare rejected the request to ${url}. The session has likely expired; the walkthrough will prompt for a fresh cURL paste.`,
     );
   }
 }
 
 export interface FallbackHttpOptions {
-  /** Path to auth.json. If omitted, resolves via the same XDG logic used by `scanldr auth`. */
+  /** Path to auth.json. If omitted, resolves via the same XDG logic used by the walkthrough auth-check step. */
   authPath?: string;
   logger: Logger;
   /** Override fetch for testing. Defaults to globalThis.fetch. */
