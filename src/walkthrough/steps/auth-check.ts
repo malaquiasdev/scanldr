@@ -23,8 +23,15 @@ export interface AuthCheckOptions {
 }
 
 const MAX_PASTE_RETRIES = 2;
-/** Probe target: mangakakalot homepage — cheaper and less noisy than search URLs. */
-const PROBE_URL = "https://www.mangakakalot.gg/";
+/**
+ * Probe target: the search endpoint, not the homepage.
+ * The homepage has weaker Cloudflare rules and gives false positives — a 200 there
+ * does NOT guarantee the session works for search, which has stricter CF rules.
+ * A benign query ("__scanldr_probe__") returns a "no results" page when the session
+ * is valid, and triggers a CF challenge when the session is stale — exactly the
+ * same behaviour the walkthrough encounters in step 4.
+ */
+const PROBE_URL = "https://www.mangakakalot.gg/search/story/__scanldr_probe__";
 /** Probe timeout in ms. */
 const PROBE_TIMEOUT_MS = 5000;
 
@@ -188,6 +195,43 @@ async function promptAndParseSession(logger: Logger): Promise<AuthSession> {
   );
 }
 
+export interface RefreshSessionOptions {
+  authPath: string;
+  probeClientFactory: SessionProbeClientFactory;
+  logger: Logger;
+}
+
+/**
+ * Shared refresh flow used by both auth-check (stale branch) and withSessionRetry.
+ * Deletes stale auth.json, prompts for a fresh cURL paste, persists it, and re-probes once.
+ * Returns { ok: true, refreshed: true } on success.
+ * Throws WalkthroughError if the second probe still fails.
+ */
+export async function refreshSession(opts: RefreshSessionOptions): Promise<AuthResult> {
+  const { authPath, probeClientFactory, logger } = opts;
+
+  try {
+    await unlink(authPath);
+  } catch {
+    // If deletion fails, continue — user will overwrite via paste
+  }
+
+  const session = await promptAndParseSession(logger);
+  await persistSession(session, authPath);
+  logger.info(
+    { event: "walkthrough.auth_refresh_persisted", context: "walkthrough", path: authPath },
+    "stale session replaced — new auth saved",
+  );
+
+  // Re-probe once with a fresh client (reads new auth.json)
+  const freshClient = await probeClientFactory();
+  const retry = await probeSession(freshClient, logger);
+  if (retry.kind === "ok") {
+    return { ok: true, skipped: false, refreshed: true };
+  }
+  throw new WalkthroughError("Session refresh failed twice. Try again later.");
+}
+
 /** Step 3: check auth state. Prompt for cURL paste when needed and persist via auth service. */
 export async function checkAuth(opts: AuthCheckOptions): Promise<AuthResult> {
   if (!opts.requiresAuth) {
@@ -223,26 +267,11 @@ export async function checkAuth(opts: AuthCheckOptions): Promise<AuthResult> {
     }
 
     if (outcome.kind === "stale") {
-      // Delete stale auth.json and re-prompt
-      try {
-        await unlink(authPath);
-      } catch {
-        // If deletion fails, continue anyway — user will overwrite via paste
-      }
-      const session = await promptAndParseSession(opts.logger);
-      await persistSession(session, authPath);
-      opts.logger.info(
-        { event: "walkthrough.auth_refresh_persisted", context: "walkthrough", path: authPath },
-        "stale session replaced — new auth saved",
-      );
-
-      // Re-probe once with a fresh client (reads new auth.json)
-      const freshClient = await opts.probeClientFactory();
-      const retry = await probeSession(freshClient, opts.logger);
-      if (retry.kind === "ok") {
-        return { ok: true, skipped: false, refreshed: true };
-      }
-      throw new WalkthroughError("Session refresh failed twice. Try again later.");
+      return refreshSession({
+        authPath,
+        probeClientFactory: opts.probeClientFactory,
+        logger: opts.logger,
+      });
     }
 
     if (outcome.kind === "network_error") {

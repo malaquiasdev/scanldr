@@ -316,4 +316,36 @@ describe("checkAuth", () => {
 
     expect(result).toEqual({ ok: true, skipped: false, justAuthenticated: true });
   });
+
+  test("probe URL contains /search/story/ (representative CF detection — not the homepage)", async () => {
+    const dir = join(tmpdir(), `scanldr-probe-url-${Date.now()}`);
+    const authDir = join(dir, "scanldr");
+    mkdirSync(authDir, { recursive: true });
+    writeFileSync(
+      join(authDir, "auth.json"),
+      JSON.stringify({ cookies: { cf_clearance: "x" }, userAgent: "ua", savedAt: Date.now() }),
+    );
+
+    mock.module("../prompts.ts", () => ({
+      editor: async () => "",
+      input: async () => "",
+      select: async () => "",
+      checkbox: async () => [],
+      confirm: async () => false,
+    }));
+
+    let capturedUrl = "";
+    const client: SessionProbeClient = {
+      get: async (url: string) => {
+        capturedUrl = url;
+        return okResponse();
+      },
+    };
+    const probeClientFactory: SessionProbeClientFactory = async () => client;
+
+    const { checkAuth } = await import("./auth-check.ts");
+    await checkAuth({ requiresAuth: true, logger, dataHome: dir, probeClientFactory });
+
+    expect(capturedUrl).toContain("/search/story/");
+  });
 });
