@@ -53,6 +53,16 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
   // Mtime-keyed cache: null means not yet loaded (though we verified above it exists).
   let authCache: AuthCache | null = null;
 
+  // CF short-circuit latch.
+  // Records the auth.json mtime at the moment a CloudflareError was observed.
+  // While this value matches the current mtime on disk, subsequent requests skip
+  // the HTTP call entirely (no throttle, no fetch) and throw immediately — this
+  // prevents ~60 seconds of queued tasks spamming 403s while the user is being
+  // prompted for a fresh cURL paste.
+  // The latch is cleared automatically when a request observes that mtime has
+  // advanced (i.e. refreshSession has written a new auth.json to disk).
+  let cfRejectedAtMtime: number | null = null;
+
   // Throttle state — serialized via promise chain so concurrent calls queue up.
   // null = no request made yet; number = timestamp of last request start.
   let lastRequestAt: number | null = null;
@@ -97,6 +107,20 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
   }
 
   async function dispatch(url: string, extraHeaders?: Record<string, string>): Promise<Response> {
+    // CF short-circuit: if a prior request latched a CF rejection mtime, skip
+    // everything (throttle + HTTP) until auth.json is refreshed on disk.
+    if (cfRejectedAtMtime !== null) {
+      const currentMtime = await statMtime(path);
+      if (currentMtime === cfRejectedAtMtime) {
+        // Auth file unchanged — session still stale. Short-circuit silently.
+        // No "Cloudflare rejected" log here; the original log was already emitted
+        // by the first rejection. Logging here again is exactly the spam we fix.
+        throw new CloudflareError(url);
+      }
+      // mtime advanced → refreshSession wrote new credentials; clear latch.
+      cfRejectedAtMtime = null;
+    }
+
     // Throttle: sleep if last request was < 1000ms ago.
     if (lastRequestAt !== null) {
       const elapsed = now() - lastRequestAt;
@@ -144,6 +168,7 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
           { event: "fallback_http.cloudflare_rejected", context: "fallback-http", url },
           "Cloudflare rejected the request",
         );
+        cfRejectedAtMtime = await statMtime(path);
         throw new CloudflareError(url);
       }
 
@@ -155,6 +180,7 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
             { event: "fallback_http.cloudflare_rejected", context: "fallback-http", url },
             "Cloudflare challenge in 200 body — session is stale",
           );
+          cfRejectedAtMtime = await statMtime(path);
           throw new CloudflareError(url);
         }
         // Return a synthetic response that re-streams the body we already consumed.
@@ -206,6 +232,16 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/** Returns the mtime (ms) of the given file path, or -1 if the file is missing. */
+async function statMtime(filePath: string): Promise<number> {
+  try {
+    const s = await stat(filePath);
+    return s.mtimeMs;
+  } catch {
+    return -1;
+  }
+}
 
 async function loadAuth(
   path: string,
