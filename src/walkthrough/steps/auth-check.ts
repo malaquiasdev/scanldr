@@ -210,12 +210,10 @@ export interface RefreshSessionOptions {
 export async function refreshSession(opts: RefreshSessionOptions): Promise<AuthResult> {
   const { authPath, probeClientFactory, logger } = opts;
 
-  try {
-    await unlink(authPath);
-  } catch {
-    // If deletion fails, continue — user will overwrite via paste
-  }
-
+  // Do NOT unlink here. persistSession writes atomically via .tmp + rename,
+  // so it will overwrite the stale file safely. Deleting upfront is purely
+  // destructive: if the user hits Ctrl+C during the paste prompt, they lose
+  // their existing credentials and cannot retry.
   const session = await promptAndParseSession(logger);
   await persistSession(session, authPath);
   logger.info(
