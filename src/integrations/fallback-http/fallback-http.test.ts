@@ -741,3 +741,126 @@ test("capitalized Cookie header from caller does not override auto-built cookie"
   // The attacker's value must not appear in the outgoing cookie header.
   expect(cookieParts).not.toContain("attacker=evil");
 });
+
+// ---------------------------------------------------------------------------
+// Test 19 (P2-2): Credential reload — after auth.json is rewritten, the next
+// request uses the NEW cookies, not the stale ones captured at construction.
+// This is the integration test that would have caught P0-1.
+// ---------------------------------------------------------------------------
+
+test("credential reload: after auth.json rewrite, next request sends new cookies", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  const capturedCookieHeaders: string[] = [];
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> = async (
+    _url,
+    init,
+  ) => {
+    const headers = init?.headers as Record<string, string>;
+    capturedCookieHeaders.push(headers.cookie ?? "");
+    return makeFakeResponse(200);
+  };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  // First request — should use VALID_SESSION cookies.
+  await client.get("https://example.com/first");
+  expect(capturedCookieHeaders[0]).toContain("cf_clearance=abc123");
+
+  // Simulate refreshSession: overwrite auth.json with new credentials.
+  const REFRESHED_SESSION = {
+    cookies: { cf_clearance: "NEW_TOKEN", __cf_bm: "NEW_BM" },
+    userAgent: "Mozilla/5.0 RefreshedUA",
+    savedAt: Date.now(),
+  };
+  // Small delay to guarantee mtime changes (filesystem resolution is ~1ms).
+  await new Promise((r) => setTimeout(r, 10));
+  await writeFile(path, JSON.stringify(REFRESHED_SESSION), "utf8");
+
+  // Second request — must pick up the NEW credentials from the rewritten file.
+  await client.get("https://example.com/second");
+
+  expect(capturedCookieHeaders).toHaveLength(2);
+  const secondCookies = capturedCookieHeaders[1] ?? "";
+  // Must contain new token.
+  expect(secondCookies).toContain("cf_clearance=NEW_TOKEN");
+  expect(secondCookies).toContain("__cf_bm=NEW_BM");
+  // Must NOT contain old stale token.
+  expect(secondCookies).not.toContain("cf_clearance=abc123");
+});
+
+// ---------------------------------------------------------------------------
+// Test 20 (P1-1): 200 with CF challenge HTML → throws CloudflareError
+// ---------------------------------------------------------------------------
+
+test("200 with CF challenge HTML body throws CloudflareError", async () => {
+  const { logger, calls } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let fetchCount = 0;
+  const CF_CHALLENGE_BODY =
+    "<!DOCTYPE html><html><head><title>Just a moment...</title></head><body>" +
+    "<div id='cf-browser-verification'>cloudflare cf_clearance challenge</div>" +
+    "</body></html>";
+
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return new Response(CF_CHALLENGE_BODY, {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  await expect(client.get("https://example.com/")).rejects.toBeInstanceOf(CloudflareError);
+
+  // No retry on CF challenge.
+  expect(fetchCount).toBe(1);
+
+  const warnCall = calls.find(
+    (c) => c.level === "warn" && c.fields.event === "fallback_http.cloudflare_rejected",
+  );
+  expect(warnCall).toBeDefined();
+});
+
+// ---------------------------------------------------------------------------
+// Test 21: Normal 200 with real HTML is NOT falsely flagged as CF challenge
+// ---------------------------------------------------------------------------
+
+test("200 with real manga HTML is returned to caller without throwing", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  const REAL_HTML = "<html><body><div class='manga-list'><h2>Naruto Vol.1</h2></div></body></html>";
+
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => new Response(REAL_HTML, { status: 200, headers: { "content-type": "text/html" } });
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  const res = await client.get("https://example.com/manga/naruto");
+  expect(res.status).toBe(200);
+  const body = await res.text();
+  expect(body).toContain("Naruto Vol.1");
+});
