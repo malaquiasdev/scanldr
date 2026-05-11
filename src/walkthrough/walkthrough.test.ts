@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CloudflareError } from "../integrations/fallback-http/types.ts";
 import type { ChapterInput } from "../modules/downloader/types.ts";
 import { createLogger } from "../plugins/logger/index.ts";
 import type { SourceAdapter } from "../sources/adapters/index.ts";
@@ -268,7 +269,7 @@ describe("runWalkthrough — full happy path", () => {
 
     selectCall = 0;
     let searchCallCount = 0;
-    const cfError = Object.assign(new Error("CF"), { name: "CloudflareError" });
+    const cfError = new CloudflareError("https://example.com/cf-rejected");
     const fakeAdapter = makeFakeAdapter({
       search: async () => {
         searchCallCount++;
@@ -312,7 +313,7 @@ describe("runWalkthrough — full happy path", () => {
     }));
 
     selectCall = 0;
-    const cfError = Object.assign(new Error("CF"), { name: "CloudflareError" });
+    const cfError = new CloudflareError("https://example.com/cf-rejected");
     const fakeAdapter = makeFakeAdapter({
       search: async () => {
         throw cfError;
@@ -352,7 +353,7 @@ describe("runWalkthrough — full happy path", () => {
 
     selectCall = 0;
     let listChaptersCallCount = 0;
-    const cfError = Object.assign(new Error("CF"), { name: "CloudflareError" });
+    const cfError = new CloudflareError("https://example.com/cf-rejected");
     const fakeAdapter = makeFakeAdapter({
       listChapters: async () => {
         listChaptersCallCount++;
@@ -398,7 +399,7 @@ describe("runWalkthrough — full happy path", () => {
 
     selectCall = 0;
     let fetchCallCount = 0;
-    const cfError = Object.assign(new Error("CF"), { name: "CloudflareError" });
+    const cfError = new CloudflareError("https://example.com/cf-rejected");
     const fakeAdapter = makeFakeAdapter({
       fetchChapterInput: async () => {
         fetchCallCount++;

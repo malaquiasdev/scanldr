@@ -1,3 +1,4 @@
+import { CloudflareError } from "../integrations/fallback-http/types.ts";
 import type { Logger } from "../plugins/logger/index.ts";
 import { WalkthroughError } from "./types.ts";
 
@@ -38,5 +39,5 @@ export async function withSessionRetry<T>(
 
 /** Type guard for CloudflareError from fallback-http. */
 export function isCloudflareError(err: unknown): boolean {
-  return err instanceof Error && err.name === "CloudflareError";
+  return err instanceof CloudflareError;
 }
