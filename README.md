@@ -8,7 +8,7 @@ Single-walkthrough CLI to download manga from MangaDex and Mangakakalot, package
 
 ## Features
 
-- Single interactive walkthrough — `bun start [title]`.
+- Single interactive walkthrough — `bun start`.
 - Two sources: MangaDex (no auth) and Mangakakalot (cURL paste for Cloudflare bypass).
 - Visual pickers for source, search results, mode (chapter/volume), and range — no flag-based syntax.
 - Optional packing of selected chapters into a single CBZ with optional cover injection.
@@ -33,14 +33,13 @@ There are no subcommands. Everything is a prompt.
 
 ```bash
 bun start                  # interactive walkthrough
-bun start "Naruto"         # walkthrough with title pre-filled
 bun start --help           # show usage
 bun start --version        # show version
 ```
 
 ### Walkthrough steps
 
-1. **Title prompt** — free-text input ("Manga title or URL:"); pre-filled if a positional argument was passed.
+1. **Title prompt** — free-text input ("Manga title or URL:").
 2. **Source picker** — choose MangaDex or Mangakakalot.
 3. **Auth check** — if the chosen source requires auth and no valid session exists, prompts for a cURL paste; silently skipped for MangaDex.
 4. **Search results** — visual numbered picker, single select.

@@ -95,7 +95,6 @@ describe("runWalkthrough — full happy path", () => {
     const result = await runWalkthrough({
       logger,
       outDir,
-      titlePrefill: "Naruto",
       adapterFactory: fakeAdapterFactory,
       executeDeps: { downloader: fakeDownloader, packer: fakePacker },
     });
@@ -140,7 +139,6 @@ describe("runWalkthrough — full happy path", () => {
     const result = await runWalkthrough({
       logger,
       outDir,
-      titlePrefill: "One Piece",
       adapterFactory: () => fakeAdapter,
       executeDeps: { downloader: fakeDownloader, packer: fakePacker },
     });
@@ -181,7 +179,6 @@ describe("runWalkthrough — full happy path", () => {
     const result = await runWalkthrough({
       logger,
       outDir,
-      titlePrefill: "Bleach",
       adapterFactory: fakeAdapterFactory,
       executeDeps: { downloader: fakeDownloader, packer: fakePacker },
     });
@@ -233,7 +230,6 @@ describe("runWalkthrough — full happy path", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
-      titlePrefill: "Unknown Manga",
       adapterFactory: () => emptyAdapter,
     });
     if ("cancelled" in result) throw new Error("Unexpected cancellation");

@@ -1,20 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 
 describe("promptTitle", () => {
-  test("with prefill — default is set to prefill value", async () => {
-    mock.module("../prompts.ts", () => ({
-      input: async (opts: { default?: string }) => opts.default ?? "",
-      select: async () => "",
-      checkbox: async () => [],
-      confirm: async () => false,
-      editor: async () => "",
-    }));
-    const { promptTitle } = await import("./title-prompt.ts");
-    const result = await promptTitle({ prefill: "Naruto" });
-    expect(result).toBe("Naruto");
-  });
-
-  test("without prefill — returns user-typed value", async () => {
+  test("returns user-typed value", async () => {
     mock.module("../prompts.ts", () => ({
       input: async (_opts: unknown) => "One Piece",
       select: async () => "",

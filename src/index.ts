@@ -15,7 +15,6 @@ const USAGE = `scanldr — offline downloader for manga, HQ, manhwa, and webtoon
 
 Usage:
   bun start                  Interactive walkthrough
-  bun start <title-or-url>   Walkthrough with title pre-filled
 
 Flags:
   --help, -h      Show this help
@@ -82,10 +81,7 @@ export async function main(argv: string[]): Promise<void> {
   const traceStore = createTraceStore({ db });
   const logger = createLogger({ level, format }, traceStore);
 
-  // The first positional (if any) becomes the title prefill for the walkthrough.
-  const titlePrefill = positionals[0];
-
-  const result = await runWalkthrough({ logger, titlePrefill });
+  const result = await runWalkthrough({ logger });
   if (typeof result === "object" && "cancelled" in result && result.cancelled) {
     process.exit(130);
   }

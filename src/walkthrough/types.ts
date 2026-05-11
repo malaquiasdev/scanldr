@@ -12,9 +12,9 @@ export interface Packer {
   packVolume(input: PackVolumeInput): Promise<PackVolumeResult>;
 }
 
-export interface WalkthroughInput {
-  titlePrefill?: string;
-}
+/** @deprecated Empty — kept for backwards compat; will be removed in next major. */
+// biome-ignore lint/suspicious/noEmptyInterface: intentionally kept for API compatibility
+export interface WalkthroughInput {}
 
 /** One result from a source search. Mirrors MangaCandidate from shared types. */
 export interface SearchHit {
