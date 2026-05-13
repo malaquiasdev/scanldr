@@ -114,13 +114,22 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
 
     const pages: ImageRef[] = imageRefs.map((ref, i) => ({ url: ref.url, page: i + 1 }));
 
+    const total = pages.length;
+    const chapterNumLabel = chapterNum ?? "?";
     const imageFetcher = async (ref: ImageRef): Promise<Uint8Array> => {
-      logger.info(
-        { event: "walkthrough.fetch_page", context: "walkthrough", url: ref.url },
-        "fetching page",
-      );
-      const res = await http.get(ref.url);
+      const res = await http.get(ref.url); // CloudflareError or short-circuit throws here — no log emitted
       const buf = await res.arrayBuffer();
+      logger.info(
+        {
+          event: "walkthrough.fetch_page",
+          context: "walkthrough",
+          url: ref.url,
+          page: ref.page,
+          total,
+          chapter: chapterNumLabel,
+        },
+        `fetched page ${ref.page}/${total} of chapter ${chapterNumLabel}`,
+      );
       return new Uint8Array(buf);
     };
 

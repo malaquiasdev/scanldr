@@ -864,3 +864,199 @@ test("200 with real manga HTML is returned to caller without throwing", async ()
   const body = await res.text();
   expect(body).toContain("Naruto Vol.1");
 });
+
+// ---------------------------------------------------------------------------
+// Test 22: Short-circuit after 403 — second call skips HTTP (fetch called once)
+// ---------------------------------------------------------------------------
+
+test("short-circuit after 403: second request skips fetch and throws CloudflareError", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let fetchCount = 0;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return makeFakeResponse(403);
+    };
+
+  const sleepArgs: number[] = [];
+  const fakeSleep = async (ms: number) => {
+    sleepArgs.push(ms);
+  };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: fakeSleep,
+    // Use a fixed clock so no throttle sleep fires between requests.
+    now: () => 0,
+  });
+
+  // First call — real 403, latch should be set.
+  await expect(client.get("https://example.com/page1")).rejects.toBeInstanceOf(CloudflareError);
+
+  // Second call — mtime unchanged, must short-circuit WITHOUT calling fetch.
+  await expect(client.get("https://example.com/page2")).rejects.toBeInstanceOf(CloudflareError);
+
+  // Fetch was only called once (first request). Short-circuit skipped the second.
+  expect(fetchCount).toBe(1);
+
+  // No throttle sleep should have fired between the two calls (short-circuit exits before sleep).
+  // sleepArgs may be empty or contain only intra-retry sleeps; none should be ≥1000.
+  const throttleSleeps = sleepArgs.filter((ms) => ms >= 1000);
+  expect(throttleSleeps).toHaveLength(0);
+});
+
+// ---------------------------------------------------------------------------
+// Test 23: Latch clears when mtime advances (auth.json rewritten)
+// ---------------------------------------------------------------------------
+
+test("latch clears after mtime advances: subsequent request proceeds normally", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let fetchCount = 0;
+  let respondWith200 = false;
+
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return respondWith200 ? makeFakeResponse(200) : makeFakeResponse(403);
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  // First call — 403, latch set.
+  await expect(client.get("https://example.com/a")).rejects.toBeInstanceOf(CloudflareError);
+  expect(fetchCount).toBe(1);
+
+  // Simulate refreshSession: rewrite auth.json (advancing mtime).
+  await new Promise((r) => setTimeout(r, 10));
+  await writeFile(path, JSON.stringify({ ...VALID_SESSION, savedAt: Date.now() }), "utf8");
+  respondWith200 = true;
+
+  // Third call — mtime advanced, latch cleared, fetch is invoked again.
+  const res = await client.get("https://example.com/c");
+  expect(res.status).toBe(200);
+  expect(fetchCount).toBe(2);
+});
+
+// ---------------------------------------------------------------------------
+// Test 24: 200 CF-body also latches — second request short-circuits
+// ---------------------------------------------------------------------------
+
+test("short-circuit after 200 CF-body: second request skips fetch", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  const CF_BODY =
+    "<!DOCTYPE html><html><body>" +
+    "<div id='cf-browser-verification'>cloudflare cf_clearance challenge</div>" +
+    "</body></html>";
+
+  let fetchCount = 0;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return new Response(CF_BODY, { status: 200, headers: { "content-type": "text/html" } });
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  await expect(client.get("https://example.com/page1")).rejects.toBeInstanceOf(CloudflareError);
+  await expect(client.get("https://example.com/page2")).rejects.toBeInstanceOf(CloudflareError);
+
+  // Fetch called only once — second request was short-circuited.
+  expect(fetchCount).toBe(1);
+});
+
+// ---------------------------------------------------------------------------
+// Test 25: No latch on normal 2xx — subsequent requests proceed normally
+// ---------------------------------------------------------------------------
+
+test("no latch on normal 200: subsequent requests hit fetch normally", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let fetchCount = 0;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return makeFakeResponse(200);
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  await client.get("https://example.com/1");
+  await client.get("https://example.com/2");
+  await client.get("https://example.com/3");
+
+  // All three requests hit fetch — no latch set.
+  expect(fetchCount).toBe(3);
+});
+
+// ---------------------------------------------------------------------------
+// Test 26: Throttle is bypassed on short-circuit (no sleep called)
+// ---------------------------------------------------------------------------
+
+test("short-circuit bypasses throttle sleep", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let fetchCount = 0;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return makeFakeResponse(403);
+    };
+
+  const sleepCalls: number[] = [];
+  const fakeSleep = async (ms: number) => {
+    sleepCalls.push(ms);
+  };
+
+  // Use a real-ish clock so throttle WOULD fire between requests if not short-circuited.
+  let t = 0;
+  const fakeNow = () => t;
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: fakeSleep,
+    now: fakeNow,
+  });
+
+  // First request at t=0 — real fetch, 403, latch set.
+  await expect(client.get("https://example.com/a")).rejects.toBeInstanceOf(CloudflareError);
+  // Only 1ms passes — throttle WOULD sleep ~999ms on a normal second request.
+  t = 1;
+
+  // Second request — short-circuit, must NOT call sleep (no throttle).
+  await expect(client.get("https://example.com/b")).rejects.toBeInstanceOf(CloudflareError);
+
+  expect(fetchCount).toBe(1);
+  // The only sleep calls permitted are backoff sleeps within retry loops,
+  // which only happen on 5xx. Since we got 403, no sleeps should have occurred.
+  expect(sleepCalls).toHaveLength(0);
+});
