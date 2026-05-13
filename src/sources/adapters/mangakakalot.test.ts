@@ -148,8 +148,10 @@ describe("MangakakalotAdapter", () => {
     expect(input.pages).toHaveLength(2);
 
     // Exercise imageFetcher so CDN routing is verified
-    await input.imageFetcher(input.pages[0]!);
-    await input.imageFetcher(input.pages[1]!);
+    const [firstPage, secondPage] = input.pages;
+    if (!firstPage || !secondPage) throw new Error("test setup expected ≥2 pages");
+    await input.imageFetcher(firstPage);
+    await input.imageFetcher(secondPage);
     expect(getAnonymousMock).toHaveBeenCalledTimes(2);
   });
 
@@ -180,12 +182,15 @@ describe("MangakakalotAdapter", () => {
 
     const input = await adapter.fetchChapterInput("naruto/chapter-1");
     // Invoke imageFetcher — this is where the CDN routing happens
-    await input.imageFetcher(input.pages[0]!);
+    const [onlyPage] = input.pages;
+    if (!onlyPage) throw new Error("test setup expected ≥1 page");
+    await input.imageFetcher(onlyPage);
 
     // getAnonymous must have been called with the CDN URL
     expect(getAnonymousMock).toHaveBeenCalled();
     const calls = getAnonymousMock.mock.calls as unknown as [string, Record<string, string>?][];
-    const firstCall = calls[0]!;
+    const [firstCall] = calls;
+    if (!firstCall) throw new Error("test setup expected ≥1 call");
     expect(firstCall[0]).toBe(CDN_URL);
     // referer header must be present so CDN hotlink protection allows the request
     expect(firstCall[1]?.referer).toBe("https://www.mangakakalot.gg/");
