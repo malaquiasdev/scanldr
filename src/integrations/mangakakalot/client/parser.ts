@@ -198,22 +198,60 @@ export function detectChapterApiPlaceholder(html: string): { slug: string } | nu
   return { slug };
 }
 
+// Banner ads live under /images/bns/ on the mangakakalot.gg host.
+// Real chapter pages come from image CDN hosts (e.g. *.2xstorage.com), never from
+// mangakakalot.gg itself. GIFs are always ads — manga pages are webp/jpg/jpeg/png.
+const BANNER_HOST_RE = /^(?:www\.)?mangakakalot\.gg$/i;
+const BANNER_PATH_RE = /\/images\/bns\//i;
+const GIF_EXT_RE = /\.gif(?:[?#].*)?$/i;
+
+/**
+ * Returns true when the URL looks like a real manga chapter page.
+ * Exported for unit testing.
+ */
+export function isMangaPageImage(rawUrl: string): boolean {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return false;
+
+  // Reject .gif regardless of host
+  if (GIF_EXT_RE.test(trimmed)) return false;
+
+  try {
+    const parsed = new URL(trimmed);
+    // Reject images served from the site's own domain (banner namespace)
+    if (BANNER_HOST_RE.test(parsed.hostname)) return false;
+    // Reject the banner namespace path on any host (belt-and-suspenders)
+    if (BANNER_PATH_RE.test(parsed.pathname)) return false;
+  } catch {
+    // Relative / unparseable URL — not a CDN image, reject
+    return false;
+  }
+
+  return true;
+}
+
 /**
  * Parses chapter image URLs from a mangakakalot reader page.
  *
- * Throws MangakakalotParseError when zero images are found inside the reader container.
- * A chapter MUST have at least one image by definition — zero images means the parser broke.
+ * Filters out banner ads and non-CDN images. Page numbers are sequential (no gaps).
+ * Throws MangakakalotParseError when zero page images remain after filtering.
  */
 export function parseChapterImages(html: string, url: string): ImageRef[] {
   const $ = cheerio.load(html);
   const images: ImageRef[] = [];
 
-  $(SELECTORS.chapterReaderImage).each((i, el) => {
+  $(SELECTORS.chapterReaderImage).each((_i, el) => {
     // Prefer data-src (lazy-loaded canonical URL); fall back to src.
     const imgUrl = $(el).attr("data-src") ?? $(el).attr("src") ?? "";
-    if (!imgUrl) return;
-    images.push({ url: imgUrl.trim(), page: i + 1 });
+    if (!isMangaPageImage(imgUrl)) return;
+    // page is assigned after filtering so numbers are sequential with no gaps
+    images.push({ url: imgUrl.trim(), page: 0 });
   });
+
+  // Assign sequential page numbers now that banner entries are excluded
+  for (let i = 0; i < images.length; i++) {
+    (images[i] as ImageRef).page = i + 1;
+  }
 
   if (images.length === 0) {
     throw new MangakakalotParseError(
