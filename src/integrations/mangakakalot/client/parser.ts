@@ -198,21 +198,56 @@ export function detectChapterApiPlaceholder(html: string): { slug: string } | nu
   return { slug };
 }
 
+// Hosts that belong to the mangakakalot.gg site itself (not CDN).
+// Real manga pages come from external image CDN hosts (e.g. *.2xstorage.com).
+const SITE_HOSTS = new Set(["mangakakalot.gg", "www.mangakakalot.gg"]);
+
+/**
+ * Returns true when the URL looks like a real manga page image.
+ *
+ * Rejects when ANY of:
+ * - URL path contains `/images/bns/`  (banner ad namespace)
+ * - URL host is mangakakalot.gg / www.mangakakalot.gg  (site assets, not CDN)
+ * - File extension is `.gif`  (manga pages are webp / jpg / jpeg / png)
+ */
+export function isMangaPageImage(rawUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    // Unparseable URL — not a valid page image.
+    return false;
+  }
+
+  if (SITE_HOSTS.has(parsed.hostname)) return false;
+  if (parsed.pathname.includes("/images/bns/")) return false;
+  if (parsed.pathname.toLowerCase().endsWith(".gif")) return false;
+
+  return true;
+}
+
 /**
  * Parses chapter image URLs from a mangakakalot reader page.
  *
- * Throws MangakakalotParseError when zero images are found inside the reader container.
+ * Filters out banner ads and non-CDN images via `isMangaPageImage`.
+ * Page numbers are sequential starting at 1 based on the filtered list.
+ *
+ * Throws MangakakalotParseError when zero images remain after filtering.
  * A chapter MUST have at least one image by definition — zero images means the parser broke.
  */
 export function parseChapterImages(html: string, url: string): ImageRef[] {
   const $ = cheerio.load(html);
   const images: ImageRef[] = [];
+  let pageNum = 0;
 
-  $(SELECTORS.chapterReaderImage).each((i, el) => {
+  $(SELECTORS.chapterReaderImage).each((_, el) => {
     // Prefer data-src (lazy-loaded canonical URL); fall back to src.
     const imgUrl = $(el).attr("data-src") ?? $(el).attr("src") ?? "";
     if (!imgUrl) return;
-    images.push({ url: imgUrl.trim(), page: i + 1 });
+    const trimmed = imgUrl.trim();
+    if (!isMangaPageImage(trimmed)) return;
+    pageNum += 1;
+    images.push({ url: trimmed, page: pageNum });
   });
 
   if (images.length === 0) {

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<!-- Synthetic fixture: mimics mangakakalot.gg chapter reader with banner ads interleaved.
+     Real pages come from *.2xstorage.com CDN; banners are site-hosted or /images/bns/ paths. -->
+<html lang="en">
+<head><meta charset="UTF-8"><title>Chapter With Banners</title></head>
+<body>
+<div class="container-chapter-reader">
+  <!-- real page 1 -->
+  <img data-src="https://img-r1.2xstorage.com/manga/ch1/1.webp" alt="Page 1" />
+  <!-- banner: /images/bns/ path -->
+  <img src="https://img-r1.2xstorage.com/images/bns/common/ad1.gif" alt="Ad" />
+  <!-- real page 2 -->
+  <img data-src="https://img-r1.2xstorage.com/manga/ch1/2.webp" alt="Page 2" />
+  <!-- banner: mangakakalot.gg host -->
+  <img src="https://www.mangakakalot.gg/images/bns/common/ehentaiai.gif" alt="Ad2" />
+  <!-- real page 3 -->
+  <img data-src="https://img-r1.2xstorage.com/manga/ch1/3.jpg" alt="Page 3" />
+  <!-- banner: .gif extension on CDN-looking host but still a gif -->
+  <img src="https://img-r1.2xstorage.com/banners/promo.gif" alt="Promo" />
+  <!-- real page 4 -->
+  <img src="https://img-r2.2xstorage.com/manga/ch1/4.png" alt="Page 4" />
+</div>
+</body>
+</html>
