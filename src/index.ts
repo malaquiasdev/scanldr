@@ -47,7 +47,14 @@ export function resolveLogConfig(values: {
   return { level, format };
 }
 
-export async function main(argv: string[]): Promise<void> {
+export interface MainDeps {
+  loadConfigFn?: typeof loadConfig;
+  runWalkthroughFn?: typeof runWalkthrough;
+}
+
+export async function main(argv: string[], deps: MainDeps = {}): Promise<void> {
+  const { loadConfigFn = loadConfig, runWalkthroughFn = runWalkthrough } = deps;
+
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
@@ -74,14 +81,14 @@ export async function main(argv: string[]): Promise<void> {
 
   const { level, format } = resolveLogConfig(values);
 
-  const { config } = await loadConfig();
+  const { config } = await loadConfigFn();
   const db = openDb(config.db_path);
   runMigrations(db);
 
   const traceStore = createTraceStore({ db });
   const logger = createLogger({ level, format }, traceStore);
 
-  const result = await runWalkthrough({ logger });
+  const result = await runWalkthroughFn({ logger, outDir: config.default_out });
   if (typeof result === "object" && "cancelled" in result && result.cancelled) {
     process.exit(130);
   }
