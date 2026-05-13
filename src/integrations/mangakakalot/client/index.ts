@@ -36,7 +36,7 @@ export function createMangakakalotClient(opts: {
   const { http, logger } = opts;
 
   async function fetchHtml(url: string, extraHeaders?: Record<string, string>): Promise<string> {
-    logger.info({ event: "mangakakalot.fetch", context: "mangakakalot", url }, "fetching page");
+    logger.info({ event: "mangakakalot.fetch", context: "mangakakalot", url }, "fetching HTML");
     const res = await http.get(url, extraHeaders);
     return res.text();
   }
