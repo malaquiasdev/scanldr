@@ -6,7 +6,7 @@ export async function pickMode(): Promise<ModeSelection> {
   const result = await select<ModeSelection>({
     message: "Download mode:",
     choices: [
-      { name: "[1] Capítulo", value: "chapter" },
+      { name: "[1] Chapter", value: "chapter" },
       { name: "[2] Volume", value: "volume" },
     ],
   });
