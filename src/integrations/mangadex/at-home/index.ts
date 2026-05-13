@@ -1,7 +1,6 @@
 import { MangaDexHttpError } from "@integrations/mangadex/http/index.ts";
 import type { ImageRef } from "@modules/downloader/types.ts";
 import type { Logger } from "@plugins/logger/index.ts";
-import { AtHomeError } from "./types.ts";
 import type {
   AtHomeOptions,
   AtHomeServer,
@@ -9,9 +8,10 @@ import type {
   ImageQuality,
   ReportPayload,
 } from "./types.ts";
+import { AtHomeError } from "./types.ts";
 
-export { AtHomeError } from "./types.ts";
 export type { AtHomeOptions, AtHomeServer, ImageQuality, ReportPayload } from "./types.ts";
+export { AtHomeError } from "./types.ts";
 
 const REPORT_URL = "https://api.mangadex.network/report";
 const MAX_ATTEMPTS = 5;

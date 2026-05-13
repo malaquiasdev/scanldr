@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openDb, runMigrations } from "@plugins/db/index.ts";
 import type { Db } from "@plugins/db/index.ts";
+import { openDb, runMigrations } from "@plugins/db/index.ts";
 
 let workDir: string;
 let db: Db;

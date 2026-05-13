@@ -1,6 +1,5 @@
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
 import { parseAggregate, parseChapterFeed, parseMangaList } from "./parser.ts";
-import { TitleNotFoundError } from "./types.ts";
 import type {
   ChapterRef,
   MangaCandidate,
@@ -10,6 +9,7 @@ import type {
   MdxMangaListResponse,
   VolumeRef,
 } from "./types.ts";
+import { TitleNotFoundError } from "./types.ts";
 
 export type { ChapterRef, MangaCandidate, MangaDexClient, VolumeRef } from "./types.ts";
 export { TitleNotFoundError } from "./types.ts";

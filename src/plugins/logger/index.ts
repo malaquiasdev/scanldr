@@ -3,10 +3,10 @@
 
 import type { TraceStore } from "@plugins/trace/index.ts";
 import { redact } from "./redact.ts";
-import type { LogLevel, Logger, LoggerOptions } from "./types.ts";
+import type { Logger, LoggerOptions, LogLevel } from "./types.ts";
 
-export type { Logger, LogFormat, LogLevel, LoggerOptions } from "./types.ts";
 export { redact } from "./redact.ts";
+export type { LogFormat, Logger, LoggerOptions, LogLevel } from "./types.ts";
 
 const LEVELS: Record<LogLevel, number> = { error: 0, warn: 1, info: 2 };
 

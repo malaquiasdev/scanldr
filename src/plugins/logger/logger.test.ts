@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { TraceStore } from "@plugins/trace/index.ts";
-import { type LogLevel, createLogger } from "./index.ts";
+import { createLogger, type LogLevel } from "./index.ts";
 
 const FIXED_TS = "2025-01-01T00:00:00.000Z";
 

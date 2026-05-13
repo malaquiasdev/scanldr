@@ -5,7 +5,7 @@ import { AuthError } from "@integrations/mangakakalot/auth/index.ts";
 import { loadConfig } from "@plugins/config/index.ts";
 import { openDb, runMigrations } from "@plugins/db/index.ts";
 import { CliError } from "@plugins/errors/index.ts";
-import { type LogFormat, type LogLevel, createLogger } from "@plugins/logger/index.ts";
+import { createLogger, type LogFormat, type LogLevel } from "@plugins/logger/index.ts";
 import { createTraceStore } from "@plugins/trace/index.ts";
 import { runWalkthrough } from "./walkthrough/index.ts";
 

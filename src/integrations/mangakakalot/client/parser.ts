@@ -148,7 +148,7 @@ export function parseChapterListFromApi(
     const id = `${mangaSlug}/${item.chapter_slug}`;
 
     // Strip the leading "Chapter NUM" label if present, leaving only the subtitle.
-    const rawTitle = item.chapter_name.replace(/^chapter[\s\d.]+[:\-]?\s*/i, "").trim();
+    const rawTitle = item.chapter_name.replace(/^chapter[\s\d.]+[:-]?\s*/i, "").trim();
     const title = rawTitle.length > 0 ? rawTitle : null;
 
     chapters.push({

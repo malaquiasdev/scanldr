@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { SOURCES, getSource } from "./registry.ts";
+import { getSource, SOURCES } from "./registry.ts";
 
 describe("SOURCES registry", () => {
   test("has both mangakakalot and mangadex entries", () => {

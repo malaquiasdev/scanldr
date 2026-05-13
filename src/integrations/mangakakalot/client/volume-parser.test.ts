@@ -201,11 +201,7 @@ describe("parseVolumeMapping — edge cases", () => {
 // chaptersToVolumeMap
 // ---------------------------------------------------------------------------
 
-function makeChapter(overrides: {
-  id: string;
-  chapter: string;
-  volume?: string | null;
-}) {
+function makeChapter(overrides: { id: string; chapter: string; volume?: string | null }) {
   return {
     id: overrides.id,
     volume: overrides.volume ?? null,

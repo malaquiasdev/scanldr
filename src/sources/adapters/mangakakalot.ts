@@ -1,14 +1,14 @@
 // Adapter wrapping createMangakakalotClient for the walkthrough SourceAdapter interface.
 // Does NOT modify the integration client — only maps types.
 
-import { createFallbackHttp } from "@integrations/fallback-http/index.ts";
 import type { FallbackHttpClient } from "@integrations/fallback-http/index.ts";
-import { createMangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
+import { createFallbackHttp } from "@integrations/fallback-http/index.ts";
 import type {
   FallbackChapterRef,
   MangakakalotClient,
   VolumeBucket,
 } from "@integrations/mangakakalot/client/index.ts";
+import { createMangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
 import type { ChapterInput, ImageRef } from "@modules/downloader/types.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import type { ChapterListing, SearchHit, VolumeListing } from "../../walkthrough/types.ts";

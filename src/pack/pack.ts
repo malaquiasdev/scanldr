@@ -4,7 +4,7 @@ import { padBundleNumber } from "@modules/downloader/helpers.ts";
 import { CliError } from "@plugins/errors/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { unzipSync, zipSync } from "fflate";
-import type { PackVolumeInput, PackVolumeResult, PackedChapter } from "./types.ts";
+import type { PackedChapter, PackVolumeInput, PackVolumeResult } from "./types.ts";
 
 export type { PackedChapter, PackVolumeInput, PackVolumeResult };
 
