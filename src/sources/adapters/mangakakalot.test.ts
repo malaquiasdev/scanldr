@@ -133,6 +133,10 @@ describe("MangakakalotAdapter", () => {
           url: string,
           headers?: Record<string, string>,
         ) => Promise<Response>,
+        getAnonymous: fakeFetch as unknown as (
+          url: string,
+          headers?: Record<string, string>,
+        ) => Promise<Response>,
       },
     });
     const input = await adapter.fetchChapterInput("naruto/chapter-1");
