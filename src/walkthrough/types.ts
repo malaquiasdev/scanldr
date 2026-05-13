@@ -97,6 +97,11 @@ export interface WalkthroughResult {
   mode: ModeSelection;
   selectedBundles: BundleItem[];
   groupIntoVolume: boolean;
+  /**
+   * User-supplied volume number/name for the packed cbz, chapter mode only.
+   * null = use the chapter-range-derived default.
+   */
+  volumeName: string | null;
   coverUrl: string | null;
 }
 

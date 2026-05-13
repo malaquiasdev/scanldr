@@ -1,6 +1,6 @@
 import { downloadBundle as realDownloadBundle } from "../../modules/downloader/index.ts";
 import type { PackedChapter } from "../../pack/index.ts";
-import { fetchCover, packVolume as realPackVolume } from "../../pack/index.ts";
+import { buildVolumeFilename, fetchCover, packVolume as realPackVolume } from "../../pack/index.ts";
 import type { Logger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import type { SourceDescriptor } from "../../sources/types.ts";
@@ -15,6 +15,8 @@ export interface ExecuteWalkthroughInput {
   mode: ModeSelection;
   selectedBundles: BundleItem[];
   groupIntoVolume: boolean;
+  /** Optional user-supplied volume number/name; null = auto-derive from chapter range. */
+  volumeName?: string | null;
   coverUrl: string | null;
   outDir: string;
   adapter: SourceAdapter;
@@ -64,6 +66,7 @@ export async function executeWalkthrough(
     mode,
     selectedBundles,
     groupIntoVolume,
+    volumeName,
     coverUrl,
     outDir,
     adapter,
@@ -207,11 +210,14 @@ export async function executeWalkthrough(
         }
       }
 
+      const customName = volumeName ? buildVolumeFilename(slug, volumeName) : undefined;
+
       const packResult = await packer.packVolume({
         slug,
         outDir,
         chapters: packedChapters,
         cover,
+        customName,
         logger,
       });
 

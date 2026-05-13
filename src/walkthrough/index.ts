@@ -12,6 +12,7 @@ import { pickRange } from "./steps/range-picker.ts";
 import { pickSearchResult } from "./steps/search-results-picker.ts";
 import { pickSource } from "./steps/source-picker.ts";
 import { promptTitle } from "./steps/title-prompt.ts";
+import { promptVolumeName } from "./steps/volume-name-prompt.ts";
 import type {
   SessionProbeClientFactory,
   WalkthroughCancelled,
@@ -141,6 +142,12 @@ export async function runWalkthrough(
     // volume mode always packs
     const groupIntoVolume = mode === "volume" ? true : await promptPack();
 
+    // Step 7b — volume name (chapter mode + groupIntoVolume only; volume mode uses bundle.num)
+    const volumeName =
+      mode === "chapter" && groupIntoVolume
+        ? await promptVolumeName({ logger: opts.logger })
+        : null;
+
     // Step 8 — cover URL (only when packing)
     const coverUrl = groupIntoVolume ? await promptCoverUrl({ logger: opts.logger }) : null;
 
@@ -151,6 +158,7 @@ export async function runWalkthrough(
       mode,
       selectedBundles,
       groupIntoVolume,
+      volumeName,
       coverUrl,
     };
 
@@ -162,6 +170,7 @@ export async function runWalkthrough(
         mode,
         selectedBundles,
         groupIntoVolume,
+        volumeName,
         coverUrl,
         outDir,
         adapter,
