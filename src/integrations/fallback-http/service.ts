@@ -95,9 +95,13 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
     return { cookieHeader, userAgent: session.userAgent };
   }
 
-  async function get(url: string, extraHeaders?: Record<string, string>): Promise<Response> {
+  function enqueue(
+    url: string,
+    extraHeaders: Record<string, string> | undefined,
+    withCookie: boolean,
+  ): Promise<Response> {
     // Enqueue behind prior requests — enforces 1 req/s globally.
-    const result = chain.then(() => dispatch(url, extraHeaders));
+    const result = chain.then(() => dispatch(url, extraHeaders, withCookie));
     // Swallow errors on chain to prevent unhandled rejection bleed between calls.
     chain = result.then(
       () => {},
@@ -106,7 +110,22 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
     return result;
   }
 
-  async function dispatch(url: string, extraHeaders?: Record<string, string>): Promise<Response> {
+  async function get(url: string, extraHeaders?: Record<string, string>): Promise<Response> {
+    return enqueue(url, extraHeaders, true);
+  }
+
+  async function getAnonymous(
+    url: string,
+    extraHeaders?: Record<string, string>,
+  ): Promise<Response> {
+    return enqueue(url, extraHeaders, false);
+  }
+
+  async function dispatch(
+    url: string,
+    extraHeaders: Record<string, string> | undefined,
+    withCookie: boolean,
+  ): Promise<Response> {
     // CF short-circuit: if a prior request latched a CF rejection mtime, skip
     // everything (throttle + HTTP) until auth.json is refreshed on disk.
     if (cfRejectedAtMtime !== null) {
@@ -146,7 +165,7 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
 
         // Build base headers; merge caller extras on top (caller wins on conflict).
         const headers: Record<string, string> = { "user-agent": userAgent };
-        if (cookieHeader !== undefined) headers.cookie = cookieHeader;
+        if (withCookie && cookieHeader !== undefined) headers.cookie = cookieHeader;
         // Caller-supplied headers are merged AFTER base headers so they take precedence,
         // EXCEPT we always re-enforce cookie and user-agent (security invariant).
         if (extraHeaders) {
@@ -226,7 +245,10 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
     throw new Error("invariant: retry loop exited without returning or throwing");
   }
 
-  return { get: (url, headers) => get(url, headers) };
+  return {
+    get: (url, headers) => get(url, headers),
+    getAnonymous: (url, headers) => getAnonymous(url, headers),
+  };
 }
 
 // ---------------------------------------------------------------------------

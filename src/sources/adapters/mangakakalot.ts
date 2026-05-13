@@ -117,7 +117,16 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
     const total = pages.length;
     const chapterNumLabel = chapterNum ?? "?";
     const imageFetcher = async (ref: ImageRef): Promise<Uint8Array> => {
-      const res = await http.get(ref.url); // CloudflareError or short-circuit throws here — no log emitted
+      // Image CDN (img-r1.2xstorage.com) is a different Cloudflare zone with hotlink
+      // protection. We must NOT forward the site cookie (cross-origin leakage) and
+      // MUST include Referer so the CDN allows the request.
+      const res = await http.getAnonymous(ref.url, {
+        referer: "https://www.mangakakalot.gg/",
+        accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        "sec-fetch-dest": "image",
+        "sec-fetch-mode": "no-cors",
+        "sec-fetch-site": "cross-site",
+      }); // CloudflareError or short-circuit throws here — no log emitted
       const buf = await res.arrayBuffer();
       logger.info(
         {

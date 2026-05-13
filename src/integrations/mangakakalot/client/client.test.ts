@@ -40,6 +40,7 @@ function makeHttp(
         headers: { "content-type": entry.type ?? "text/html" },
       });
     }),
+    getAnonymous: mock(async (_url: string) => new Response(null, { status: 200 })),
   };
 }
 
@@ -326,6 +327,7 @@ describe("createMangakakalotClient", () => {
         get: mock(async () => {
           throw new CloudflareError("https://www.mangakakalot.gg/search/story/naruto");
         }),
+        getAnonymous: mock(async (_url: string) => new Response(null, { status: 200 })),
       };
       const client = createMangakakalotClient({ http, logger: makeLogger() });
       await expect(client.searchManga("naruto")).rejects.toBeInstanceOf(CloudflareError);
@@ -376,6 +378,7 @@ describe("createMangakakalotClient", () => {
             headers: { "content-type": "application/json" },
           });
         }),
+        getAnonymous: mock(async (_url: string) => new Response(null, { status: 200 })),
       };
       const client = createMangakakalotClient({ http, logger: makeLogger() });
       await client.getChapterList("dandadan");
@@ -429,6 +432,7 @@ describe("createMangakakalotClient", () => {
             headers: { "content-type": "application/json" },
           });
         }),
+        getAnonymous: mock(async (_url: string) => new Response(null, { status: 200 })),
       };
       const client = createMangakakalotClient({ http, logger: makeLogger() });
       const chapters = await client.getChapterList("test");
@@ -461,6 +465,7 @@ describe("createMangakakalotClient", () => {
             headers: { "content-type": "application/json" },
           });
         }),
+        getAnonymous: mock(async (_url: string) => new Response(null, { status: 200 })),
       };
       const logger = makeLogger();
       const client = createMangakakalotClient({ http, logger });
@@ -486,6 +491,7 @@ describe("createMangakakalotClient", () => {
         get: mock(async () => {
           throw new CloudflareError("https://www.mangakakalot.gg/api/manga/naruto/chapters");
         }),
+        getAnonymous: mock(async (_url: string) => new Response(null, { status: 200 })),
       };
       const client = createMangakakalotClient({ http, logger: makeLogger() });
       await expect(client.getChapterList("naruto")).rejects.toBeInstanceOf(CloudflareError);
@@ -587,6 +593,7 @@ describe("createMangakakalotClient", () => {
         get: mock(async () => {
           throw new CloudflareError("https://www.mangakakalot.gg/manga/naruto/chapter-1");
         }),
+        getAnonymous: mock(async (_url: string) => new Response(null, { status: 200 })),
       };
       const client = createMangakakalotClient({ http, logger: makeLogger() });
       await expect(client.getChapterImages("naruto/chapter-1")).rejects.toBeInstanceOf(
@@ -621,6 +628,7 @@ describe("createMangakakalotClient", () => {
       // Sequence-based mock: manga page HTML first, then API pages
       let callCount = 0;
       const http: FallbackHttpClient = {
+        getAnonymous: mock(async (_url: string) => new Response(null, { status: 200 })),
         get: mock(async (url: string) => {
           callCount++;
           if (callCount === 1) {

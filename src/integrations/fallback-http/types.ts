@@ -47,4 +47,14 @@ export interface FallbackHttpClient {
    *   re-enforced from the auth session and cannot be overridden by the caller.
    */
   get(url: string, headers?: Record<string, string>): Promise<Response>;
+  /**
+   * GET request WITHOUT cookie replay. Use for cross-origin assets (e.g. image CDNs
+   * hosted on a different domain than the site). User-Agent is still sent from the
+   * auth session — the cookie is the only header that's suppressed.
+   *
+   * Chain serialization, throttle, retry, and CF short-circuit semantics are
+   * identical to `get()`. The caller is responsible for passing any Referer
+   * required by the target host.
+   */
+  getAnonymous(url: string, headers?: Record<string, string>): Promise<Response>;
 }

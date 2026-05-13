@@ -1016,8 +1016,118 @@ test("no latch on normal 200: subsequent requests hit fetch normally", async () 
 });
 
 // ---------------------------------------------------------------------------
-// Test 26: Throttle is bypassed on short-circuit (no sleep called)
+// Tests for getAnonymous
 // ---------------------------------------------------------------------------
+
+test("getAnonymous omits Cookie header but still sends User-Agent", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  const capturedHeaders: Record<string, string> = {};
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> = async (
+    _url,
+    init,
+  ) => {
+    Object.assign(capturedHeaders, init?.headers as Record<string, string>);
+    return makeFakeResponse(200);
+  };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  const res = await client.getAnonymous("https://img-r1.2xstorage.com/example/1/0.webp");
+  expect(res.status).toBe(200);
+
+  // Cookie must NOT be present — CDN is a different Cloudflare zone.
+  expect("cookie" in capturedHeaders).toBe(false);
+
+  // User-Agent from auth session must still be sent.
+  expect(capturedHeaders["user-agent"]).toBe(VALID_SESSION.userAgent);
+});
+
+test("getAnonymous forwards caller extraHeaders (e.g. referer)", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  const capturedHeaders: Record<string, string> = {};
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> = async (
+    _url,
+    init,
+  ) => {
+    Object.assign(capturedHeaders, init?.headers as Record<string, string>);
+    return makeFakeResponse(200);
+  };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  await client.getAnonymous("https://img-r1.2xstorage.com/example/1/0.webp", {
+    referer: "https://www.mangakakalot.gg/",
+    accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    "sec-fetch-dest": "image",
+    "sec-fetch-mode": "no-cors",
+    "sec-fetch-site": "cross-site",
+  });
+
+  expect(capturedHeaders.referer).toBe("https://www.mangakakalot.gg/");
+  expect(capturedHeaders.accept).toBe(
+    "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+  );
+  expect(capturedHeaders["sec-fetch-dest"]).toBe("image");
+  expect(capturedHeaders["sec-fetch-mode"]).toBe("no-cors");
+  expect(capturedHeaders["sec-fetch-site"]).toBe("cross-site");
+
+  // Cookie still absent even when caller passes extra headers.
+  expect("cookie" in capturedHeaders).toBe(false);
+});
+
+test("getAnonymous serializes through the same chain as get", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let mockTime = 0;
+  const fetchTimestamps: number[] = [];
+
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchTimestamps.push(mockTime);
+      return makeFakeResponse(200);
+    };
+
+  const fakeSleep = async (ms: number) => {
+    mockTime += ms;
+  };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: fakeSleep,
+    now: () => mockTime,
+  });
+
+  // Mix one get + one getAnonymous concurrently — both must share the same chain.
+  await Promise.all([
+    client.get("https://www.mangakakalot.gg/chapter/1"),
+    client.getAnonymous("https://img-r1.2xstorage.com/example/1/0.webp"),
+  ]);
+
+  expect(fetchTimestamps).toHaveLength(2);
+
+  // Second fetch must have started at least 1000ms after the first (throttle fired).
+  const gap = (fetchTimestamps[1] ?? 0) - (fetchTimestamps[0] ?? 0);
+  expect(gap).toBeGreaterThanOrEqual(1000);
+});
 
 test("short-circuit bypasses throttle sleep", async () => {
   const { logger } = makeLogger();

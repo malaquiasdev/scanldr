@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 import type { MangakakalotClient, VolumeBucket } from "@integrations/mangakakalot/client/index.ts";
 import type { ImageRef } from "@modules/downloader/types.ts";
@@ -122,14 +122,22 @@ describe("MangakakalotAdapter", () => {
       { url: "https://cdn.mangakakalot.gg/naruto/ch1/p01.jpg", page: 1 },
       { url: "https://cdn.mangakakalot.gg/naruto/ch1/p02.jpg", page: 2 },
     ];
-    const fakeFetch = async () =>
-      new Response(new Uint8Array([0xff, 0xd8, 0xff]).buffer as ArrayBuffer); // JPEG magic bytes
+    const fakeImageBytes = new Uint8Array([0xff, 0xd8, 0xff]); // JPEG magic bytes
+
+    const getMock = mock(async (_url: string) => {
+      throw new Error("http.get must NOT be called for image CDN URLs — use getAnonymous");
+    });
+    const getAnonymousMock = mock(async () => new Response(fakeImageBytes.buffer as ArrayBuffer));
 
     const adapter = createMangakakalotAdapter({
       logger,
       client: makeFakeClient({ getChapterImages: async () => imageRefs }),
       http: {
-        get: fakeFetch as unknown as (
+        get: getMock as unknown as (
+          url: string,
+          headers?: Record<string, string>,
+        ) => Promise<Response>,
+        getAnonymous: getAnonymousMock as unknown as (
           url: string,
           headers?: Record<string, string>,
         ) => Promise<Response>,
@@ -138,5 +146,58 @@ describe("MangakakalotAdapter", () => {
     const input = await adapter.fetchChapterInput("naruto/chapter-1");
     expect(input.id).toBe("naruto/chapter-1");
     expect(input.pages).toHaveLength(2);
+
+    // Exercise imageFetcher so CDN routing is verified
+    const [firstPage, secondPage] = input.pages;
+    if (!firstPage || !secondPage) throw new Error("test setup expected ≥2 pages");
+    await input.imageFetcher(firstPage);
+    await input.imageFetcher(secondPage);
+    expect(getAnonymousMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("imageFetcher calls getAnonymous, not get (cookie isolation regression guard)", async () => {
+    const CDN_URL = "https://cdn.mangakakalot.gg/naruto/ch1/p01.jpg";
+    const imageRefs: ImageRef[] = [{ url: CDN_URL, page: 1 }];
+    const fakeImageBytes = new Uint8Array([0xff, 0xd8, 0xff]);
+
+    const getMock = mock(async (_url: string) => {
+      throw new Error("http.get must NOT be called for image CDN URLs — use getAnonymous");
+    });
+    const getAnonymousMock = mock(async () => new Response(fakeImageBytes.buffer as ArrayBuffer));
+
+    const adapter = createMangakakalotAdapter({
+      logger,
+      client: makeFakeClient({ getChapterImages: async () => imageRefs }),
+      http: {
+        get: getMock as unknown as (
+          url: string,
+          headers?: Record<string, string>,
+        ) => Promise<Response>,
+        getAnonymous: getAnonymousMock as unknown as (
+          url: string,
+          headers?: Record<string, string>,
+        ) => Promise<Response>,
+      },
+    });
+
+    const input = await adapter.fetchChapterInput("naruto/chapter-1");
+    // Invoke imageFetcher — this is where the CDN routing happens
+    const [onlyPage] = input.pages;
+    if (!onlyPage) throw new Error("test setup expected ≥1 page");
+    await input.imageFetcher(onlyPage);
+
+    // getAnonymous must have been called with the CDN URL
+    expect(getAnonymousMock).toHaveBeenCalled();
+    const calls = getAnonymousMock.mock.calls as unknown as [string, Record<string, string>?][];
+    const [firstCall] = calls;
+    if (!firstCall) throw new Error("test setup expected ≥1 call");
+    expect(firstCall[0]).toBe(CDN_URL);
+    // referer header must be present so CDN hotlink protection allows the request
+    expect(firstCall[1]?.referer).toBe("https://www.mangakakalot.gg/");
+
+    // get must NOT have been called with the CDN URL (cookie leakage prevention)
+    const getCalls = getMock.mock.calls as unknown as [string, Record<string, string>?][];
+    const getCalledWithCdn = getCalls.some((c) => c[0] === CDN_URL);
+    expect(getCalledWithCdn).toBe(false);
   });
 });
