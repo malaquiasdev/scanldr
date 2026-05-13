@@ -76,6 +76,7 @@ describe("runWalkthrough — full happy path", () => {
       input: async () => {
         inputCall++;
         if (inputCall === 1) return "Naruto"; // title
+        if (inputCall === 2) return ""; // volume name (keep default)
         return "https://example.com/cover.jpg"; // cover URL
       },
       select: async () => {
@@ -116,6 +117,46 @@ describe("runWalkthrough — full happy path", () => {
     for (const ch of chapters) {
       expect(Number.isNaN(Number(ch.num))).toBe(false);
     }
+  });
+
+  test("mode=chapter + group=true + custom volume name → packer receives buildVolumeFilename stem", async () => {
+    let inputCall = 0;
+    let selectCall = 0;
+    mock.module("./prompts.ts", () => ({
+      input: async () => {
+        inputCall++;
+        if (inputCall === 1) return "Naruto"; // title
+        if (inputCall === 2) return "1"; // volume name
+        return ""; // cover URL skipped
+      },
+      select: async () => {
+        selectCall++;
+        if (selectCall === 1) return "mangadex";
+        if (selectCall === 2) return "mock-1";
+        return "chapter";
+      },
+      checkbox: async () => ["mock-1-ch-1"],
+      confirm: async () => true,
+      editor: async () => "",
+    }));
+
+    selectCall = 0;
+    inputCall = 0;
+    const fakeDownloader = makeFakeDownloader();
+    const fakePacker = makeFakePacker();
+    const { runWalkthrough } = await import("./index.ts");
+    const result = await runWalkthrough({
+      logger,
+      outDir,
+      adapterFactory: fakeAdapterFactory,
+      executeDeps: { downloader: fakeDownloader, packer: fakePacker },
+    });
+    if ("cancelled" in result) throw new Error("Unexpected cancellation");
+    if ("ok" in result) throw new Error(`Unexpected failure: ${result.reason}`);
+    expect(result.volumeName).toBe("1");
+    const packCall = (fakePacker.packVolume as ReturnType<typeof mock>).mock.calls[0];
+    const customName = (packCall as [{ customName?: string }])[0].customName;
+    expect(customName).toBe("naruto-volume-1.cbz");
   });
 
   test("mode=volume (auto-pack) → downloader called per volume, packer called once per volume", async () => {

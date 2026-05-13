@@ -20,6 +20,7 @@ const plan: WalkthroughResult = {
   mode: "chapter",
   selectedBundles: [{ kind: "chapter", label: "Chapter 1", id: "hit-1-ch-1", num: "1" }],
   groupIntoVolume: false,
+  volumeName: null,
   coverUrl: null,
 };
 
