@@ -866,6 +866,41 @@ test("200 with real manga HTML is returned to caller without throwing", async ()
 });
 
 // ---------------------------------------------------------------------------
+// Test 21b: Binary response (image/webp) is returned byte-perfect — no UTF-8 mangling
+// ---------------------------------------------------------------------------
+
+test("200 with image/webp content-type returns binary body unchanged", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  // WebP magic bytes + bytes that are invalid UTF-8 (would become EF BF BD if decoded as text)
+  const original = new Uint8Array([
+    0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x80, 0xff, 0xc0, 0xef,
+    0xbf, 0xbe, 0xaa, 0xbb, 0xcc, 0xdd,
+  ]);
+
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () =>
+      new Response(original, {
+        status: 200,
+        headers: { "content-type": "image/webp" },
+      });
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  const res = await client.getAnonymous("https://cdn.example.com/page.webp");
+  const buf = new Uint8Array(await res.arrayBuffer());
+  expect(buf.length).toBe(original.length);
+  expect(Array.from(buf)).toEqual(Array.from(original));
+});
+
+// ---------------------------------------------------------------------------
 // Test 22: Short-circuit after 403 — second call skips HTTP (fetch called once)
 // ---------------------------------------------------------------------------
 

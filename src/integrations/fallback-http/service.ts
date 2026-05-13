@@ -193,6 +193,14 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
 
       // 200 with CF challenge HTML — treat symmetrically with 403.
       if (res && res.status >= 200 && res.status < 300) {
+        const contentType = res.headers.get("content-type") ?? "";
+        // CF challenge pages are HTML. Binary responses (images, etc.) must never
+        // be decoded as text — doing so corrupts bytes not valid in UTF-8.
+        const isTextual =
+          /^(text\/|application\/(json|xml|xhtml\+xml))/i.test(contentType) || contentType === "";
+        if (!isTextual) {
+          return res;
+        }
         const body = await peekCfBody(res);
         if (body !== null && isCfChallengeHtml(body)) {
           logger.warn(
