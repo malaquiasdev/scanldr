@@ -1,7 +1,7 @@
 // DB plugin — opens SQLite and applies versioned migrations from migrations/*.sql.
 
 import { Database } from "bun:sqlite";
-import { mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Db, MigrationRow } from "./types.ts";
 

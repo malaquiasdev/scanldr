@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { MangaDexHttpError, createMangaDexHttp } from "@integrations/mangadex/http/index.ts";
+import { createMangaDexHttp, MangaDexHttpError } from "@integrations/mangadex/http/index.ts";
 import type { Config } from "@plugins/config/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 

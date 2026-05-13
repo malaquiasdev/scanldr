@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Logger } from "@plugins/logger/index.ts";
-import { CloudflareError, MissingAuthError, createFallbackHttp } from "./index.ts";
+import { CloudflareError, createFallbackHttp, MissingAuthError } from "./index.ts";
 
 // ---------------------------------------------------------------------------
 // Test helpers

@@ -5,8 +5,8 @@ import { CloudflareError } from "../integrations/fallback-http/types.ts";
 import type { ChapterInput } from "../modules/downloader/types.ts";
 import { createLogger } from "../plugins/logger/index.ts";
 import type { SourceAdapter } from "../sources/adapters/index.ts";
-import { WalkthroughError } from "./types.ts";
 import type { ChapterListing, Downloader, Packer, SearchHit, VolumeListing } from "./types.ts";
+import { WalkthroughError } from "./types.ts";
 
 const noop = () => {};
 const logger = createLogger({ level: "info", format: "human", write: noop });

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MAX_COVER_BYTES, fetchCover } from "./cover.ts";
+import { fetchCover, MAX_COVER_BYTES } from "./cover.ts";
 
 type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
 

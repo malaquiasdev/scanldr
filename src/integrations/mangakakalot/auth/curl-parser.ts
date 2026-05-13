@@ -1,8 +1,8 @@
 // Pure cURL parser — no shell exec, no external deps.
 // Supports Chrome (Unix/Windows ^-escapes), Firefox, and Safari "Copy as cURL" formats.
 
-import { AuthError } from "./types.ts";
 import type { ParsedCurl } from "./types.ts";
+import { AuthError } from "./types.ts";
 
 /**
  * Splits a raw cURL string into tokens, handling:

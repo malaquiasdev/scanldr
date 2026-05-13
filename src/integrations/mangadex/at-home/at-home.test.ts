@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
-import { MangaDexHttpError } from "@integrations/mangadex/http/index.ts";
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
+import { MangaDexHttpError } from "@integrations/mangadex/http/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { AtHomeError, getAtHomeServer, mangadexImageFetcher } from "./index.ts";
 import type { AtHomeOptions } from "./types.ts";

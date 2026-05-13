@@ -1,4 +1,4 @@
-import { SOURCES, getSource } from "../../sources/index.ts";
+import { getSource, SOURCES } from "../../sources/index.ts";
 import type { SourceDescriptor } from "../../sources/types.ts";
 import { select } from "../prompts.ts";
 

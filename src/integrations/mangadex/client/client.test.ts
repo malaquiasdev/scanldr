@@ -1,16 +1,15 @@
 import { describe, expect, it } from "bun:test";
-import { TitleNotFoundError, createMangaDexClient } from "./index.ts";
+import { createMangaDexClient, TitleNotFoundError } from "./index.ts";
+import aggregateFixture from "./mocks/aggregate.json";
+import chapterFeedFixture from "./mocks/chapter-feed.json";
+import searchMulti from "./mocks/manga-search-multi.json";
+import searchSingle from "./mocks/manga-search-single.json";
 import { normalizeLang, parseAggregate, parseChapterFeed, parseMangaList } from "./parser.ts";
 import type {
   MdxAggregateResponse,
   MdxChapterListResponse,
   MdxMangaListResponse,
 } from "./types.ts";
-
-import aggregateFixture from "./mocks/aggregate.json";
-import chapterFeedFixture from "./mocks/chapter-feed.json";
-import searchMulti from "./mocks/manga-search-multi.json";
-import searchSingle from "./mocks/manga-search-single.json";
 
 describe("normalizeLang", () => {
   it("uppercases region subtag", () => {

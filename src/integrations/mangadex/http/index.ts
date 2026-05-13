@@ -1,10 +1,10 @@
 import { acquire, createBucket } from "./bucket.ts";
 import { backoffMs, buildUrl, retryAfterMs } from "./request.ts";
-import { MangaDexHttpError } from "./types.ts";
 import type { FetchFn, MangaDexHttpClient, MangaDexHttpOptions, QueryParams } from "./types.ts";
+import { MangaDexHttpError } from "./types.ts";
 
-export { MangaDexHttpError } from "./types.ts";
 export type { FetchFn, MangaDexHttpClient, MangaDexHttpOptions, QueryParams } from "./types.ts";
+export { MangaDexHttpError } from "./types.ts";
 
 const BASE_URL = "https://api.mangadex.org";
 const MAX_RETRIES = 5;

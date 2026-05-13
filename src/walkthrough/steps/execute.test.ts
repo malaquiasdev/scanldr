@@ -8,8 +8,8 @@ import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import { getSource } from "../../sources/index.ts";
 import type { Downloader, Packer, WalkthroughResult } from "../types.ts";
 import { WalkthroughError } from "../types.ts";
-import { executeWalkthrough } from "./execute.ts";
 import type { ExecuteWalkthroughInput } from "./execute.ts";
+import { executeWalkthrough } from "./execute.ts";
 
 const source = getSource("mangadex");
 

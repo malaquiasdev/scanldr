@@ -2,11 +2,10 @@ import { createFallbackHttp } from "../integrations/fallback-http/index.ts";
 import type { Logger } from "../plugins/logger/index.ts";
 import type { SourceAdapter } from "../sources/adapters/index.ts";
 import { getAdapter } from "../sources/adapters/index.ts";
-import { refreshSession } from "./steps/auth-check.ts";
-import { checkAuth } from "./steps/auth-check.ts";
+import { checkAuth, refreshSession } from "./steps/auth-check.ts";
 import { promptCoverUrl } from "./steps/cover-prompt.ts";
-import { executeWalkthrough } from "./steps/execute.ts";
 import type { ExecuteDeps } from "./steps/execute.ts";
+import { executeWalkthrough } from "./steps/execute.ts";
 import { pickMode } from "./steps/mode-picker.ts";
 import { promptPack } from "./steps/pack-prompt.ts";
 import { pickRange } from "./steps/range-picker.ts";
@@ -23,10 +22,10 @@ import { WalkthroughError } from "./types.ts";
 import { isCloudflareError, withSessionRetry } from "./with-session-retry.ts";
 
 export type {
+  SessionProbeClientFactory,
   WalkthroughCancelled,
   WalkthroughInput,
   WalkthroughResult,
-  SessionProbeClientFactory,
 } from "./types.ts";
 export { WalkthroughError } from "./types.ts";
 

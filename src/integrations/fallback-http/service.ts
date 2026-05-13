@@ -7,8 +7,8 @@
 import { readFile, stat } from "node:fs/promises";
 import type { AuthSession } from "@integrations/mangakakalot/auth/types.ts";
 import { resolveAuthPath } from "@plugins/auth-path/index.ts";
-import { CloudflareError, MissingAuthError } from "./types.ts";
 import type { FallbackHttpClient, FallbackHttpOptions, FetchFn } from "./types.ts";
+import { CloudflareError, MissingAuthError } from "./types.ts";
 
 const MAX_ATTEMPTS = 4; // 1 initial + 3 retries
 const BASE_BACKOFF_MS = 500;

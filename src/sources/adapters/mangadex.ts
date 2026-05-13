@@ -2,10 +2,10 @@
 // Does NOT modify the integration client — only maps types.
 
 import { getAtHomeServer, mangadexImageFetcher } from "@integrations/mangadex/at-home/index.ts";
-import { createMangaDexClient } from "@integrations/mangadex/client/index.ts";
 import type { MangaDexClient, VolumeRef } from "@integrations/mangadex/client/index.ts";
-import { createMangaDexHttp } from "@integrations/mangadex/http/index.ts";
+import { createMangaDexClient } from "@integrations/mangadex/client/index.ts";
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
+import { createMangaDexHttp } from "@integrations/mangadex/http/index.ts";
 import type { ChapterInput, ImageRef } from "@modules/downloader/types.ts";
 import type { Config } from "@plugins/config/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
