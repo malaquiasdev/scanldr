@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import type { ChapterRef, MangaCandidate, VolumeRef } from "@integrations/_shared/manga.ts";
 import type { MangaDexClient } from "@integrations/mangadex/client/index.ts";
 import { createMangaDexClient } from "@integrations/mangadex/client/index.ts";
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
+import type { Config } from "@plugins/config/index.ts";
 import { createLogger } from "@plugins/logger/index.ts";
 import { WalkthroughError } from "../../walkthrough/types.ts";
 import { createMangaDexAdapter } from "./mangadex.ts";
@@ -43,12 +44,69 @@ const volumeFixtures: VolumeRef[] = [
   { volume: "2", numeric: 2, chapterIds: ["ch-uuid-3"] },
 ];
 
+interface CapturedLanguages {
+  aggregate: string[] | undefined;
+  feed: string[] | undefined;
+}
+
+const capturedLanguages: CapturedLanguages = {
+  aggregate: undefined,
+  feed: undefined,
+};
+
+// QA note: tests below read capturedLanguages, so reset it per-test to avoid state leak
+// between tests (previously each test manually reset the keys it cared about).
+beforeEach(() => {
+  capturedLanguages.aggregate = undefined;
+  capturedLanguages.feed = undefined;
+});
+
+/** Reads through a function boundary to defeat TS narrowing across the awaited spy call. */
+function readCaptured<K extends keyof CapturedLanguages>(key: K): CapturedLanguages[K] {
+  return capturedLanguages[key];
+}
+
 function makeFakeClient(overrides: Partial<MangaDexClient> = {}): MangaDexClient {
   return {
     searchManga: async () => candidateFixtures,
-    aggregateVolumes: async () => volumeFixtures,
-    feedChapters: async () => chapterFixtures,
+    aggregateVolumes: async (_id: string, languages?: string[]) => {
+      capturedLanguages.aggregate = languages;
+      return volumeFixtures;
+    },
+    feedChapters: async (_id: string, languages?: string[]) => {
+      capturedLanguages.feed = languages;
+      return chapterFixtures;
+    },
     resolveTitleToId: async () => candidateFixtures,
+    ...overrides,
+  };
+}
+
+function makeConfig(overrides: Partial<Config> = {}): Config {
+  return {
+    preferred_languages: ["en"],
+    download_quality: "data",
+    default_format: "cbz",
+    default_out: ".",
+    db_path: "",
+    image_concurrency: 4,
+    chapter_delay_ms: 500,
+    ...overrides,
+  };
+}
+
+const atHomeResponse = {
+  baseUrl: "https://cdn.example.com",
+  chapter: {
+    hash: "hash-abc",
+    data: ["page-1.png"],
+    dataSaver: ["page-1-saver.png"],
+  },
+};
+
+function makeFakeHttp(overrides: Partial<MangaDexHttpClient> = {}): MangaDexHttpClient {
+  return {
+    get: (async () => atHomeResponse) as MangaDexHttpClient["get"],
     ...overrides,
   };
 }
@@ -185,5 +243,88 @@ describe("MangaDexAdapter", () => {
     const idxLast = vol1?.chapterIds.indexOf(`ch-${TOTAL}`);
     expect(idxLast).toBeGreaterThanOrEqual(0);
     expect(vol1?.chapterNums[idxLast as number]).toBe(String(TOTAL));
+  });
+
+  test("listChapters uses preferred_languages from config for feedChapters filter", async () => {
+    capturedLanguages.feed = undefined;
+    const adapter = createMangaDexAdapter({
+      logger,
+      client: makeFakeClient(),
+      config: makeConfig({ preferred_languages: ["pt-br"] }),
+    });
+    await adapter.listChapters("mdx-naruto");
+    expect(readCaptured("feed")).toEqual(["pt-br"]);
+  });
+
+  test("listVolumes uses preferred_languages from config for aggregate + feed filters", async () => {
+    capturedLanguages.aggregate = undefined;
+    capturedLanguages.feed = undefined;
+    const adapter = createMangaDexAdapter({
+      logger,
+      client: makeFakeClient(),
+      config: makeConfig({ preferred_languages: ["pt-br"] }),
+    });
+    await adapter.listVolumes("mdx-naruto");
+    expect(readCaptured("aggregate")).toEqual(["pt-br"]);
+    expect(readCaptured("feed")).toEqual(["pt-br"]);
+  });
+
+  test("listChapters falls back to default language when no config is provided (cold start)", async () => {
+    capturedLanguages.feed = undefined;
+    const adapter = createMangaDexAdapter({ logger, client: makeFakeClient() });
+    await adapter.listChapters("mdx-naruto");
+    expect(readCaptured("feed")).toEqual(["en"]);
+  });
+
+  test("fetchChapterInput requests data quality pages by default", async () => {
+    const adapter = createMangaDexAdapter({
+      logger,
+      client: makeFakeClient(),
+      http: makeFakeHttp(),
+    });
+    const input = await adapter.fetchChapterInput("ch-uuid-1", "1");
+    expect(input.pages[0]?.url).toBe("page-1.png");
+  });
+
+  test("fetchChapterInput requests data-saver quality pages when configured", async () => {
+    const adapter = createMangaDexAdapter({
+      logger,
+      client: makeFakeClient(),
+      http: makeFakeHttp(),
+      config: makeConfig({ download_quality: "data-saver" }),
+    });
+    const input = await adapter.fetchChapterInput("ch-uuid-1", "1");
+    expect(input.pages[0]?.url).toBe("page-1-saver.png");
+  });
+
+  test("fetchChapterInput uses default (data) quality on cold start when no config is provided", async () => {
+    const adapter = createMangaDexAdapter({
+      logger,
+      client: makeFakeClient(),
+      http: makeFakeHttp(),
+    });
+    const input = await adapter.fetchChapterInput("ch-uuid-1", "1");
+    expect(input.pages[0]?.url).toBe("page-1.png");
+  });
+
+  test("listVolumes passes multiple preferred_languages through to aggregate + feed, in order", async () => {
+    const adapter = createMangaDexAdapter({
+      logger,
+      client: makeFakeClient(),
+      config: makeConfig({ preferred_languages: ["pt-br", "en"] }),
+    });
+    await adapter.listVolumes("mdx-naruto");
+    expect(readCaptured("aggregate")).toEqual(["pt-br", "en"]);
+    expect(readCaptured("feed")).toEqual(["pt-br", "en"]);
+  });
+
+  test("empty preferred_languages array falls back to DEFAULT_LANGUAGES", async () => {
+    const adapter = createMangaDexAdapter({
+      logger,
+      client: makeFakeClient(),
+      config: makeConfig({ preferred_languages: [] }),
+    });
+    await adapter.listChapters("mdx-naruto");
+    expect(readCaptured("feed")).toEqual(["en"]);
   });
 });
