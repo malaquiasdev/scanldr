@@ -59,6 +59,16 @@ describe("defaultVolumeName", () => {
     ];
     expect(defaultVolumeName("series", chapters)).toBe("series-volume-018.5-019");
   });
+
+  test("'none' sentinel (chapter with no reported number) sorts last and yields a clean filename, never a misleading number", () => {
+    const chapters = [
+      { num: "103", outputPath: "" },
+      { num: "none", outputPath: "" },
+    ];
+    const name = defaultVolumeName("series", chapters);
+    expect(name).toBe("series-volume-103-none");
+    expect(name).not.toMatch(/\d{4}/); // never a synthetic 4-digit number like "1001"
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -166,6 +176,130 @@ describe("packVolume", () => {
 
     expect(names.some((n) => n.startsWith("chapter-018.5/"))).toBe(true);
     expect(names.some((n) => n.startsWith("chapter-019/"))).toBe(true);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("chapter with 'none' sentinel num produces chapter-none/ prefix, not a misleading synthetic number", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const slug = "series";
+    const slug_dir = join(dir, slug);
+
+    const chOneshot = await makeChapterCbz(slug_dir, slug, "none", 4);
+
+    const result = await packVolume({
+      slug,
+      outDir: dir,
+      chapters: [{ num: "none", outputPath: chOneshot }],
+      logger,
+    });
+
+    expect(result.outputPath).toMatch(/series-volume-none\.cbz$/);
+
+    const raw = await Bun.file(result.outputPath).arrayBuffer();
+    const { unzipSync } = await import("fflate");
+    const entries = unzipSync(new Uint8Array(raw));
+    const names = Object.keys(entries);
+
+    expect(names.every((n) => n.startsWith("chapter-none/"))).toBe(true);
+    // Never a synthetic 4-digit chapter number derived from index/bucket math.
+    expect(names.some((n) => /chapter-\d{4}/.test(n))).toBe(false);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("multiple 'none-N' chapters in the same volume produce distinct zip prefixes and lose no pages", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const slug = "series";
+    const slug_dir = join(dir, slug);
+
+    const chA = await makeChapterCbz(slug_dir, slug, "none-1", 3);
+    const chB = await makeChapterCbz(slug_dir, slug, "none-2", 5);
+    const chC = await makeChapterCbz(slug_dir, slug, "none-3", 2);
+
+    const result = await packVolume({
+      slug,
+      outDir: dir,
+      chapters: [
+        { num: "none-1", outputPath: chA },
+        { num: "none-2", outputPath: chB },
+        { num: "none-3", outputPath: chC },
+      ],
+      logger,
+    });
+
+    const raw = await Bun.file(result.outputPath).arrayBuffer();
+    const { unzipSync } = await import("fflate");
+    const entries = unzipSync(new Uint8Array(raw));
+    const names = Object.keys(entries);
+
+    const prefixes = new Set(names.map((n) => n.split("/")[0]));
+    expect(prefixes).toEqual(new Set(["chapter-none-1", "chapter-none-2", "chapter-none-3"]));
+    // No page-loss: total entries == sum of all chapters' pages (3 + 5 + 2).
+    expect(names).toHaveLength(10);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("mixed numbered + multiple 'none-N' chapters sort numbers first (in order), nulls last (mutually stable), no collision", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const slug = "series";
+    const slug_dir = join(dir, slug);
+
+    const ch1 = await makeChapterCbz(slug_dir, slug, "1", 2);
+    const chNoneA = await makeChapterCbz(slug_dir, slug, "none-1", 2);
+    const ch3 = await makeChapterCbz(slug_dir, slug, "3", 2);
+    const chNoneB = await makeChapterCbz(slug_dir, slug, "none-2", 2);
+
+    // Deliberately shuffled input order — packVolume must sort it.
+    const result = await packVolume({
+      slug,
+      outDir: dir,
+      chapters: [
+        { num: "none-1", outputPath: chNoneA },
+        { num: "3", outputPath: ch3 },
+        { num: "none-2", outputPath: chNoneB },
+        { num: "1", outputPath: ch1 },
+      ],
+      logger,
+    });
+
+    const raw = await Bun.file(result.outputPath).arrayBuffer();
+    const { unzipSync } = await import("fflate");
+    const entries = unzipSync(new Uint8Array(raw));
+    const names = Object.keys(entries);
+
+    const prefixes = new Set(names.map((n) => n.split("/")[0]));
+    expect(prefixes).toEqual(
+      new Set(["chapter-001", "chapter-003", "chapter-none-1", "chapter-none-2"]),
+    );
+    expect(names).toHaveLength(8);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("collision guard: duplicate zip prefix throws instead of silently overwriting pages", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const slug = "series";
+    const slug_dir = join(dir, slug);
+
+    // Two chapters incorrectly sharing the same num (simulates an upstream
+    // disambiguation bug) — packVolume must fail loudly, not silently drop pages.
+    // Source cbz files live at distinct paths; only the packed `num` collides.
+    const chA = await makeChapterCbz(slug_dir, `${slug}-a`, "none-dup", 3);
+    const chB = await makeChapterCbz(slug_dir, `${slug}-b`, "none-dup", 3);
+
+    await expect(
+      packVolume({
+        slug,
+        outDir: dir,
+        chapters: [
+          { num: "none-dup", outputPath: chA },
+          { num: "none-dup", outputPath: chB },
+        ],
+        logger,
+      }),
+    ).rejects.toThrow(/duplicate zip entry/i);
 
     await rm(dir, { recursive: true, force: true });
   });

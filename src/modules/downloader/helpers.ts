@@ -34,12 +34,22 @@ export function detectExtFromBytes(bytes: Uint8Array): string | null {
 }
 
 /**
+ * Sentinel token (or any disambiguated variant like "none-1", "none-2") used
+ * for chapters that report no chapter number. Disambiguation suffixes keep
+ * each such chapter's zip-prefix/filename unique — see chapterTokenToNum.
+ */
+export function isNoneToken(value: string): boolean {
+  return value === "none" || value.startsWith("none-");
+}
+
+/**
  * Pads the integer portion of a numeric token to `width` digits.
- * Special tokens like "none" pass through unchanged.
+ * Special tokens like "none" (and disambiguated "none-<n>" variants) pass
+ * through unchanged.
  *
  * Contract: `value` must be a non-empty string of digits, optionally followed by
- * `.<digits>`, OR the literal "none". Other shapes (empty string, leading dot,
- * negative sign) are not supported and may produce undefined output.
+ * `.<digits>`, OR the literal "none" / "none-<n>". Other shapes (empty string,
+ * leading dot, negative sign) are not supported and may produce undefined output.
  * The range parser guarantees this contract for all legitimate callers.
  *
  * Examples:
@@ -48,8 +58,10 @@ export function detectExtFromBytes(bytes: Uint8Array): string | null {
  *   ("18.5", 3) → "018.5"
  *   ("1.25", 3) → "001.25"
  *   ("none", 3) → "none"
+ *   ("none-1", 3) → "none-1"
  */
 export function padBundleNumber(value: string, width: number): string {
+  if (isNoneToken(value)) return value;
   const dotIdx = value.indexOf(".");
   if (dotIdx === -1) {
     // No decimal: try to pad as integer
