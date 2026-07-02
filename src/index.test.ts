@@ -6,9 +6,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { AuthError } from "@integrations/mangakakalot/auth/index.ts";
+import { MangakakalotParseError } from "@integrations/mangakakalot/client/index.ts";
 import type { LoadConfigResult } from "@plugins/config/index.ts";
 import { DEFAULT_CONFIG } from "@plugins/config/index.ts";
-import { main } from "./index.ts";
+import { CliError } from "@plugins/errors/index.ts";
+import { formatCliError, main } from "./index.ts";
 import type { RunWalkthroughOptions, WalkthroughFailed } from "./walkthrough/index.ts";
 
 let workDir: string;
@@ -95,5 +98,47 @@ describe("main() — config wiring", () => {
     });
 
     expect(spy.calledWith?.config?.preferred_languages).toEqual(["pt-br"]);
+  });
+});
+
+describe("formatCliError", () => {
+  test("handles CliError and returns its exitCode and message", () => {
+    const err = new CliError("Test CLI error", 42);
+    const result = formatCliError(err);
+    expect(result.exitCode).toBe(42);
+    expect(result.message).toBe("Test CLI error");
+  });
+
+  test("handles AuthError and returns exitCode 1 and message", () => {
+    const err = new AuthError("Test Auth error");
+    const result = formatCliError(err);
+    expect(result.exitCode).toBe(1);
+    expect(result.message).toBe("Test Auth error");
+  });
+
+  test("handles MangakakalotParseError and returns friendly message with selector", () => {
+    const err = new MangakakalotParseError(
+      ".some-selector",
+      "https://example.com/manga",
+      "could not find list",
+    );
+    const result = formatCliError(err);
+    expect(result.exitCode).toBe(1);
+    expect(result.message).toContain(
+      "mangakakalot is serving an unexpected page layout for this series.",
+    );
+    expect(result.message).toContain('(technical: parse failed at ".some-selector")');
+  });
+
+  test("handles fallback generic errors", () => {
+    const err = new Error("Generic error");
+    const result = formatCliError(err);
+    expect(result.exitCode).toBe(1);
+    expect(result.message).toBe("Generic error");
+
+    const nonError = "Something went wrong";
+    const resultNonError = formatCliError(nonError);
+    expect(resultNonError.exitCode).toBe(1);
+    expect(resultNonError.message).toBe("Something went wrong");
   });
 });
