@@ -165,6 +165,57 @@ describe("parseCurl — errors", () => {
     expect(() => parseCurl("wget https://example.com")).toThrow(AuthError);
   });
 
+  test("cookie-only paste shows the recovery guide and truncates input over 80 chars", () => {
+    const input =
+      "cookie: cf_clearance=abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_extra_overflow";
+    expect(input.length).toBeGreaterThan(80);
+    let message = "";
+    try {
+      parseCurl(input);
+    } catch (err) {
+      expect(err).toBeInstanceOf(AuthError);
+      message = (err as AuthError).message;
+    }
+    expect(message).toContain("How to get it:");
+    expect(message).toContain("Copy as cURL");
+    expect(message).toContain(`Got: ${input.slice(0, 80)}...`);
+  });
+
+  test("non-curl paste at exactly 80 chars is not truncated", () => {
+    const input = "x".repeat(80);
+    let message = "";
+    try {
+      parseCurl(input);
+    } catch (err) {
+      expect(err).toBeInstanceOf(AuthError);
+      message = (err as AuthError).message;
+    }
+    expect(message).toContain(`Got: ${input}`);
+    expect(message.split("Got: ")[1]).not.toContain("...");
+  });
+
+  test("non-curl paste under 80 chars is not truncated", () => {
+    const input = "wget https://example.com";
+    expect(input.length).toBeLessThan(80);
+    let message = "";
+    try {
+      parseCurl(input);
+    } catch (err) {
+      expect(err).toBeInstanceOf(AuthError);
+      message = (err as AuthError).message;
+    }
+    expect(message).toContain(`Got: ${input}`);
+    expect(message.split("Got: ")[1]).not.toContain("...");
+  });
+
+  test("valid cURL parses URL and cookie correctly", () => {
+    const result = parseCurl(
+      "curl 'https://www.mangakakalot.gg/' -H 'cookie: cf_clearance=abc123'",
+    );
+    expect(result.url).toBe("https://www.mangakakalot.gg/");
+    expect(result.cookies.cf_clearance).toBe("abc123");
+  });
+
   test("throws AuthError when no URL found", () => {
     expect(() => parseCurl("curl -H 'cookie: a=b'")).toThrow(AuthError);
   });

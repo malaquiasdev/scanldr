@@ -99,7 +99,18 @@ export function parseCurl(input: string): ParsedCurl {
   const tokens = tokenizeCurl(trimmed);
 
   if (tokens[0] !== "curl") {
-    throw new AuthError("input does not start with 'curl' — paste the cURL command from DevTools");
+    const got = trimmed.length > 80 ? `${trimmed.slice(0, 80)}...` : trimmed;
+    throw new AuthError(`Pasted input must be a full cURL command from DevTools.
+
+How to get it:
+  1. Open https://www.mangakakalot.gg in your browser
+  2. F12 → Network tab → reload the page
+  3. Right-click the first request → Copy → Copy as cURL (bash, NOT PowerShell)
+  4. Paste into this command:
+       pbpaste | scanldr auth     (macOS)
+       xclip -selection clipboard -o | scanldr auth    (Linux)
+
+Got: ${got}`);
   }
 
   let url: string | undefined;
