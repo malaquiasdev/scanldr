@@ -1,5 +1,23 @@
 # Flow — Download
 
+## Current walkthrough (`bun start`)
+
+The current single-walkthrough CLI (post-epic #116) runs these steps:
+
+1. **Title prompt** — free-text input ("Manga title:").
+2. **Source picker** — choose MangaDex or Mangakakalot.
+3. **Auth check** — if the chosen source requires auth and no valid session exists, prompts for a cURL paste; silently skipped for MangaDex.
+4. **Search results** — visual numbered picker, single select.
+5. **Mode picker** — Chapter or Volume.
+6. **Range picker** — visual multi-select list of available chapters or volumes; no range-string parser.
+7. **Pack prompt** (chapter mode only; volume mode always packs) — "Group these chapters into a single volume? [Y/n]".
+8. **Cover URL** (when packing) — optional; press Enter to skip.
+9. **Execute** — download images, pack into `.cbz`, write to output directory.
+
+See [docs/auth-manual.md](../auth-manual.md) for step 3 in detail.
+
+## Historical `download` command (pre-epic #116)
+
 Covers the `download` command. The CLI always resolves metadata via MangaDex first. If the title or an acceptable language is not available, the user is prompted to choose a fallback site.
 
 The download history (SQLite) is checked before any network request — already-downloaded volumes are skipped regardless of whether the output files still exist on disk.
