@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { ChapterRef, MangaCandidate, VolumeRef } from "@integrations/_shared/manga.ts";
 import type { MangaDexClient } from "@integrations/mangadex/client/index.ts";
+import { createMangaDexClient } from "@integrations/mangadex/client/index.ts";
+import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
 import { createLogger } from "@plugins/logger/index.ts";
 import { WalkthroughError } from "../../walkthrough/types.ts";
 import { createMangaDexAdapter } from "./mangadex.ts";
@@ -109,5 +111,79 @@ describe("MangaDexAdapter", () => {
       client: makeFakeClient({ aggregateVolumes: async () => [] }),
     });
     await expect(adapter.listVolumes("mdx-naruto")).rejects.toThrow(WalkthroughError);
+  });
+
+  test("listVolumes resolves chapter numbers beyond offset 500 (end-to-end pagination benefit)", async () => {
+    // Full multi-page series driven through the real client via injected http —
+    // proves feedChapters' pagination fix flows all the way through the adapter's
+    // chapterNumById lookup map, not just at the client layer.
+    const TOTAL = 1100;
+    const LIMIT = 500;
+
+    function makeChapterData(n: number) {
+      return {
+        id: `ch-${n}`,
+        type: "chapter" as const,
+        attributes: {
+          volume: "1",
+          chapter: String(n),
+          title: null,
+          translatedLanguage: "en",
+          readableAt: "2021-01-01T00:00:00+00:00",
+          externalUrl: null,
+        },
+        relationships: [],
+      };
+    }
+
+    const http: MangaDexHttpClient = {
+      get: async <T>(path: string, query?: unknown) => {
+        const q = query as Record<string, unknown>;
+        if (path.endsWith("/aggregate")) {
+          return {
+            result: "ok",
+            volumes: {
+              "1": {
+                volume: "1",
+                count: TOTAL,
+                chapters: Object.fromEntries(
+                  Array.from({ length: TOTAL }, (_, i) => i + 1).map((n) => [
+                    String(n),
+                    { chapter: String(n), id: `ch-${n}`, others: [], count: 1 },
+                  ]),
+                ),
+              },
+            },
+          } as unknown as T;
+        }
+        // /manga/:id/feed
+        const offset = Number(q.offset ?? 0);
+        const data = Array.from({ length: Math.min(LIMIT, Math.max(0, TOTAL - offset)) }, (_, i) =>
+          makeChapterData(offset + i + 1),
+        );
+        return {
+          result: "ok",
+          data,
+          limit: LIMIT,
+          offset,
+          total: TOTAL,
+        } as unknown as T;
+      },
+    };
+
+    const client = createMangaDexClient(http, logger);
+    const adapter = createMangaDexAdapter({ logger, client });
+    const volumes = await adapter.listVolumes("mdx-naruto");
+
+    expect(volumes).toHaveLength(1);
+    const vol1 = volumes[0];
+    // Chapter 900 lives beyond the old 500-cap; its number must resolve, not fall back to the id.
+    const idx900 = vol1?.chapterIds.indexOf("ch-900");
+    expect(idx900).toBeGreaterThanOrEqual(0);
+    expect(vol1?.chapterNums[idx900 as number]).toBe("900");
+    // And the very last chapter also resolves.
+    const idxLast = vol1?.chapterIds.indexOf(`ch-${TOTAL}`);
+    expect(idxLast).toBeGreaterThanOrEqual(0);
+    expect(vol1?.chapterNums[idxLast as number]).toBe(String(TOTAL));
   });
 });

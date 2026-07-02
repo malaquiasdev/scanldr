@@ -7,6 +7,7 @@ import searchSingle from "./mocks/manga-search-single.json";
 import { normalizeLang, parseAggregate, parseChapterFeed, parseMangaList } from "./parser.ts";
 import type {
   MdxAggregateResponse,
+  MdxChapterData,
   MdxChapterListResponse,
   MdxMangaListResponse,
 } from "./types.ts";
@@ -128,5 +129,254 @@ describe("createMangaDexClient", () => {
     const client = createMangaDexClient(http);
     await client.feedChapters("manga-id", ["en"]);
     expect(calls[0]?.query).toMatchObject({ "includes[]": "scanlation_group" });
+  });
+
+  function makeChapter(n: number): MdxChapterData {
+    return {
+      id: `ch-${n}`,
+      type: "chapter",
+      attributes: {
+        volume: null,
+        chapter: String(n),
+        title: null,
+        translatedLanguage: "en",
+        readableAt: "2021-01-01T00:00:00+00:00",
+        externalUrl: null,
+      },
+      relationships: [],
+    };
+  }
+
+  it("feedChapters paginates until total chapters are fetched (>1000 chapters, 3+ pages)", async () => {
+    const TOTAL = 1100;
+    const LIMIT = 500;
+    const calls: Array<{ path: string; query: Record<string, unknown> }> = [];
+    const http = {
+      get: async <T>(path: string, query?: unknown) => {
+        const q = query as Record<string, unknown>;
+        calls.push({ path, query: q });
+        const offset = Number(q.offset ?? 0);
+        const pageIds = Array.from(
+          { length: Math.min(LIMIT, Math.max(0, TOTAL - offset)) },
+          (_, i) => offset + i + 1,
+        );
+        const data = pageIds.map((n) => makeChapter(n));
+        return {
+          result: "ok",
+          response: "collection",
+          data,
+          limit: LIMIT,
+          offset,
+          total: TOTAL,
+        } as unknown as T;
+      },
+    };
+    const client = createMangaDexClient(http);
+    const chapters = await client.feedChapters("manga-id", ["en"]);
+
+    expect(chapters).toHaveLength(TOTAL);
+    expect(calls).toHaveLength(3); // 500 + 500 + 100
+    expect(chapters.find((c) => c.id === "ch-1")).toBeDefined();
+    expect(chapters.find((c) => c.id === "ch-1100")).toBeDefined();
+    // A chapter beyond the old 500-cap must resolve — proves the NaN fallback bug is fixed.
+    const beyondCutoff = chapters.find((c) => c.id === "ch-900");
+    expect(beyondCutoff).toBeDefined();
+    expect(Number.isNaN(Number(beyondCutoff?.chapter))).toBe(false);
+  });
+
+  it("feedChapters stops exactly at the currentOffset >= total boundary (total is an exact multiple of 500)", async () => {
+    const TOTAL = 1000;
+    const LIMIT = 500;
+    const calls: Array<{ path: string; query: Record<string, unknown> }> = [];
+    const http = {
+      get: async <T>(path: string, query?: unknown) => {
+        const q = query as Record<string, unknown>;
+        calls.push({ path, query: q });
+        const offset = Number(q.offset ?? 0);
+        const pageIds = Array.from(
+          { length: Math.min(LIMIT, Math.max(0, TOTAL - offset)) },
+          (_, i) => offset + i + 1,
+        );
+        const data = pageIds.map((n) => makeChapter(n));
+        return {
+          result: "ok",
+          response: "collection",
+          data,
+          limit: LIMIT,
+          offset,
+          total: TOTAL,
+        } as unknown as T;
+      },
+    };
+    const client = createMangaDexClient(http);
+    const chapters = await client.feedChapters("manga-id", ["en"]);
+
+    // Must not make a 3rd, wasteful, empty-page request.
+    expect(calls).toHaveLength(2);
+    expect(chapters).toHaveLength(TOTAL);
+    const ids = chapters.map((c) => c.id);
+    expect(new Set(ids).size).toBe(TOTAL);
+    expect(chapters.find((c) => c.id === "ch-1")).toBeDefined();
+    expect(chapters.find((c) => c.id === "ch-1000")).toBeDefined();
+  });
+
+  it("feedChapters makes exactly 1 call and returns empty list for an empty series (total=0)", async () => {
+    const calls: Array<{ query: Record<string, unknown> }> = [];
+    const warnCalls: Array<{ fields: Record<string, unknown>; msg: string }> = [];
+    const logger = {
+      info: () => {},
+      warn: (fields: Record<string, unknown>, msg: string) => warnCalls.push({ fields, msg }),
+      error: () => {},
+    };
+    const http = {
+      get: async <T>(_path: string, query?: unknown) => {
+        calls.push({ query: query as Record<string, unknown> });
+        return {
+          result: "ok",
+          response: "collection",
+          data: [],
+          limit: 500,
+          offset: 0,
+          total: 0,
+        } as unknown as T;
+      },
+    };
+    const client = createMangaDexClient(http, logger);
+    const chapters = await client.feedChapters("manga-id", ["en"]);
+
+    expect(calls).toHaveLength(1);
+    expect(chapters).toHaveLength(0);
+    expect(warnCalls).toHaveLength(0);
+  });
+
+  it("feedChapters makes exactly 1 call for a small series (<500 chapters), with correct offset/limit", async () => {
+    const TOTAL = 42;
+    const calls: Array<{ query: Record<string, unknown> }> = [];
+    const http = {
+      get: async <T>(_path: string, query?: unknown) => {
+        calls.push({ query: query as Record<string, unknown> });
+        const data = Array.from({ length: TOTAL }, (_, i) => makeChapter(i + 1));
+        return {
+          result: "ok",
+          response: "collection",
+          data,
+          limit: 500,
+          offset: 0,
+          total: TOTAL,
+        } as unknown as T;
+      },
+    };
+    const client = createMangaDexClient(http);
+    const chapters = await client.feedChapters("manga-id", ["en"]);
+
+    expect(calls).toHaveLength(1);
+    expect(chapters).toHaveLength(TOTAL);
+    expect(calls[0]?.query).toMatchObject({ offset: 0, limit: 500 });
+  });
+
+  it("feedChapters preserves translatedLanguage[] filter across pages", async () => {
+    const TOTAL = 600;
+    const LIMIT = 500;
+    const calls: Array<{ query: Record<string, unknown> }> = [];
+    const http = {
+      get: async <T>(_path: string, query?: unknown) => {
+        const q = query as Record<string, unknown>;
+        calls.push({ query: q });
+        const offset = Number(q.offset ?? 0);
+        const pageIds = Array.from(
+          { length: Math.min(LIMIT, Math.max(0, TOTAL - offset)) },
+          (_, i) => offset + i + 1,
+        );
+        const data = pageIds.map((n) => makeChapter(n));
+        return {
+          result: "ok",
+          response: "collection",
+          data,
+          limit: LIMIT,
+          offset,
+          total: TOTAL,
+        } as unknown as T;
+      },
+    };
+    const client = createMangaDexClient(http);
+    await client.feedChapters("manga-id", ["en", "pt-br"]);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.query).toMatchObject({ "translatedLanguage[]": ["en", "pt-br"] });
+    expect(calls[1]?.query).toMatchObject({ "translatedLanguage[]": ["en", "pt-br"] });
+  });
+
+  it("feedChapters stops at MAX_FEED_PAGES when total never satisfies the stop condition (runaway guard)", async () => {
+    const LIMIT = 500;
+    let callCount = 0;
+    const warnCalls: Array<{ fields: Record<string, unknown>; msg: string }> = [];
+    const logger = {
+      info: () => {},
+      warn: (fields: Record<string, unknown>, msg: string) => warnCalls.push({ fields, msg }),
+      error: () => {},
+    };
+    const http = {
+      get: async <T>(_path: string, query?: unknown) => {
+        callCount++;
+        const q = query as Record<string, unknown>;
+        const offset = Number(q.offset ?? 0);
+        // Malformed API: total is always far larger than what we've fetched — never satisfied.
+        const data = Array.from({ length: LIMIT }, (_, i) => makeChapter(offset + i + 1));
+        return {
+          result: "ok",
+          response: "collection",
+          data,
+          limit: LIMIT,
+          offset,
+          total: Number.MAX_SAFE_INTEGER,
+        } as unknown as T;
+      },
+    };
+    const client = createMangaDexClient(http, logger);
+    const chapters = await client.feedChapters("manga-id", ["en"]);
+
+    expect(callCount).toBe(20); // MAX_FEED_PAGES cap
+    expect(chapters).toHaveLength(20 * LIMIT);
+    expect(warnCalls).toHaveLength(1);
+    expect(warnCalls[0]?.fields).toMatchObject({ event: "mangadex.feed_pagination_capped" });
+  });
+
+  it("feedChapters does not warn when total lands exactly on the MAX_FEED_PAGES boundary (complete feed)", async () => {
+    const LIMIT = 500;
+    const MAX_FEED_PAGES = 20;
+    const TOTAL = MAX_FEED_PAGES * LIMIT; // 10000 — completes exactly on the last allowed page.
+    let callCount = 0;
+    const warnCalls: Array<{ fields: Record<string, unknown>; msg: string }> = [];
+    const logger = {
+      info: () => {},
+      warn: (fields: Record<string, unknown>, msg: string) => warnCalls.push({ fields, msg }),
+      error: () => {},
+    };
+    const http = {
+      get: async <T>(_path: string, query?: unknown) => {
+        callCount++;
+        const q = query as Record<string, unknown>;
+        const offset = Number(q.offset ?? 0);
+        const pageIds = Array.from(
+          { length: Math.min(LIMIT, Math.max(0, TOTAL - offset)) },
+          (_, i) => offset + i + 1,
+        );
+        const data = pageIds.map((n) => makeChapter(n));
+        return {
+          result: "ok",
+          response: "collection",
+          data,
+          limit: LIMIT,
+          offset,
+          total: TOTAL,
+        } as unknown as T;
+      },
+    };
+    const client = createMangaDexClient(http, logger);
+    const chapters = await client.feedChapters("manga-id", ["en"]);
+
+    expect(callCount).toBe(MAX_FEED_PAGES);
+    expect(chapters).toHaveLength(TOTAL);
+    expect(warnCalls).toHaveLength(0);
   });
 });

@@ -51,7 +51,7 @@ export function createMangaDexAdapter(opts: MangaDexAdapterOptions): SourceAdapt
 
   function getClient(): MangaDexClient {
     if (opts.client) return opts.client;
-    return createMangaDexClient(getHttp());
+    return createMangaDexClient(getHttp(), logger);
   }
 
   async function search(query: string): Promise<SearchHit[]> {
