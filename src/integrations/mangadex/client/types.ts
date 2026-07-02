@@ -83,6 +83,9 @@ export interface MdxChapterData {
 export interface MdxChapterListResponse {
   result: string;
   data: MdxChapterData[];
+  limit: number;
+  offset: number;
+  total: number;
 }
 
 export interface MangaDexClient {
