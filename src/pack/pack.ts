@@ -1,6 +1,6 @@
 import { rename, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { padBundleNumber } from "@modules/downloader/helpers.ts";
+import { isNoneToken, padBundleNumber } from "@modules/downloader/helpers.ts";
 import { CliError } from "@plugins/errors/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { unzipSync, zipSync } from "fflate";
@@ -8,9 +8,13 @@ import type { PackedChapter, PackVolumeInput, PackVolumeResult } from "./types.t
 
 export type { PackedChapter, PackVolumeInput, PackVolumeResult };
 
-/** Sort a chapter token numerically (decimal-aware). "none" sorts last. */
+/**
+ * Sort a chapter token numerically (decimal-aware). "none" (and disambiguated
+ * "none-<n>" variants) sorts last, and mutually stable relative to each other
+ * (Array.prototype.sort is stable, so equal keys preserve source order).
+ */
 function chapterTokenToNum(token: string): number {
-  if (token === "none") return Number.POSITIVE_INFINITY;
+  if (isNoneToken(token)) return Number.POSITIVE_INFINITY;
   const n = Number(token);
   return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
 }
@@ -140,6 +144,19 @@ export async function packVolume(input: PackVolumeInput): Promise<PackVolumeResu
       `reading chapter ${ch.num}`,
     );
     const entries = await readChapterEntries(ch.num, ch.outputPath);
+    // Collision guard: two chapters must never produce the same zip prefix.
+    // Object.assign would silently overwrite the first chapter's pages —
+    // that is data loss, not a valid state. Fail loudly instead.
+    for (const name of Object.keys(entries)) {
+      if (name in allEntries) {
+        throw new CliError(
+          `pack: duplicate zip entry "${name}" while packing chapter "${ch.num}" — ` +
+            "two chapters produced the same zip prefix. This indicates a chapter " +
+            "numbering collision upstream (e.g. duplicate 'none' sentinels).",
+          1,
+        );
+      }
+    }
     Object.assign(allEntries, entries);
   }
 

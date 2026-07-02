@@ -23,8 +23,8 @@ export interface MangakakalotAdapterOptions {
   http?: FallbackHttpClient;
 }
 
-function buildChapterLabel(ref: FallbackChapterRef, index: number): string {
-  const num = ref.chapter !== null ? ref.chapter : String(index + 1);
+function buildChapterLabel(ref: FallbackChapterRef): string {
+  const num = ref.chapter !== null ? ref.chapter : "none";
   return `Chapter ${num}`;
 }
 
@@ -74,12 +74,18 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
   async function listChapters(hitId: string): Promise<ChapterListing[]> {
     const client = await getClientPromise();
     const chapters = await client.getChapterList(hitId);
-    return chapters.map((ch, i) => {
-      const num = ch.chapter ?? String(i + 1);
+    // No synthetic sequential/misleading chapter number here — "none" is the
+    // sentinel the downloader/pack layer already understands (padBundleNumber
+    // passes it through unchanged, chapterTokenToNum sorts it last). Multiple
+    // null chapters get a disambiguating suffix ("none-1", "none-2", ...) so
+    // their zip-prefix/filename never collides (see #122 follow-up bug).
+    let noneIdx = 0;
+    return chapters.map((ch) => {
+      const num = ch.chapter !== null ? ch.chapter : `none-${++noneIdx}`;
       return {
         id: ch.id,
         num,
-        label: buildChapterLabel({ id: ch.id, chapter: ch.chapter }, i),
+        label: buildChapterLabel({ id: ch.id, chapter: ch.chapter }),
       };
     });
   }
@@ -94,10 +100,15 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
       );
     }
 
-    return volumeMap.map((bucket, bucketIndex) => {
+    // No synthetic bucketIndex-based number — "none" is the sentinel the
+    // downloader/pack layer already understands. Disambiguate multiple null
+    // chapters across the whole listing ("none-1", "none-2", ...) so two
+    // null chapters packed into the same volume never collide on zip prefix.
+    let noneIdx = 0;
+    return volumeMap.map((bucket) => {
       const chapterIds = bucket.chapters.map((ch) => ch.id);
-      const chapterNums = bucket.chapters.map(
-        (ch, i) => ch.chapter ?? String(bucketIndex * 1000 + i + 1),
+      const chapterNums = bucket.chapters.map((ch) =>
+        ch.chapter !== null ? ch.chapter : `none-${++noneIdx}`,
       );
       return {
         volume: bucket.volume,

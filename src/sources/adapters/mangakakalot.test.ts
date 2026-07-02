@@ -117,6 +117,113 @@ describe("MangakakalotAdapter", () => {
     await expect(adapter.listVolumes("naruto")).rejects.toThrow(WalkthroughError);
   });
 
+  test("listChapters maps chapter:null to the 'none' sentinel, not a synthetic sequential number", async () => {
+    const chapterFixturesWithNull: ChapterRef[] = [
+      {
+        id: "naruto/chapter-1",
+        volume: "1",
+        chapter: "1",
+        title: "Enter! Naruto Uzumaki!",
+        translatedLanguage: "en",
+        scanlationGroup: null,
+        readableAt: "2020-01-01T00:00:00Z",
+        externalUrl: null,
+      },
+      {
+        id: "naruto/extra-1",
+        volume: "1",
+        chapter: null,
+        title: "Special Omake",
+        translatedLanguage: "en",
+        scanlationGroup: null,
+        readableAt: "2020-01-02T00:00:00Z",
+        externalUrl: null,
+      },
+    ];
+    const adapter = createMangakakalotAdapter({
+      logger,
+      client: makeFakeClient({ getChapterList: async () => chapterFixturesWithNull }),
+    });
+    const chapters = await adapter.listChapters("naruto");
+    expect(chapters).toHaveLength(2);
+    expect(chapters[0]).toMatchObject({ id: "naruto/chapter-1", num: "1" });
+    expect(chapters[1]).toMatchObject({
+      id: "naruto/extra-1",
+      num: "none-1",
+      label: "Chapter none",
+    });
+    // Must never derive a synthetic sequential/misleading chapter number from the
+    // array index (old bug: "2") — the "none-N" suffix is a disambiguator, not a
+    // chapter number, and stays non-numeric (never matches /^\d+$/).
+    expect(chapters[1]?.num).not.toBe("2");
+    expect(chapters[1]?.num).toMatch(/^none-\d+$/);
+  });
+
+  test("listChapters disambiguates multiple null chapters so standalone/chapter-mode downloads never collide on filename", async () => {
+    const chapterFixturesWithMultipleNulls: ChapterRef[] = [
+      {
+        id: "naruto/extra-1",
+        volume: "1",
+        chapter: null,
+        title: "Special Omake 1",
+        translatedLanguage: "en",
+        scanlationGroup: null,
+        readableAt: "2020-01-01T00:00:00Z",
+        externalUrl: null,
+      },
+      {
+        id: "naruto/extra-2",
+        volume: "1",
+        chapter: null,
+        title: "Special Omake 2",
+        translatedLanguage: "en",
+        scanlationGroup: null,
+        readableAt: "2020-01-02T00:00:00Z",
+        externalUrl: null,
+      },
+    ];
+    const adapter = createMangakakalotAdapter({
+      logger,
+      client: makeFakeClient({ getChapterList: async () => chapterFixturesWithMultipleNulls }),
+    });
+    const chapters = await adapter.listChapters("naruto");
+    expect(chapters).toHaveLength(2);
+
+    // Each chapter's `num` is what execute.ts turns into `bundleNumber` for
+    // standalone/chapter-mode downloads (via `bundle.num.replace(...)`), which
+    // becomes the output filename `${slug}-chapter-${padded}.cbz`. Distinct nums
+    // here means distinct filenames on disk — no silent overwrite.
+    expect(chapters[0]?.num).not.toBe(chapters[1]?.num);
+    expect(chapters[0]?.num).toMatch(/^none-\d+$/);
+    expect(chapters[1]?.num).toMatch(/^none-\d+$/);
+
+    // Simulate execute.ts's sanitization + padBundleNumber pipeline to prove
+    // the resulting filenames are distinct.
+    const sanitized = chapters.map((c) => c.num.replace(/[^a-z0-9.]/gi, "-"));
+    expect(new Set(sanitized).size).toBe(2);
+  });
+
+  test("listVolumes maps chapter:null to the 'none' sentinel, not a bucketIndex-based number", async () => {
+    const volumeFixturesWithNull: VolumeBucket[] = [
+      {
+        volume: "1",
+        chapters: [
+          { id: "naruto/chapter-1", chapter: "1" },
+          { id: "naruto/extra-1", chapter: null },
+        ],
+      },
+    ];
+    const adapter = createMangakakalotAdapter({
+      logger,
+      client: makeFakeClient({ getVolumeMap: async () => volumeFixturesWithNull }),
+    });
+    const volumes = await adapter.listVolumes("naruto");
+    expect(volumes).toHaveLength(1);
+    expect(volumes[0]?.chapterNums).toEqual(["1", "none-1"]);
+    // Must never produce the old synthetic bucketIndex*1000 + i + 1 shape (e.g. "1002").
+    expect(volumes[0]?.chapterNums?.some((n) => /^\d{4}$/.test(n))).toBe(false);
+  });
+
   test("fetchChapterInput resolves pages from getChapterImages", async () => {
     const imageRefs: ImageRef[] = [
       { url: "https://cdn.mangakakalot.gg/naruto/ch1/p01.jpg", page: 1 },
