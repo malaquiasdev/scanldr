@@ -662,4 +662,74 @@ describe("injectCoverIntoCbz", () => {
 
     await rm(dir, { recursive: true, force: true });
   });
+
+  test("multi-chapter integrity: inject cover, all original entries survive byte-for-byte", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const originalEntries: Record<string, string> = {
+      "chapter-001/page-001.jpg": "ch1-p1-data-bytes-etc",
+      "chapter-001/page-002.jpg": "ch1-p2-data-bytes-etc",
+      "chapter-002/page-001.jpg": "ch2-p1-data-bytes-etc",
+      "chapter-002/page-002.jpg": "ch2-p2-data-bytes-etc",
+      "chapter-003/page-001.jpg": "ch3-p1-data-bytes-etc",
+      "chapter-003/page-002.jpg": "ch3-p2-data-bytes-etc",
+    };
+    const cbzPath = await createTestCbz(dir, "volume.cbz", originalEntries);
+
+    const coverBytes = new TextEncoder().encode("new-cover-bytes");
+    await injectCoverIntoCbz(cbzPath, { bytes: coverBytes, ext: ".jpg" });
+
+    const raw = await Bun.file(cbzPath).arrayBuffer();
+    const { unzipSync } = await import("fflate");
+    const entries = unzipSync(new Uint8Array(raw));
+    const names = Object.keys(entries);
+
+    // 00_cover sorts first in insertion order and alphabetically
+    expect(names[0]).toBe("00_cover.jpg");
+    expect([...names].sort()[0]).toBe("00_cover.jpg");
+
+    // Check that every original entry still exists and is byte-for-byte identical
+    for (const [name, expectedContent] of Object.entries(originalEntries)) {
+      expect(entries[name]).toBeDefined();
+      const actualContent = new TextDecoder().decode(entries[name]);
+      expect(actualContent).toBe(expectedContent);
+    }
+
+    // Check the exact set of entry names (original entries + the new cover)
+    const expectedNames = ["00_cover.jpg", ...Object.keys(originalEntries)];
+    expect(new Set(names)).toEqual(new Set(expectedNames));
+    expect(names.length).toBe(expectedNames.length);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("atomicity: write fails (read-only dir) → original CBZ intact and no .tmp left", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const cbzPath = await createTestCbz(dir, "volume.cbz", {
+      "chapter-001/page-001.jpg": "page1",
+    });
+
+    const originalBytes = await Bun.file(cbzPath).bytes();
+
+    const { chmod } = await import("node:fs/promises");
+    await chmod(dir, 0o555);
+
+    const tempPath = `${cbzPath}.tmp`;
+    const coverBytes = new TextEncoder().encode("cover-data");
+
+    try {
+      await expect(
+        injectCoverIntoCbz(cbzPath, { bytes: coverBytes, ext: ".png" }),
+      ).rejects.toThrow();
+
+      // The original CBZ must be left byte-for-byte intact
+      const currentBytes = await Bun.file(cbzPath).bytes();
+      expect(currentBytes).toEqual(originalBytes);
+
+      // The .tmp file must NOT be left on disk
+      expect(await Bun.file(tempPath).exists()).toBe(false);
+    } finally {
+      await chmod(dir, 0o755);
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

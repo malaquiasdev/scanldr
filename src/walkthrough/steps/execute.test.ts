@@ -727,4 +727,134 @@ describe("executeWalkthrough", () => {
     expect(capturedChapters[0]?.num).toBe("103.5");
     expect(capturedChapters[0]?.num).not.toContain("/");
   });
+
+  test("volume mode with coverUrl === null → no cover operations run", async () => {
+    mockInjectCoverIntoCbz.mockClear();
+    mockFetchCover.mockClear();
+
+    const infoEvents: string[] = [];
+    const warnEvents: string[] = [];
+    const capturingLogger = createLogger({ level: "info", format: "human", write: noop });
+    const origInfo = capturingLogger.info.bind(capturingLogger);
+    const origWarn = capturingLogger.warn.bind(capturingLogger);
+    capturingLogger.info = (obj: Record<string, unknown>, msg: string) => {
+      if (typeof obj === "object" && obj !== null && "event" in obj) {
+        infoEvents.push(obj.event as string);
+      }
+      return origInfo(obj, msg);
+    };
+    capturingLogger.warn = (obj: Record<string, unknown>, msg: string) => {
+      if (typeof obj === "object" && obj !== null && "event" in obj) {
+        warnEvents.push(obj.event as string);
+      }
+      return origWarn(obj, msg);
+    };
+
+    const volumeBundle = {
+      kind: "volume" as const,
+      label: "Volume 1",
+      id: "vol:1",
+      num: "1",
+      chapterIds: ["c1"],
+      chapterNums: ["1"],
+    };
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      mode: "volume",
+      selectedBundles: [volumeBundle],
+      groupIntoVolume: true,
+      coverUrl: null,
+      outDir,
+      adapter: makeFakeAdapter(),
+      logger: capturingLogger,
+    };
+
+    const result = await executeWalkthrough(opts, {
+      downloader: makeFakeDownloader(),
+      packer: makeFakePacker(),
+    });
+
+    expect(mockFetchCover).not.toHaveBeenCalled();
+    expect(mockInjectCoverIntoCbz).not.toHaveBeenCalled();
+    expect(infoEvents.some((e) => e.includes("cover_injected"))).toBe(false);
+    expect(warnEvents.some((e) => e.includes("cover_fetch_failed"))).toBe(false);
+    expect(result.failed).toBe(0);
+    expect(result.outputs).toHaveLength(1);
+  });
+
+  test("volume mode with multiple volume bundles → injects cover into each output path", async () => {
+    mockInjectCoverIntoCbz.mockClear();
+    mockFetchCover.mockClear();
+    mockFetchCover.mockImplementation(async () => ({ bytes: new Uint8Array([1, 2]), ext: ".jpg" }));
+    mockInjectCoverIntoCbz.mockImplementation(async () => {});
+
+    const volumeBundles = [
+      {
+        kind: "volume" as const,
+        label: "Volume 1",
+        id: "vol:1",
+        num: "1",
+        chapterIds: ["c1"],
+        chapterNums: ["1"],
+      },
+      {
+        kind: "volume" as const,
+        label: "Volume 2",
+        id: "vol:2",
+        num: "2",
+        chapterIds: ["c2"],
+        chapterNums: ["2"],
+      },
+    ];
+
+    const fakeDownloader = {
+      downloadBundle: mock(async (input) => {
+        const bundleNum = (input as { bundleNumber: string }).bundleNumber;
+        return {
+          chapterIds: bundleNum === "1" ? ["c1"] : ["c2"],
+          outputPath: join(outDir, "naruto", `naruto-volume-${bundleNum}.cbz`),
+          byteSize: 100,
+        };
+      }),
+    };
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      mode: "volume",
+      selectedBundles: volumeBundles,
+      groupIntoVolume: true,
+      coverUrl: "https://example.com/cover.jpg",
+      outDir,
+      adapter: makeFakeAdapter(),
+      logger,
+    };
+
+    const result = await executeWalkthrough(opts, {
+      downloader: fakeDownloader,
+      packer: makeFakePacker(),
+    });
+
+    expect(mockFetchCover).toHaveBeenCalledTimes(1);
+    expect(mockFetchCover).toHaveBeenCalledWith("https://example.com/cover.jpg");
+
+    expect((mockInjectCoverIntoCbz as ReturnType<typeof mock>).mock.calls).toHaveLength(2);
+    const call0 = (mockInjectCoverIntoCbz as ReturnType<typeof mock>).mock.calls[0] as unknown[];
+    const path0 = call0[0] as string;
+    const cover0 = call0[1] as { bytes: Uint8Array; ext: string };
+    expect(path0).toBe(join(outDir, "naruto", "naruto-volume-1.cbz"));
+    expect(cover0).toEqual({ bytes: new Uint8Array([1, 2]), ext: ".jpg" });
+
+    const call1 = (mockInjectCoverIntoCbz as ReturnType<typeof mock>).mock.calls[1] as unknown[];
+    const path1 = call1[0] as string;
+    const cover1 = call1[1] as { bytes: Uint8Array; ext: string };
+    expect(path1).toBe(join(outDir, "naruto", "naruto-volume-2.cbz"));
+    expect(cover1).toEqual({ bytes: new Uint8Array([1, 2]), ext: ".jpg" });
+
+    expect(result.failed).toBe(0);
+    expect(result.outputs).toEqual([
+      join(outDir, "naruto", "naruto-volume-1.cbz"),
+      join(outDir, "naruto", "naruto-volume-2.cbz"),
+    ]);
+  });
 });
