@@ -88,7 +88,7 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<void> {
   const traceStore = createTraceStore({ db });
   const logger = createLogger({ level, format }, traceStore);
 
-  const result = await runWalkthroughFn({ logger, outDir: config.default_out });
+  const result = await runWalkthroughFn({ logger, outDir: config.default_out, config });
   if (typeof result === "object" && "cancelled" in result && result.cancelled) {
     process.exit(130);
   }

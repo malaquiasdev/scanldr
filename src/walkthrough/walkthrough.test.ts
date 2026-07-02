@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CloudflareError } from "../integrations/fallback-http/types.ts";
 import type { ChapterInput } from "../modules/downloader/types.ts";
+import type { Config } from "../plugins/config/index.ts";
 import { createLogger } from "../plugins/logger/index.ts";
 import type { SourceAdapter } from "../sources/adapters/index.ts";
 import type { ChapterListing, Downloader, Packer, SearchHit, VolumeListing } from "./types.ts";
@@ -495,5 +496,58 @@ describe("runWalkthrough — full happy path", () => {
     if ("ok" in result) {
       expect(result.reason).toMatch(/No results found/);
     }
+  });
+});
+
+describe("runWalkthrough — config threading to adapter factory", () => {
+  test("opts.config is forwarded to adapterFactory unchanged (end-to-end wiring)", async () => {
+    let selectCall = 0;
+    mock.module("./prompts.ts", () => ({
+      input: async (opts: { default?: string }) => opts.default ?? "Naruto",
+      select: async () => {
+        selectCall++;
+        if (selectCall === 1) return "mangadex";
+        return "chapter";
+      },
+      checkbox: async () => [],
+      confirm: async () => false,
+      editor: async () => "",
+    }));
+
+    selectCall = 0;
+    const testConfig: Config = {
+      preferred_languages: ["pt-br"],
+      download_quality: "data",
+      default_format: "cbz",
+      default_out: ".",
+      db_path: "",
+      image_concurrency: 4,
+      chapter_delay_ms: 500,
+    };
+
+    interface CapturedFactoryCall {
+      sourceId: string;
+      config?: Config;
+    }
+    const captured: { call: CapturedFactoryCall | undefined } = { call: undefined };
+    /** Reads through a function boundary to defeat TS narrowing across the closure assignment. */
+    function readCapturedCall(): CapturedFactoryCall | undefined {
+      return captured.call;
+    }
+    const emptyAdapter = makeFakeAdapter({ search: async () => [] });
+    const { runWalkthrough } = await import("./index.ts");
+    await runWalkthrough({
+      logger,
+      config: testConfig,
+      adapterFactory: (sourceId, opts) => {
+        captured.call = { sourceId, config: opts.config };
+        return emptyAdapter;
+      },
+    });
+
+    expect(readCapturedCall()).not.toBeUndefined();
+    expect(readCapturedCall()?.sourceId).toBe("mangadex");
+    expect(readCapturedCall()?.config).toBe(testConfig);
+    expect(readCapturedCall()?.config?.preferred_languages).toEqual(["pt-br"]);
   });
 });

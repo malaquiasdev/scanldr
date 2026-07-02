@@ -84,3 +84,16 @@ describe("main() — config.default_out wiring", () => {
     expect(spy.calledWith?.outDir).toBe(DEFAULT_CONFIG.default_out);
   });
 });
+
+describe("main() — config wiring", () => {
+  test("forwards the loaded config object to runWalkthrough as-is", async () => {
+    const spy = { calledWith: null as RunWalkthroughOptions | null };
+
+    await main([], {
+      loadConfigFn: makeLoadConfig({ preferred_languages: ["pt-br"] }),
+      runWalkthroughFn: makeSpyWalkthrough(spy),
+    });
+
+    expect(spy.calledWith?.config?.preferred_languages).toEqual(["pt-br"]);
+  });
+});

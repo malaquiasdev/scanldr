@@ -44,6 +44,9 @@ function buildVolumeLabel(v: VolumeRef): string {
 export function createMangaDexAdapter(opts: MangaDexAdapterOptions): SourceAdapter {
   const { logger } = opts;
   const config = opts.config ?? DEFAULT_CONFIG;
+  const languages =
+    config.preferred_languages.length > 0 ? config.preferred_languages : DEFAULT_LANGUAGES;
+  const quality = config.download_quality;
 
   function getHttp(): MangaDexHttpClient {
     return opts.http ?? createMangaDexHttp({ logger, config });
@@ -78,7 +81,7 @@ export function createMangaDexAdapter(opts: MangaDexAdapterOptions): SourceAdapt
 
   async function listChapters(hitId: string): Promise<ChapterListing[]> {
     const client = getClient();
-    const chapters = await client.feedChapters(hitId, DEFAULT_LANGUAGES);
+    const chapters = await client.feedChapters(hitId, languages);
     return chapters.map((ch) => ({
       id: ch.id,
       num: ch.chapter ?? ch.id,
@@ -89,8 +92,8 @@ export function createMangaDexAdapter(opts: MangaDexAdapterOptions): SourceAdapt
   async function listVolumes(hitId: string): Promise<VolumeListing[]> {
     const client = getClient();
     const [volumes, chapters] = await Promise.all([
-      client.aggregateVolumes(hitId, DEFAULT_LANGUAGES),
-      client.feedChapters(hitId, DEFAULT_LANGUAGES),
+      client.aggregateVolumes(hitId, languages),
+      client.feedChapters(hitId, languages),
     ]);
 
     if (volumes.length === 0) {
@@ -115,7 +118,7 @@ export function createMangaDexAdapter(opts: MangaDexAdapterOptions): SourceAdapt
 
   async function fetchChapterInput(chapterId: string, chapterNum?: string): Promise<ChapterInput> {
     const http = getHttp();
-    const server = await getAtHomeServer(http, chapterId, "data", logger);
+    const server = await getAtHomeServer(http, chapterId, quality, logger);
 
     const pages: ImageRef[] = server.pages.map((filename, i) => ({
       url: filename,
@@ -125,7 +128,7 @@ export function createMangaDexAdapter(opts: MangaDexAdapterOptions): SourceAdapt
     const imageFetcher = mangadexImageFetcher(chapterId, {
       httpClient: http,
       logger,
-      quality: "data",
+      quality,
     });
 
     const numRaw = chapterNum ?? "0";

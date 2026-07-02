@@ -1,4 +1,5 @@
 import { createFallbackHttp } from "../integrations/fallback-http/index.ts";
+import type { Config } from "../plugins/config/index.ts";
 import type { Logger } from "../plugins/logger/index.ts";
 import type { SourceAdapter } from "../sources/adapters/index.ts";
 import { getAdapter } from "../sources/adapters/index.ts";
@@ -34,8 +35,10 @@ export interface RunWalkthroughOptions extends WalkthroughInput {
   logger: Logger;
   /** Output directory for downloads. Defaults to current working directory. */
   outDir?: string;
+  /** User config — threaded into the adapter factory (mangadex language/quality). */
+  config?: Config;
   /** Override adapter factory (tests inject fakes). */
-  adapterFactory?: (sourceId: string, opts: { logger: Logger }) => SourceAdapter;
+  adapterFactory?: (sourceId: string, opts: { logger: Logger; config?: Config }) => SourceAdapter;
   /** Override downloader/packer deps (tests inject fakes). */
   executeDeps?: ExecuteDeps;
   /**
@@ -110,7 +113,7 @@ export async function runWalkthrough(
           };
 
     // Resolve adapter for this source (after auth check so session is persisted if needed)
-    const adapter = resolveAdapter(source.id, { logger: opts.logger });
+    const adapter = resolveAdapter(source.id, { logger: opts.logger, config: opts.config });
 
     // Step 4 — search results (with CF retry)
     const hit = await withSessionRetry(
