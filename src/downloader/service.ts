@@ -1,15 +1,10 @@
 import { mkdir, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { ChapterInput, ImageRef } from "@integrations/_shared/media.ts";
 import { zipSync } from "fflate";
 import { detectExtFromBytes, pad, padBundleNumber } from "./helpers.ts";
 import { createSemaphore } from "./semaphore.ts";
-import type {
-  ChapterInput,
-  DownloadBundleInput,
-  DownloadBundleResult,
-  ImageRef,
-  Semaphore,
-} from "./types.ts";
+import type { DownloadBundleInput, DownloadBundleResult, Semaphore } from "./types.ts";
 
 async function fetchPage(
   ref: ImageRef,

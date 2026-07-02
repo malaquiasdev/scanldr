@@ -1,7 +1,7 @@
 // Source adapter interface — boundary between walkthrough and integration clients.
 // Each adapter wraps an integration client and maps it to walkthrough DTOs.
 
-import type { ChapterInput } from "../../modules/downloader/types.ts";
+import type { ChapterInput } from "@integrations/_shared/media.ts";
 import type { ChapterListing, SearchHit, VolumeListing } from "../../walkthrough/types.ts";
 
 export type { ChapterListing, SearchHit, VolumeListing };

@@ -20,7 +20,6 @@
     "noEmit": true,
     "paths": {
       "@plugins/*": ["./src/plugins/*"],
-      "@modules/*": ["./src/modules/*"],
       "@integrations/*": ["./src/integrations/*"]
     }
   },

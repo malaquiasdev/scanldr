@@ -3,8 +3,8 @@
 // Callers are responsible for creating the FallbackHttpClient via createFallbackHttp().
 
 import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
+import type { ImageRef } from "@integrations/_shared/media.ts";
 import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
-import type { ImageRef } from "@modules/downloader/types.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import {
   detectChapterApiPlaceholder,
@@ -17,7 +17,7 @@ import { MangakakalotParseError } from "./types.ts";
 import { chaptersToVolumeMap, parseVolumeMapping } from "./volume-parser.ts";
 
 export type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
-export type { ImageRef } from "@modules/downloader/types.ts";
+export type { ImageRef } from "@integrations/_shared/media.ts";
 export type { FallbackChapterRef, MangakakalotClient, VolumeBucket, VolumeMap } from "./types.ts";
 export { MangakakalotParseError } from "./types.ts";
 

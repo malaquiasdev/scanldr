@@ -1,9 +1,9 @@
 import { rename, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { isNoneToken, padBundleNumber } from "@modules/downloader/helpers.ts";
 import { CliError } from "@plugins/errors/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { unzipSync, zipSync } from "fflate";
+import { isNoneToken, padBundleNumber } from "../downloader/helpers.ts";
 import type { PackedChapter, PackVolumeInput, PackVolumeResult } from "./types.ts";
 
 export type { PackedChapter, PackVolumeInput, PackVolumeResult };

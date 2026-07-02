@@ -1,16 +1,5 @@
+import type { ChapterInput } from "@integrations/_shared/media.ts";
 import type { Logger } from "@plugins/logger/index.ts";
-
-export interface ImageRef {
-  url: string;
-  page: number;
-}
-
-export interface ChapterInput {
-  id: string;
-  num: number;
-  pages: ImageRef[];
-  imageFetcher: (ref: ImageRef) => Promise<Uint8Array>;
-}
 
 export type BundleKind = "volume" | "chapter";
 
