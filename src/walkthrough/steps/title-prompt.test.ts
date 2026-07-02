@@ -30,4 +30,20 @@ describe("promptTitle", () => {
     const { promptTitle } = await import("./title-prompt.ts");
     await expect(promptTitle()).rejects.toThrow(/empty/i);
   });
+
+  test("URL input — validate rejects with a clear message", async () => {
+    mock.module("../prompts.ts", () => ({
+      input: async (opts: { validate?: (v: string) => string | boolean }) => {
+        const validation = opts.validate?.("https://example.com/manga/one-piece");
+        if (typeof validation === "string") throw new Error(validation);
+        return "valid title";
+      },
+      select: async () => "",
+      checkbox: async () => [],
+      confirm: async () => false,
+      editor: async () => "",
+    }));
+    const { promptTitle } = await import("./title-prompt.ts");
+    await expect(promptTitle()).rejects.toThrow(/not a URL/i);
+  });
 });
