@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
+import type { ImageRef } from "@integrations/_shared/media.ts";
 import type { MangakakalotClient, VolumeBucket } from "@integrations/mangakakalot/client/index.ts";
-import type { ImageRef } from "@modules/downloader/types.ts";
 import { createLogger } from "@plugins/logger/index.ts";
 import { WalkthroughError } from "../../walkthrough/types.ts";
 import { createMangakakalotAdapter } from "./mangakakalot.ts";

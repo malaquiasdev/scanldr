@@ -1,12 +1,12 @@
 // Adapter wrapping createMangaDexClient for the walkthrough SourceAdapter interface.
 // Does NOT modify the integration client — only maps types.
 
+import type { ChapterInput, ImageRef } from "@integrations/_shared/media.ts";
 import { getAtHomeServer, mangadexImageFetcher } from "@integrations/mangadex/at-home/index.ts";
 import type { MangaDexClient, VolumeRef } from "@integrations/mangadex/client/index.ts";
 import { createMangaDexClient } from "@integrations/mangadex/client/index.ts";
 import type { MangaDexHttpClient } from "@integrations/mangadex/http/index.ts";
 import { createMangaDexHttp } from "@integrations/mangadex/http/index.ts";
-import type { ChapterInput, ImageRef } from "@modules/downloader/types.ts";
 import type { Config } from "@plugins/config/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import type { ChapterListing, SearchHit, VolumeListing } from "../../walkthrough/types.ts";
