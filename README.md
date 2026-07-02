@@ -37,70 +37,7 @@ bun start --help           # show usage
 bun start --version        # show version
 ```
 
-### Walkthrough steps
-
-1. **Title prompt** — free-text input ("Manga title:").
-2. **Source picker** — choose MangaDex or Mangakakalot.
-3. **Auth check** — if the chosen source requires auth and no valid session exists, prompts for a cURL paste; silently skipped for MangaDex.
-4. **Search results** — visual numbered picker, single select.
-5. **Mode picker** — Chapter or Volume.
-6. **Range picker** — visual multi-select list of available chapters or volumes; no range-string parser.
-7. **Pack prompt** (chapter mode only; volume mode always packs) — "Group these chapters into a single volume? [Y/n]".
-8. **Cover URL** (when packing) — optional; press Enter to skip.
-9. **Execute** — download images, pack into `.cbz`, write to output directory.
-
-### How to capture a cURL (Mangakakalot)
-
-Mangakakalot is protected by Cloudflare. The walkthrough asks you to paste a cURL command from a real browser session:
-
-1. Open the target manga page in your browser.
-2. Open DevTools (F12) and go to the **Network** tab.
-3. Reload the page.
-4. Right-click any request to `mangakakalot.gg` and choose **Copy as cURL**.
-5. Paste the copied command into the walkthrough prompt.
-
-The `cf_clearance` cookie extracted from the cURL is persisted to `~/.local/share/scanldr/auth.json` for the session.
-
-## Configuration
-
-Create a `scanldr.json` in your project directory (or in `~/.config/scanldr/scanldr.json` for a global config):
-
-```json
-{
-  "db_path": "/custom/path/to/scanldr.db"
-}
-```
-
-**Discovery order** (first match wins):
-
-1. `--config <path>` flag.
-2. `$SCANLDR_CONFIG` environment variable.
-3. `./scanldr.json` in the current working directory.
-4. `$XDG_CONFIG_HOME/scanldr/scanldr.json` (falls back to `~/.config/scanldr/scanldr.json`).
-
-**Config keys consumed by production code:**
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `db_path` | `~/.local/share/scanldr/scanldr.db` | Path to the SQLite database file |
-
-All other keys in `DEFAULT_CONFIG` (`preferred_languages`, `download_quality`, `default_format`, `default_out`, `image_concurrency`, `chapter_delay_ms`) are validated and parsed but not read by the walkthrough code path. See [#124](https://github.com/malaquiasdev/scanldr/issues/124).
-
-## Logging
-
-The logger has two sinks:
-
-- **Terminal** — human-readable output (`${ts} ${level} ${msg}\n`). This is the default.
-- **Trace store** — structured rows written to the `traces` table in SQLite, with 3-day TTL; `cookies`, `cf_clearance`, `useragent`, and `authorization` fields are redacted to `[REDACTED]` before being written.
-
-```bash
-bun start          # human-readable terminal output (default)
-bun start --json   # JSON output to stderr (for log shippers)
-bun start --human  # no-op alias for back-compat
-bun start -q       # suppress info logs (warn + error only)
-```
-
-The trace store is located at `<db_path>` (default: `~/.local/share/scanldr/scanldr.db`), table `traces`. Each run gets a unique `run_id` (UUID v4) for filtering.
+The walkthrough guides you through title search, source selection, Cloudflare auth (Mangakakalot only), mode/range picking, and optional packing. See [docs/flows/download_flow.md](docs/flows/download_flow.md) for the full step-by-step and sequence diagram, and [docs/auth-manual.md](docs/auth-manual.md) for how to capture a Mangakakalot cURL session.
 
 ## Development
 
@@ -116,12 +53,15 @@ Dev loop with file watching:
 bun --watch run src/index.ts
 ```
 
-## Architecture / Documentation
+## Documentation
 
-- [`docs/adr/006-trace-store-as-state-with-ttl.md`](docs/adr/006-trace-store-as-state-with-ttl.md) — current state architecture decision (supersedes ADR-003, withdraws ADR-004).
-- [`docs/architecture_c4.md`](docs/architecture_c4.md) — C4 diagrams.
-- [`docs/conventions.md`](docs/conventions.md) — code conventions.
-- [`docs/adr/`](docs/adr/) — full ADR history.
+- [docs/SUMMARY.md](docs/SUMMARY.md) — full documentation index.
+- [docs/configuration.md](docs/configuration.md) — config file and env vars.
+- [docs/logging.md](docs/logging.md) — logging sinks and flags.
+- [docs/auth-manual.md](docs/auth-manual.md) — capturing a Cloudflare session.
+- [docs/architecture_c4.md](docs/architecture_c4.md) — C4 diagrams.
+- [docs/conventions.md](docs/conventions.md) — code conventions.
+- [docs/adr/](docs/adr/) — architecture decision records.
 
 ## Known limitations
 
