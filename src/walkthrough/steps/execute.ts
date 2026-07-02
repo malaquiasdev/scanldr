@@ -1,4 +1,4 @@
-import { downloadBundle as realDownloadBundle } from "../../modules/downloader/index.ts";
+import { downloadBundle as realDownloadBundle } from "../../downloader/index.ts";
 import type { PackedChapter } from "../../pack/index.ts";
 import { buildVolumeFilename, fetchCover, packVolume as realPackVolume } from "../../pack/index.ts";
 import type { Logger } from "../../plugins/logger/index.ts";
@@ -107,7 +107,7 @@ export async function executeWalkthrough(
           `downloading ${bundle.label}`,
         );
 
-        let chapterInputs: import("../../modules/downloader/types.ts").ChapterInput[];
+        let chapterInputs: import("@integrations/_shared/media.ts").ChapterInput[];
 
         if (bundle.kind === "volume") {
           // Expand volume into constituent chapters

@@ -2,7 +2,7 @@
 // All cheerio selectors live here as named constants — fix DOM drift in one place.
 
 import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
-import type { ImageRef } from "@modules/downloader/types.ts";
+import type { ImageRef } from "@integrations/_shared/media.ts";
 import * as cheerio from "cheerio";
 import {
   MangakakalotParseError,

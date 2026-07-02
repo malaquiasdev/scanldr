@@ -42,7 +42,7 @@ graph TD
         SourceAdapters[sources/adapters/<br/>MangaDex + Mangakakalot wrappers]
         MangaDexClient[integrations/mangadex/<br/>MangaDex API client]
         MangakakalotClient[integrations/mangakakalot/<br/>HTTP + cookie replay]
-        Downloader[modules/downloader/<br/>image fetch + packaging]
+        Downloader[downloader/<br/>image fetch + packaging]
         Pack[pack/<br/>CBZ/ZIP primitives]
         TraceStore[plugins/trace/<br/>structured sink — 3-day TTL]
         Logger[plugins/logger/<br/>terminal human sink + trace sink]

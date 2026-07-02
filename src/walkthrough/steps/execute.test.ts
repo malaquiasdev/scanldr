@@ -1,8 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ChapterInput } from "@integrations/_shared/media.ts";
 import { CloudflareError } from "../../integrations/fallback-http/types.ts";
-import type { ChapterInput } from "../../modules/downloader/types.ts";
 import { createLogger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import { getSource } from "../../sources/index.ts";

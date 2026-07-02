@@ -2,7 +2,7 @@
 // Public re-exports (ChapterRef, MangaCandidate, ImageRef, MangakakalotClient) live in index.ts.
 
 import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
-import type { ImageRef } from "@modules/downloader/types.ts";
+import type { ImageRef } from "@integrations/_shared/media.ts";
 
 // ---------------------------------------------------------------------------
 // Volume mapping (manga page HTML)

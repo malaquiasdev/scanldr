@@ -1,5 +1,5 @@
+import type { ImageRef } from "@integrations/_shared/media.ts";
 import { MangaDexHttpError } from "@integrations/mangadex/http/index.ts";
-import type { ImageRef } from "@modules/downloader/types.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import type {
   AtHomeOptions,

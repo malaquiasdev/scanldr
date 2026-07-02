@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { downloadBundle } from "@modules/downloader/index.ts";
-import type { ChapterInput, ImageRef } from "@modules/downloader/types.ts";
+import type { ChapterInput, ImageRef } from "@integrations/_shared/media.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { unzipSync } from "fflate";
 import { detectExtFromBytes, padBundleNumber } from "./helpers.ts";
+import { downloadBundle } from "./index.ts";
 
 const noopLogger: Logger = {
   error: (_f, _m) => {},
