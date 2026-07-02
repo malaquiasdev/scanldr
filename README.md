@@ -39,7 +39,7 @@ bun start --version        # show version
 
 ### Walkthrough steps
 
-1. **Title prompt** — free-text input ("Manga title or URL:").
+1. **Title prompt** — free-text input ("Manga title:").
 2. **Source picker** — choose MangaDex or Mangakakalot.
 3. **Auth check** — if the chosen source requires auth and no valid session exists, prompts for a cURL paste; silently skipped for MangaDex.
 4. **Search results** — visual numbered picker, single select.
