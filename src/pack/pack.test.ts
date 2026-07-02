@@ -8,6 +8,7 @@ import {
   buildVolumeFilename,
   defaultVolumeName,
   deleteIndividualFiles,
+  injectCoverIntoCbz,
   packVolume,
 } from "./pack.ts";
 
@@ -569,6 +570,95 @@ describe("deleteIndividualFiles — partial unlink failure", () => {
 
     // Warn fired for the missing middle file
     expect(warnEvents).toContain("pack.delete_failed");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// injectCoverIntoCbz
+// ---------------------------------------------------------------------------
+
+describe("injectCoverIntoCbz", () => {
+  async function createTestCbz(
+    dir: string,
+    filename: string,
+    files: Record<string, string>,
+  ): Promise<string> {
+    const entries: Record<string, Uint8Array> = {};
+    for (const [name, content] of Object.entries(files)) {
+      entries[name] = new TextEncoder().encode(content);
+    }
+    const zipped = zipSync(entries);
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, filename);
+    await writeFile(path, zipped);
+    return path;
+  }
+
+  test("creates 00_cover<ext> as first entry alphabetically and in insertion order", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const cbzPath = await createTestCbz(dir, "volume.cbz", {
+      "chapter-001/page-001.jpg": "page1",
+      "chapter-001/page-002.jpg": "page2",
+    });
+
+    const coverBytes = new TextEncoder().encode("cover-data");
+    await injectCoverIntoCbz(cbzPath, { bytes: coverBytes, ext: ".png" });
+
+    const raw = await Bun.file(cbzPath).arrayBuffer();
+    const { unzipSync } = await import("fflate");
+    const entries = unzipSync(new Uint8Array(raw));
+    const names = Object.keys(entries);
+
+    // First in insertion order and alphabetically
+    expect(names[0]).toBe("00_cover.png");
+    expect([...names].sort()[0]).toBe("00_cover.png");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("chapter entries are preserved after injection", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const cbzPath = await createTestCbz(dir, "volume.cbz", {
+      "chapter-001/page-001.jpg": "page1",
+      "chapter-001/page-002.jpg": "page2",
+    });
+
+    const coverBytes = new TextEncoder().encode("cover-data");
+    await injectCoverIntoCbz(cbzPath, { bytes: coverBytes, ext: ".jpg" });
+
+    const raw = await Bun.file(cbzPath).arrayBuffer();
+    const { unzipSync } = await import("fflate");
+    const entries = unzipSync(new Uint8Array(raw));
+
+    expect(new TextDecoder().decode(entries["chapter-001/page-001.jpg"])).toBe("page1");
+    expect(new TextDecoder().decode(entries["chapter-001/page-002.jpg"])).toBe("page2");
+    expect(new TextDecoder().decode(entries["00_cover.jpg"])).toBe("cover-data");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("replacing an existing cover (idempotent)", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const cbzPath = await createTestCbz(dir, "volume.cbz", {
+      "00_cover.jpg": "old-cover",
+      "chapter-001/page-001.jpg": "page1",
+    });
+
+    const coverBytes = new TextEncoder().encode("new-cover");
+    await injectCoverIntoCbz(cbzPath, { bytes: coverBytes, ext: ".png" });
+
+    const raw = await Bun.file(cbzPath).arrayBuffer();
+    const { unzipSync } = await import("fflate");
+    const entries = unzipSync(new Uint8Array(raw));
+    const names = Object.keys(entries);
+
+    expect(names.length).toBe(2);
+    expect(names).not.toContain("00_cover.jpg");
+    expect(names).toContain("00_cover.png");
+    expect(new TextDecoder().decode(entries["00_cover.png"])).toBe("new-cover");
+    expect(new TextDecoder().decode(entries["chapter-001/page-001.jpg"])).toBe("page1");
 
     await rm(dir, { recursive: true, force: true });
   });

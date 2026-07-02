@@ -217,3 +217,42 @@ export async function deleteIndividualFiles(
     `deleted ${deleted} file(s), failed ${failed}`,
   );
 }
+
+/**
+ * Inject/replace a cover image inside an existing CBZ file.
+ * Atomic write: write to .tmp first, then rename.
+ */
+export async function injectCoverIntoCbz(
+  cbzPath: string,
+  cover: { bytes: Uint8Array; ext: string },
+): Promise<void> {
+  const tempPath = `${cbzPath}.tmp`;
+  try {
+    const raw = await Bun.file(cbzPath).arrayBuffer();
+    const entries = unzipSync(new Uint8Array(raw));
+
+    // Remove any existing cover entries
+    for (const key of Object.keys(entries)) {
+      if (key.startsWith("00_cover")) {
+        delete entries[key];
+      }
+    }
+
+    // Insert new cover as '00_cover<ext>' entry
+    const coverName = `00_cover${cover.ext}`;
+
+    // To ensure 00_cover is the first entry (important for zip readers),
+    // we rebuild the object starting with the cover.
+    const newEntries: Record<string, Uint8Array> = {
+      [coverName]: cover.bytes,
+      ...entries,
+    };
+
+    const zipped = zipSync(newEntries);
+    await writeFile(tempPath, zipped, { mode: 0o644 });
+    await rename(tempPath, cbzPath);
+  } catch (err) {
+    await unlink(tempPath).catch(() => undefined);
+    throw err;
+  }
+}

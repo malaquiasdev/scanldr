@@ -1,7 +1,12 @@
 import { downloadBundle as realDownloadBundle } from "../../downloader/index.ts";
 import { MangakakalotParseError } from "../../integrations/mangakakalot/client/types.ts";
 import type { PackedChapter } from "../../pack/index.ts";
-import { buildVolumeFilename, fetchCover, packVolume as realPackVolume } from "../../pack/index.ts";
+import {
+  buildVolumeFilename,
+  fetchCover,
+  injectCoverIntoCbz,
+  packVolume as realPackVolume,
+} from "../../pack/index.ts";
 import type { Logger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import type { SourceDescriptor } from "../../sources/types.ts";
@@ -244,12 +249,33 @@ export async function executeWalkthrough(
       );
     }
   } else if (mode === "volume" && coverUrl !== null) {
-    // Cover injection in volume mode is deferred to a future phase.
-    // Warn so the user is not silently misled.
-    logger.warn(
-      { event: "walkthrough.cover_skipped_volume_mode", context: "walkthrough", coverUrl },
-      "cover not applied: volume mode artifacts are produced by the downloader directly",
-    );
+    try {
+      const cover = await fetchCover(coverUrl);
+      for (const outputPath of outputs) {
+        try {
+          await injectCoverIntoCbz(outputPath, cover);
+          logger.info(
+            { event: "walkthrough.cover_injected", context: "walkthrough", outputPath },
+            `injected cover into: ${outputPath}`,
+          );
+        } catch (err) {
+          logger.warn(
+            {
+              event: "walkthrough.cover_injection_failed",
+              context: "walkthrough",
+              outputPath,
+              err,
+            },
+            `failed to inject cover into: ${outputPath}`,
+          );
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        { event: "walkthrough.cover_fetch_failed", context: "walkthrough", coverUrl, err },
+        "cover fetch failed; volume modes completed without cover injection",
+      );
+    }
   }
 
   return { outputs, failed };

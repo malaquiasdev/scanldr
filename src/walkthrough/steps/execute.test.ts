@@ -10,6 +10,20 @@ import { getSource } from "../../sources/index.ts";
 import type { Downloader, Packer, WalkthroughResult } from "../types.ts";
 import { WalkthroughError } from "../types.ts";
 import type { ExecuteWalkthroughInput } from "./execute.ts";
+
+const mockInjectCoverIntoCbz = mock(async () => {});
+const mockFetchCover = mock(async (url: string) => {
+  if (url.includes("fail")) throw new Error("fetch failed");
+  return { bytes: new Uint8Array([1, 2, 3]), ext: ".jpg" };
+});
+
+mock.module("../../pack/index.ts", () => ({
+  buildVolumeFilename: (slug: string, name: string) => `${slug}-volume-${name}.cbz`,
+  fetchCover: mockFetchCover,
+  injectCoverIntoCbz: mockInjectCoverIntoCbz,
+  packVolume: mock(async () => ({ outputPath: "path", byteSize: 0 })),
+}));
+
 import { executeWalkthrough } from "./execute.ts";
 
 const source = getSource("mangadex");
@@ -233,14 +247,61 @@ describe("executeWalkthrough", () => {
     expect(result.failed).toBe(0);
   });
 
-  test("volume mode with coverUrl → cover-skipped warn emitted", async () => {
-    const warnEvents: string[] = [];
-    const capturingLogger = createLogger({
-      level: "warn",
-      format: "human",
-      write: noop,
+  test("volume mode with coverUrl → injects cover and logs success", async () => {
+    mockInjectCoverIntoCbz.mockClear();
+    mockFetchCover.mockClear();
+    mockFetchCover.mockImplementation(async () => ({ bytes: new Uint8Array([1, 2]), ext: ".jpg" }));
+    mockInjectCoverIntoCbz.mockImplementation(async () => {});
+
+    const infoEvents: string[] = [];
+    const capturingLogger = createLogger({ level: "info", format: "human", write: noop });
+    const origInfo = capturingLogger.info.bind(capturingLogger);
+    capturingLogger.info = (obj: Record<string, unknown>, msg: string) => {
+      if (typeof obj === "object" && obj !== null && "event" in obj) {
+        infoEvents.push(obj.event as string);
+      }
+      return origInfo(obj, msg);
+    };
+
+    const volumeBundle = {
+      kind: "volume" as const,
+      label: "Volume 1",
+      id: "vol:1",
+      num: "1",
+      chapterIds: ["c1"],
+      chapterNums: ["1"],
+    };
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      mode: "volume",
+      selectedBundles: [volumeBundle],
+      groupIntoVolume: true,
+      coverUrl: "https://example.com/cover.jpg",
+      outDir,
+      adapter: makeFakeAdapter(),
+      logger: capturingLogger,
+    };
+
+    await executeWalkthrough(opts, {
+      downloader: makeFakeDownloader(),
+      packer: makeFakePacker(),
     });
-    // Override warn to capture events; msg is always provided by executeWalkthrough
+
+    expect(mockFetchCover).toHaveBeenCalledWith("https://example.com/cover.jpg");
+    expect(mockInjectCoverIntoCbz).toHaveBeenCalled();
+    expect(infoEvents).toContain("walkthrough.cover_injected");
+  });
+
+  test("volume mode with coverUrl → cover fetch fails, warns and continues", async () => {
+    mockInjectCoverIntoCbz.mockClear();
+    mockFetchCover.mockClear();
+    mockFetchCover.mockImplementation(async () => {
+      throw new Error("fetch failed");
+    });
+
+    const warnEvents: string[] = [];
+    const capturingLogger = createLogger({ level: "warn", format: "human", write: noop });
     const origWarn = capturingLogger.warn.bind(capturingLogger);
     capturingLogger.warn = (obj: Record<string, unknown>, msg: string) => {
       if (typeof obj === "object" && obj !== null && "event" in obj) {
@@ -274,7 +335,57 @@ describe("executeWalkthrough", () => {
       packer: makeFakePacker(),
     });
 
-    expect(warnEvents).toContain("walkthrough.cover_skipped_volume_mode");
+    expect(mockFetchCover).toHaveBeenCalledWith("https://example.com/cover.jpg");
+    expect(mockInjectCoverIntoCbz).not.toHaveBeenCalled();
+    expect(warnEvents).toContain("walkthrough.cover_fetch_failed");
+  });
+
+  test("volume mode with coverUrl → cover injection fails, warns and continues", async () => {
+    mockInjectCoverIntoCbz.mockClear();
+    mockFetchCover.mockClear();
+    mockFetchCover.mockImplementation(async () => ({ bytes: new Uint8Array([1, 2]), ext: ".jpg" }));
+    mockInjectCoverIntoCbz.mockImplementation(async () => {
+      throw new Error("injection failed");
+    });
+
+    const warnEvents: string[] = [];
+    const capturingLogger = createLogger({ level: "warn", format: "human", write: noop });
+    const origWarn = capturingLogger.warn.bind(capturingLogger);
+    capturingLogger.warn = (obj: Record<string, unknown>, msg: string) => {
+      if (typeof obj === "object" && obj !== null && "event" in obj) {
+        warnEvents.push(obj.event as string);
+      }
+      return origWarn(obj, msg);
+    };
+
+    const volumeBundle = {
+      kind: "volume" as const,
+      label: "Volume 1",
+      id: "vol:1",
+      num: "1",
+      chapterIds: ["c1"],
+      chapterNums: ["1"],
+    };
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      mode: "volume",
+      selectedBundles: [volumeBundle],
+      groupIntoVolume: true,
+      coverUrl: "https://example.com/cover.jpg",
+      outDir,
+      adapter: makeFakeAdapter(),
+      logger: capturingLogger,
+    };
+
+    await executeWalkthrough(opts, {
+      downloader: makeFakeDownloader(),
+      packer: makeFakePacker(),
+    });
+
+    expect(mockFetchCover).toHaveBeenCalledWith("https://example.com/cover.jpg");
+    expect(mockInjectCoverIntoCbz).toHaveBeenCalled();
+    expect(warnEvents).toContain("walkthrough.cover_injection_failed");
   });
 
   test("CF during page download triggers refresh + retry succeeds", async () => {
