@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChapterInput } from "@integrations/_shared/media.ts";
 import { CloudflareError } from "../../integrations/fallback-http/types.ts";
+import { MangakakalotParseError } from "../../integrations/mangakakalot/client/types.ts";
 import { createLogger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import { getSource } from "../../sources/index.ts";
@@ -519,6 +520,72 @@ describe("executeWalkthrough", () => {
 
     const result = await executeWalkthrough(opts, { downloader, packer: makeFakePacker() });
 
+    expect(result.failed).toBe(1);
+    expect(result.outputs).toHaveLength(0);
+  });
+
+  test("MangakakalotParseError thrown from fetchChapterInput propagates, aborts walkthrough", async () => {
+    const adapter = makeFakeAdapter({
+      fetchChapterInput: async () => {
+        throw new MangakakalotParseError("div.chapter-list", "https://example.com", "DOM drift");
+      },
+    });
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      outDir,
+      adapter,
+      logger,
+    };
+
+    await expect(
+      executeWalkthrough(opts, { downloader: makeFakeDownloader(), packer: makeFakePacker() }),
+    ).rejects.toBeInstanceOf(MangakakalotParseError);
+  });
+
+  test("MangakakalotParseError thrown from downloader propagates, aborts walkthrough", async () => {
+    const downloader = makeFakeDownloader({
+      downloadBundle: mock(async () => {
+        throw new MangakakalotParseError(
+          "img.chapter-image",
+          "https://example.com",
+          "image src parse failed",
+        );
+      }),
+    });
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      outDir,
+      adapter: makeFakeAdapter(),
+      logger,
+    };
+
+    await expect(
+      executeWalkthrough(opts, { downloader, packer: makeFakePacker() }),
+    ).rejects.toBeInstanceOf(MangakakalotParseError);
+  });
+
+  test("generic Error during download is still swallowed (not MangakakalotParseError)", async () => {
+    const adapter = makeFakeAdapter({
+      fetchChapterInput: async () => {
+        throw new Error("network timeout");
+      },
+    });
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      outDir,
+      adapter,
+      logger,
+    };
+
+    const result = await executeWalkthrough(opts, {
+      downloader: makeFakeDownloader(),
+      packer: makeFakePacker(),
+    });
+
+    // generic error is swallowed, not rethrown
     expect(result.failed).toBe(1);
     expect(result.outputs).toHaveLength(0);
   });

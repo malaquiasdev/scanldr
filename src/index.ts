@@ -2,6 +2,7 @@
 import { parseArgs } from "node:util";
 import { CloudflareError, MissingAuthError } from "@integrations/fallback-http/index.ts";
 import { AuthError } from "@integrations/mangakakalot/auth/index.ts";
+import { MangakakalotParseError } from "@integrations/mangakakalot/client/index.ts";
 import { loadConfig } from "@plugins/config/index.ts";
 import { openDb, runMigrations } from "@plugins/db/index.ts";
 import { CliError } from "@plugins/errors/index.ts";
@@ -94,27 +95,40 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<void> {
   }
 }
 
+export function formatCliError(err: unknown): { message: string; exitCode: number } {
+  if (err instanceof CliError) {
+    return { message: err.message, exitCode: err.exitCode };
+  }
+  if (err instanceof AuthError) {
+    return { message: err.message, exitCode: 1 };
+  }
+  if (err instanceof MissingAuthError) {
+    return { message: err.message, exitCode: 1 };
+  }
+  if (err instanceof CloudflareError) {
+    return { message: err.message, exitCode: 1 };
+  }
+  if (err instanceof MangakakalotParseError) {
+    const message = [
+      "mangakakalot is serving an unexpected page layout for this series.",
+      "This usually means the site changed how chapter lists are loaded, or the series has been removed.",
+      "Try again later, or report at https://github.com/malaquiasdev/scanldr/issues",
+      `(technical: parse failed at "${err.selector}")`,
+    ].join("\n");
+    return { message, exitCode: 1 };
+  }
+  return {
+    message: err instanceof Error ? err.message : String(err),
+    exitCode: 1,
+  };
+}
+
 if (import.meta.main) {
   try {
     await main(process.argv.slice(2));
   } catch (err) {
-    if (err instanceof CliError) {
-      process.stderr.write(`${err.message}\n`);
-      process.exit(err.exitCode);
-    }
-    if (err instanceof AuthError) {
-      process.stderr.write(`${err.message}\n`);
-      process.exit(1);
-    }
-    if (err instanceof MissingAuthError) {
-      process.stderr.write(`${err.message}\n`);
-      process.exit(1);
-    }
-    if (err instanceof CloudflareError) {
-      process.stderr.write(`${err.message}\n`);
-      process.exit(1);
-    }
-    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
-    process.exit(1);
+    const { message, exitCode } = formatCliError(err);
+    process.stderr.write(`${message}\n`);
+    process.exit(exitCode);
   }
 }

@@ -1,4 +1,5 @@
 import { downloadBundle as realDownloadBundle } from "../../downloader/index.ts";
+import { MangakakalotParseError } from "../../integrations/mangakakalot/client/types.ts";
 import type { PackedChapter } from "../../pack/index.ts";
 import { buildVolumeFilename, fetchCover, packVolume as realPackVolume } from "../../pack/index.ts";
 import type { Logger } from "../../plugins/logger/index.ts";
@@ -174,6 +175,9 @@ export async function executeWalkthrough(
         await doBundle();
       }
     } catch (err) {
+      // DOM drift (MangakakalotParseError) is a systemic failure — site layout changed.
+      // Every remaining bundle will fail the same way, so abort immediately.
+      if (err instanceof MangakakalotParseError) throw err;
       // CF survived refresh → WalkthroughError thrown by withSessionRetry.
       // Subsequent bundles would fail the same way; abort the entire walkthrough.
       if (err instanceof WalkthroughError) throw err;
