@@ -17,12 +17,21 @@ export class MissingAuthError extends Error {
 }
 
 export class CloudflareError extends Error {
-  override readonly name = "CloudflareError";
+  override name = "CloudflareError";
   constructor(public readonly url: string) {
     super(
       `Cloudflare rejected the request to ${url}. The session has likely expired; the walkthrough will prompt for a fresh cURL paste.`,
     );
   }
+}
+
+/**
+ * Cloudflare rejection observed on the anonymous (cookie-less) lane — typically
+ * an image CDN Referer/hotlink check, not a stale site session. Callers MUST NOT
+ * treat this as a signal to refresh the auth session (see with-session-retry.ts).
+ */
+export class CrossOriginCloudflareError extends CloudflareError {
+  override name = "CrossOriginCloudflareError";
 }
 
 export interface FallbackHttpOptions {

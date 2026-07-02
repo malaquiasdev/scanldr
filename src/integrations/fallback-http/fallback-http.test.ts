@@ -3,7 +3,12 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Logger } from "@plugins/logger/index.ts";
-import { CloudflareError, createFallbackHttp, MissingAuthError } from "./index.ts";
+import {
+  CloudflareError,
+  CrossOriginCloudflareError,
+  createFallbackHttp,
+  MissingAuthError,
+} from "./index.ts";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -1204,4 +1209,293 @@ test("short-circuit bypasses throttle sleep", async () => {
   // The only sleep calls permitted are backoff sleeps within retry loops,
   // which only happen on 5xx. Since we got 403, no sleeps should have occurred.
   expect(sleepCalls).toHaveLength(0);
+});
+
+// ---------------------------------------------------------------------------
+// Issue #137: latch is split per lane (site vs. anonymous/CDN)
+// ---------------------------------------------------------------------------
+
+test("403 on getAnonymous throws CrossOriginCloudflareError and does NOT latch the site lane", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let fetchCount = 0;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return makeFakeResponse(403);
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  // Anonymous lane 403 — throws the cross-origin variant.
+  await expect(client.getAnonymous("https://cdn.example.com/page.webp")).rejects.toBeInstanceOf(
+    CrossOriginCloudflareError,
+  );
+  expect(fetchCount).toBe(1);
+
+  // get() on the site lane must still hit fetch — the anonymous lane's latch
+  // must not bleed into the site lane (AC #1). The fake fetch also returns 403
+  // here, so get() throws CloudflareError (site-lane class) from its OWN real
+  // fetch call, proving no short-circuit occurred.
+  await expect(client.get("https://example.com/different-url")).rejects.toBeInstanceOf(
+    CloudflareError,
+  );
+  expect(fetchCount).toBe(2);
+});
+
+test("403 on get() continues to short-circuit subsequent get() calls (regression guard)", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let fetchCount = 0;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return makeFakeResponse(403);
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  await expect(client.get("https://example.com/a")).rejects.toBeInstanceOf(CloudflareError);
+  expect(fetchCount).toBe(1);
+
+  // Site lane latch still active — second get() short-circuits without a fetch call.
+  await expect(client.get("https://example.com/b")).rejects.toBeInstanceOf(CloudflareError);
+  expect(fetchCount).toBe(1);
+});
+
+test("403 on get() does NOT latch the anonymous lane — getAnonymous still hits fetch", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let fetchCount = 0;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return makeFakeResponse(403);
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  await expect(client.get("https://example.com/site")).rejects.toBeInstanceOf(CloudflareError);
+  expect(fetchCount).toBe(1);
+
+  // Documented semantics: site-lane rejection does not short-circuit the anonymous
+  // lane. getAnonymous still performs its own fetch (and gets its own 403 here).
+  await expect(client.getAnonymous("https://cdn.example.com/img.webp")).rejects.toBeInstanceOf(
+    CrossOriginCloudflareError,
+  );
+  expect(fetchCount).toBe(2);
+});
+
+test("same-lane short-circuit still works independently for getAnonymous", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let fetchCount = 0;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return makeFakeResponse(403);
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  await expect(client.getAnonymous("https://cdn.example.com/a.webp")).rejects.toBeInstanceOf(
+    CrossOriginCloudflareError,
+  );
+  expect(fetchCount).toBe(1);
+
+  // Second anonymous-lane call short-circuits (dedupe within the same lane, AC #3).
+  await expect(client.getAnonymous("https://cdn.example.com/b.webp")).rejects.toBeInstanceOf(
+    CrossOriginCloudflareError,
+  );
+  expect(fetchCount).toBe(1);
+});
+
+test("anonymous lane latch clears independently when auth.json mtime advances", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let fetchCount = 0;
+  let respondWith200 = false;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return respondWith200 ? makeFakeResponse(200) : makeFakeResponse(403);
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  await expect(client.getAnonymous("https://cdn.example.com/a.webp")).rejects.toBeInstanceOf(
+    CrossOriginCloudflareError,
+  );
+  expect(fetchCount).toBe(1);
+
+  await new Promise((r) => setTimeout(r, 10));
+  await writeFile(path, JSON.stringify({ ...VALID_SESSION, savedAt: Date.now() }), "utf8");
+  respondWith200 = true;
+
+  const res = await client.getAnonymous("https://cdn.example.com/b.webp");
+  expect(res.status).toBe(200);
+  expect(fetchCount).toBe(2);
+});
+
+// ---------------------------------------------------------------------------
+// P1 #1: 200-with-CF-challenge-body on the ANONYMOUS lane
+// ---------------------------------------------------------------------------
+
+test("200 with CF challenge body on getAnonymous throws CrossOriginCloudflareError, latches only the anonymous lane", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  const CF_CHALLENGE_BODY =
+    "<!DOCTYPE html><html><head><title>Just a moment...</title></head><body>" +
+    "<div id='cf-browser-verification'>cloudflare cf_clearance challenge</div>" +
+    "</body></html>";
+
+  let fetchCount = 0;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return new Response(CF_CHALLENGE_BODY, {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  await expect(
+    client.getAnonymous("https://cdn.example.com/challenge.webp"),
+  ).rejects.toBeInstanceOf(CrossOriginCloudflareError);
+  expect(fetchCount).toBe(1);
+
+  // The site lane must NOT be latched — a subsequent get() to a different URL still hits fetch.
+  // Fake fetch returns the same CF body, so get() throws the site-lane CloudflareError from
+  // its own real fetch call, proving no short-circuit occurred.
+  await expect(client.get("https://example.com/site-page")).rejects.toBeInstanceOf(CloudflareError);
+  expect(fetchCount).toBe(2);
+});
+
+// ---------------------------------------------------------------------------
+// P1 #2: Both lanes rejected within the same bundle / mtime — independent latches
+// ---------------------------------------------------------------------------
+
+test("both lanes rejected within the same mtime: latches coexist independently", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let fetchCount = 0;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return makeFakeResponse(403);
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  // Site lane rejected first — sets the site latch.
+  await expect(client.get("https://example.com/a")).rejects.toBeInstanceOf(CloudflareError);
+  expect(fetchCount).toBe(1);
+
+  // Anonymous lane rejected next, same mtime — sets the anonymous latch independently.
+  await expect(client.getAnonymous("https://cdn.example.com/a.webp")).rejects.toBeInstanceOf(
+    CrossOriginCloudflareError,
+  );
+  expect(fetchCount).toBe(2);
+
+  // Subsequent get() short-circuits with CloudflareError (site latch still active).
+  await expect(client.get("https://example.com/b")).rejects.toBeInstanceOf(CloudflareError);
+  expect(fetchCount).toBe(2);
+
+  // Subsequent getAnonymous() short-circuits with CrossOriginCloudflareError (anon latch
+  // still active) — neither latch clobbered the other.
+  await expect(client.getAnonymous("https://cdn.example.com/b.webp")).rejects.toBeInstanceOf(
+    CrossOriginCloudflareError,
+  );
+  expect(fetchCount).toBe(2);
+});
+
+// ---------------------------------------------------------------------------
+// P2 #4: Explicit dedupe log assertion on anonymous lane short-circuit
+// ---------------------------------------------------------------------------
+
+test("anonymous lane short-circuit emits the cloudflare_rejected event only once across two calls", async () => {
+  const { logger, calls } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  let fetchCount = 0;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return makeFakeResponse(403);
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  await expect(client.getAnonymous("https://cdn.example.com/a.webp")).rejects.toBeInstanceOf(
+    CrossOriginCloudflareError,
+  );
+  await expect(client.getAnonymous("https://cdn.example.com/b.webp")).rejects.toBeInstanceOf(
+    CrossOriginCloudflareError,
+  );
+
+  expect(fetchCount).toBe(1);
+
+  const rejectedWarns = calls.filter(
+    (c) => c.level === "warn" && c.fields.event === "fallback_http.cloudflare_rejected",
+  );
+  // Guards PR #134's no-spam win: the real fetch fires the event once; the
+  // short-circuited second call must NOT emit it again.
+  expect(rejectedWarns).toHaveLength(1);
 });

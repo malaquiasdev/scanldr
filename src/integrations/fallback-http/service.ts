@@ -8,7 +8,7 @@ import { readFile, stat } from "node:fs/promises";
 import type { AuthSession } from "@integrations/mangakakalot/auth/types.ts";
 import { resolveAuthPath } from "@plugins/auth-path/index.ts";
 import type { FallbackHttpClient, FallbackHttpOptions, FetchFn } from "./types.ts";
-import { CloudflareError, MissingAuthError } from "./types.ts";
+import { CloudflareError, CrossOriginCloudflareError, MissingAuthError } from "./types.ts";
 
 const MAX_ATTEMPTS = 4; // 1 initial + 3 retries
 const BASE_BACKOFF_MS = 500;
@@ -53,15 +53,20 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
   // Mtime-keyed cache: null means not yet loaded (though we verified above it exists).
   let authCache: AuthCache | null = null;
 
-  // CF short-circuit latch.
+  // CF short-circuit latches — split per lane (see issue #137).
   // Records the auth.json mtime at the moment a CloudflareError was observed.
-  // While this value matches the current mtime on disk, subsequent requests skip
-  // the HTTP call entirely (no throttle, no fetch) and throw immediately — this
-  // prevents ~60 seconds of queued tasks spamming 403s while the user is being
-  // prompted for a fresh cURL paste.
-  // The latch is cleared automatically when a request observes that mtime has
-  // advanced (i.e. refreshSession has written a new auth.json to disk).
-  let cfRejectedAtMtime: number | null = null;
+  // While this value matches the current mtime on disk, subsequent requests on
+  // the SAME lane skip the HTTP call entirely (no throttle, no fetch) and throw
+  // immediately — this prevents ~60 seconds of queued tasks spamming 403s while
+  // the user is being prompted for a fresh cURL paste.
+  // Each latch is cleared automatically when a request on its lane observes that
+  // mtime has advanced (i.e. refreshSession has written a new auth.json to disk).
+  //
+  // The lanes are latched independently because a 403 on the anonymous
+  // (cookie-less) image-CDN lane is usually a Referer/hotlink rejection, NOT a
+  // stale site session — it must not short-circuit the cookie lane.
+  let cfRejectedAtMtimeSite: number | null = null;
+  let cfRejectedAtMtimeAnonymous: number | null = null;
 
   // Throttle state — serialized via promise chain so concurrent calls queue up.
   // null = no request made yet; number = timestamp of last request start.
@@ -126,18 +131,24 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
     extraHeaders: Record<string, string> | undefined,
     withCookie: boolean,
   ): Promise<Response> {
-    // CF short-circuit: if a prior request latched a CF rejection mtime, skip
-    // everything (throttle + HTTP) until auth.json is refreshed on disk.
+    // CF short-circuit: if a prior request on THIS lane latched a CF rejection
+    // mtime, skip everything (throttle + HTTP) until auth.json is refreshed on
+    // disk. Lanes are independent — see latch declarations above.
+    const cfRejectedAtMtime = withCookie ? cfRejectedAtMtimeSite : cfRejectedAtMtimeAnonymous;
     if (cfRejectedAtMtime !== null) {
       const currentMtime = await statMtime(path);
       if (currentMtime === cfRejectedAtMtime) {
         // Auth file unchanged — session still stale. Short-circuit silently.
         // No "Cloudflare rejected" log here; the original log was already emitted
         // by the first rejection. Logging here again is exactly the spam we fix.
-        throw new CloudflareError(url);
+        throw withCookie ? new CloudflareError(url) : new CrossOriginCloudflareError(url);
       }
-      // mtime advanced → refreshSession wrote new credentials; clear latch.
-      cfRejectedAtMtime = null;
+      // mtime advanced → refreshSession wrote new credentials; clear this lane's latch.
+      if (withCookie) {
+        cfRejectedAtMtimeSite = null;
+      } else {
+        cfRejectedAtMtimeAnonymous = null;
+      }
     }
 
     // Throttle: sleep if last request was < 1000ms ago.
@@ -184,11 +195,21 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
       // 403 — Cloudflare rejection, do NOT retry.
       if (res && res.status === 403) {
         logger.warn(
-          { event: "fallback_http.cloudflare_rejected", context: "fallback-http", url },
+          {
+            event: "fallback_http.cloudflare_rejected",
+            context: "fallback-http",
+            url,
+            lane: withCookie ? "site" : "anonymous",
+          },
           "Cloudflare rejected the request",
         );
-        cfRejectedAtMtime = await statMtime(path);
-        throw new CloudflareError(url);
+        const rejectedMtime = await statMtime(path);
+        if (withCookie) {
+          cfRejectedAtMtimeSite = rejectedMtime;
+          throw new CloudflareError(url);
+        }
+        cfRejectedAtMtimeAnonymous = rejectedMtime;
+        throw new CrossOriginCloudflareError(url);
       }
 
       // 200 with CF challenge HTML — treat symmetrically with 403.
@@ -204,11 +225,21 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
         const body = await peekCfBody(res);
         if (body !== null && isCfChallengeHtml(body)) {
           logger.warn(
-            { event: "fallback_http.cloudflare_rejected", context: "fallback-http", url },
+            {
+              event: "fallback_http.cloudflare_rejected",
+              context: "fallback-http",
+              url,
+              lane: withCookie ? "site" : "anonymous",
+            },
             "Cloudflare challenge in 200 body — session is stale",
           );
-          cfRejectedAtMtime = await statMtime(path);
-          throw new CloudflareError(url);
+          const rejectedMtime = await statMtime(path);
+          if (withCookie) {
+            cfRejectedAtMtimeSite = rejectedMtime;
+            throw new CloudflareError(url);
+          }
+          cfRejectedAtMtimeAnonymous = rejectedMtime;
+          throw new CrossOriginCloudflareError(url);
         }
         // Return a synthetic response that re-streams the body we already consumed.
         return rebuildResponse(res, body);
