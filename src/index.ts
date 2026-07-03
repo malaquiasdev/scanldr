@@ -23,7 +23,21 @@ Flags:
   --json          Structured JSON log output
   --human         Human-readable log output (default)
   --quiet, -q     Suppress info logs
+  --progress      Force the stderr progress bar even when not a TTY
 `;
+
+/** Resolves whether the stderr progress bar should be shown. */
+export function resolveProgressEnabled(values: {
+  progress?: unknown;
+  json?: unknown;
+  isTTY?: boolean;
+}): boolean {
+  const forced = values.progress === true;
+  const json = values.json === true;
+  const isTTY = values.isTTY === true;
+  if (json) return false;
+  return forced || isTTY;
+}
 
 export function resolveLogConfig(values: {
   verbose?: unknown;
@@ -67,6 +81,7 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<void> {
       quiet: { type: "boolean", short: "q" },
       json: { type: "boolean" },
       human: { type: "boolean" },
+      progress: { type: "boolean" },
     },
   });
 
@@ -81,6 +96,11 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<void> {
   }
 
   const { level, format } = resolveLogConfig(values);
+  const progressEnabled = resolveProgressEnabled({
+    progress: values.progress,
+    json: values.json,
+    isTTY: process.stderr.isTTY,
+  });
 
   const { config } = await loadConfigFn();
   const db = openDb(config.db_path);
@@ -89,7 +109,12 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<void> {
   const traceStore = createTraceStore({ db });
   const logger = createLogger({ level, format }, traceStore);
 
-  const result = await runWalkthroughFn({ logger, outDir: config.default_out, config });
+  const result = await runWalkthroughFn({
+    logger,
+    outDir: config.default_out,
+    config,
+    progressEnabled,
+  });
   if (typeof result === "object" && "cancelled" in result && result.cancelled) {
     process.exit(130);
   }

@@ -22,13 +22,20 @@ async function fetchChapterPages(
   chapter: ChapterInput,
   sem: Semaphore,
   globalOffset: number,
+  totalPages: number,
+  onPageProgress?: (totalPages: number) => void,
 ): Promise<Array<{ filename: string; data: Uint8Array }>> {
   const tasks = chapter.pages.map((ref, localIdx) => {
     const globalIdx = globalOffset + localIdx;
-    return fetchPage(ref, chapter.imageFetcher, sem).then(({ data, ext }) => ({
-      filename: `${pad(globalIdx + 1, 4)}${ext}`,
-      data,
-    }));
+    return fetchPage(ref, chapter.imageFetcher, sem).then(({ data, ext }) => {
+      // Fired in completion order (not dispatch order) — caller must count completions,
+      // not trust globalIdx, since concurrent fetches resolve out of order.
+      onPageProgress?.(totalPages);
+      return {
+        filename: `${pad(globalIdx + 1, 4)}${ext}`,
+        data,
+      };
+    });
   });
   return Promise.all(tasks);
 }
@@ -45,6 +52,7 @@ export async function downloadBundle(input: DownloadBundleInput): Promise<Downlo
     delayMs,
     dryRun,
     logger,
+    onPageProgress,
   } = input;
 
   const padded = padBundleNumber(bundleNumber, 3);
@@ -76,6 +84,7 @@ export async function downloadBundle(input: DownloadBundleInput): Promise<Downlo
   const sem = createSemaphore(imageConcurrency);
   const zipEntries: Record<string, Uint8Array> = {};
   let globalOffset = 0;
+  const totalPages = sorted.reduce((sum, c) => sum + c.pages.length, 0);
 
   for (let i = 0; i < sorted.length; i++) {
     const chapter = sorted[i];
@@ -90,7 +99,7 @@ export async function downloadBundle(input: DownloadBundleInput): Promise<Downlo
       "downloading chapter",
     );
 
-    const pages = await fetchChapterPages(chapter, sem, globalOffset);
+    const pages = await fetchChapterPages(chapter, sem, globalOffset, totalPages, onPageProgress);
     for (const { filename: fname, data } of pages) {
       zipEntries[fname] = data;
     }
