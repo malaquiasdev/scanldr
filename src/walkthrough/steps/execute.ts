@@ -10,7 +10,14 @@ import {
 import type { Logger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import type { SourceDescriptor } from "../../sources/types.ts";
-import type { BundleItem, Downloader, ModeSelection, Packer, SearchHit } from "../types.ts";
+import type {
+  BundleItem,
+  Downloader,
+  ModeSelection,
+  Packer,
+  ProgressHandle,
+  SearchHit,
+} from "../types.ts";
 import { WalkthroughError } from "../types.ts";
 import type { RefreshSession } from "../with-session-retry.ts";
 import { isCloudflareError, withSessionRetry } from "../with-session-retry.ts";
@@ -33,6 +40,8 @@ export interface ExecuteWalkthroughInput {
    * When omitted, CF errors during execute are logged as bundle failures and skipped.
    */
   refreshFn?: RefreshSession;
+  /** Optional stderr progress renderer; no-op handle when disabled/omitted. */
+  progress?: ProgressHandle;
 }
 
 export interface ExecuteDeps {
@@ -78,12 +87,14 @@ export async function executeWalkthrough(
     adapter,
     logger,
     refreshFn,
+    progress,
   } = opts;
   const { downloader, packer } = deps;
 
   const slug = toSlug(hit.title);
   const outputs: string[] = [];
   let failed = 0;
+  let bundleIndex = 0;
 
   logger.info(
     {
@@ -101,6 +112,7 @@ export async function executeWalkthrough(
   const packedChapters: PackedChapter[] = [];
 
   for (const bundle of selectedBundles) {
+    bundleIndex++;
     try {
       const doBundle = async () => {
         logger.info(
@@ -138,6 +150,8 @@ export async function executeWalkthrough(
           `resolved ${totalPages} pages for ${bundle.label}`,
         );
 
+        progress?.updateChapter(bundleIndex, totalPages);
+
         const result = await downloader.downloadBundle({
           outDir,
           format: "cbz",
@@ -149,6 +163,9 @@ export async function executeWalkthrough(
           delayMs: 0,
           dryRun: false,
           logger,
+          onPageProgress: () => {
+            progress?.updatePage();
+          },
         });
 
         outputs.push(result.outputPath);
@@ -277,6 +294,8 @@ export async function executeWalkthrough(
       );
     }
   }
+
+  progress?.finish();
 
   return { outputs, failed };
 }

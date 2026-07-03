@@ -7,7 +7,7 @@ import { MangakakalotParseError } from "../../integrations/mangakakalot/client/t
 import { createLogger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import { getSource } from "../../sources/index.ts";
-import type { Downloader, Packer, WalkthroughResult } from "../types.ts";
+import type { Downloader, Packer, ProgressHandle, WalkthroughResult } from "../types.ts";
 import { WalkthroughError } from "../types.ts";
 import type { ExecuteWalkthroughInput } from "./execute.ts";
 
@@ -856,5 +856,58 @@ describe("executeWalkthrough", () => {
       join(outDir, "naruto", "naruto-volume-1.cbz"),
       join(outDir, "naruto", "naruto-volume-2.cbz"),
     ]);
+  });
+
+  test("progress handle is driven end-to-end: updateChapter/updatePage/finish are called from a fake downloader, ending at 100%", async () => {
+    const events: string[] = [];
+    let completions = 0;
+    const fakeProgress: ProgressHandle = {
+      updateChapter: (chapterIndex, chapterTotalPages) => {
+        completions = 0;
+        events.push(`chapter:${chapterIndex}:${chapterTotalPages}`);
+      },
+      updatePage: () => {
+        completions += 1;
+        events.push(`page:${completions}`);
+      },
+      finish: () => {
+        events.push("finish");
+      },
+    };
+
+    // Fake downloader that fires onPageProgress OUT of dispatch order (highest index first),
+    // simulating real concurrent fetches where completion order != dispatch order.
+    const fakeDownloader: Downloader = {
+      downloadBundle: async (input) => {
+        const totalPages = input.chapters.reduce((sum, c) => sum + c.pages.length, 0);
+        for (let i = totalPages; i >= 1; i--) {
+          input.onPageProgress?.(totalPages);
+        }
+        return {
+          chapterIds: input.chapters.map((c) => c.id),
+          outputPath: join(outDir, "naruto", "naruto-chapter-001.cbz"),
+          byteSize: 100,
+        };
+      },
+    };
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      outDir,
+      adapter: makeFakeAdapter(),
+      logger,
+      progress: fakeProgress,
+    };
+
+    const result = await executeWalkthrough(opts, {
+      downloader: fakeDownloader,
+      packer: makeFakePacker(),
+    });
+
+    expect(result.failed).toBe(0);
+    expect(events[0]).toBe("chapter:1:1");
+    // Completion count for this single-page chapter reaches 1/1 -> the "100%" invariant.
+    expect(events).toContain("page:1");
+    expect(events[events.length - 1]).toBe("finish");
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveLogConfig } from "./index.ts";
+import { resolveLogConfig, resolveProgressEnabled } from "./index.ts";
 
 describe("resolveLogConfig — flag wiring", () => {
   test("default: info + human", () => {
@@ -49,5 +49,27 @@ describe("resolveLogConfig — flag wiring", () => {
       level: "info",
       format: "human",
     });
+  });
+});
+
+describe("resolveProgressEnabled — progress bar gating", () => {
+  test("non-TTY, no flags: disabled (CI-safe default)", () => {
+    expect(resolveProgressEnabled({ isTTY: false })).toBe(false);
+  });
+
+  test("TTY, no flags: enabled by default", () => {
+    expect(resolveProgressEnabled({ isTTY: true })).toBe(true);
+  });
+
+  test("--progress forces enabled even when non-TTY", () => {
+    expect(resolveProgressEnabled({ isTTY: false, progress: true })).toBe(true);
+  });
+
+  test("--json always suppresses the bar, even on a TTY", () => {
+    expect(resolveProgressEnabled({ isTTY: true, json: true })).toBe(false);
+  });
+
+  test("--json + --progress: json wins, bar suppressed", () => {
+    expect(resolveProgressEnabled({ isTTY: false, json: true, progress: true })).toBe(false);
   });
 });

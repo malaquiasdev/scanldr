@@ -118,3 +118,32 @@ export interface WalkthroughCancelled {
 export class WalkthroughError extends Error {
   override readonly name = "WalkthroughError";
 }
+
+export interface ProgressOptions {
+  /** Gate: (isTTY || --progress) && !jsonMode. When false every method is a no-op. */
+  enabled: boolean;
+  totalChapters: number;
+  /** Injectable sink for tests; defaults to process.stderr.write. */
+  write?: (chunk: string) => void;
+  /** Injectable clock for tests; defaults to Date.now. */
+  now?: () => number;
+}
+
+export interface ProgressState {
+  currentChapter: number;
+  totalChapters: number;
+  currentPage: number;
+  totalPages: number;
+  percent: number;
+  avgPageMs: number;
+  etaMs: number;
+}
+
+export interface ProgressHandle {
+  /** Call when starting a new chapter/bundle; resets page counter. */
+  updateChapter(chapterIndex: number, chapterTotalPages: number): void;
+  /** Call after each page completes. Counts completions internally; order-agnostic. */
+  updatePage(): void;
+  /** Clears the line with a trailing newline. No-op when disabled. */
+  finish(): void;
+}

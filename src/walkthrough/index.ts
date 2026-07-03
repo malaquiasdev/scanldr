@@ -3,6 +3,7 @@ import type { Config } from "../plugins/config/index.ts";
 import type { Logger } from "../plugins/logger/index.ts";
 import type { SourceAdapter } from "../sources/adapters/index.ts";
 import { getAdapter } from "../sources/adapters/index.ts";
+import { createProgress } from "./progress.ts";
 import { checkAuth, refreshSession } from "./steps/auth-check.ts";
 import { promptCoverUrl } from "./steps/cover-prompt.ts";
 import type { ExecuteDeps } from "./steps/execute.ts";
@@ -52,6 +53,12 @@ export interface RunWalkthroughOptions extends WalkthroughInput {
    * When provided, this is used instead of the real refreshSession for retry logic.
    */
   refreshFn?: () => Promise<void>;
+  /**
+   * Enables the stderr progress bar. Resolved by the CLI entrypoint as
+   * `(process.stderr.isTTY || --progress) && !jsonMode`.
+   * Defaults to false — callers that don't opt in get the previous log-only behavior.
+   */
+  progressEnabled?: boolean;
 }
 
 /** Returned when walkthrough errors out in a handled way (WalkthroughError). */
@@ -166,6 +173,10 @@ export async function runWalkthrough(
     };
 
     // Step 9 — execute (fetchChapterInput calls are wrapped inside executeWalkthrough)
+    const progress = createProgress({
+      enabled: opts.progressEnabled ?? false,
+      totalChapters: selectedBundles.length,
+    });
     await executeWalkthrough(
       {
         source,
@@ -179,6 +190,7 @@ export async function runWalkthrough(
         adapter,
         logger: opts.logger,
         refreshFn: doRefresh,
+        progress,
       },
       opts.executeDeps,
     );

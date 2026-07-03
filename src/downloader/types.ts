@@ -15,6 +15,13 @@ export interface DownloadBundleInput {
   delayMs: number;
   dryRun: boolean;
   logger: Logger;
+  /**
+   * Optional per-page progress callback, fired once per completed page (completion order,
+   * NOT dispatch order — pages resolve out of order under concurrency). Callers should count
+   * completions rather than rely on any index. Kept as a plain callback (not a renderer
+   * dependency) so the downloader stays UI-agnostic.
+   */
+  onPageProgress?: (totalPages: number) => void;
 }
 
 export interface DownloadBundleResult {
