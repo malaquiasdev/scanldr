@@ -1,20 +1,39 @@
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import { checkbox } from "../prompts.ts";
-import type { BundleItem, ModeSelection, SearchHit } from "../types.ts";
+import type {
+  BundleItem,
+  ChapterListing,
+  ModeSelection,
+  SearchHit,
+  VolumeListing,
+} from "../types.ts";
 import { WalkthroughError } from "../types.ts";
 
 export interface RangePickerOptions {
   hit: SearchHit;
   mode: ModeSelection;
   adapter: SourceAdapter;
+  /**
+   * Preloaded listings for the "same manga" fast path — when provided, the
+   * matching listing is reused instead of calling adapter.listChapters/listVolumes again.
+   */
+  preloadedChapters?: ChapterListing[];
+  preloadedVolumes?: VolumeListing[];
+}
+
+export interface RangePickerResult {
+  bundles: BundleItem[];
+  /** The raw listing actually used (fetched or preloaded) — cache this for later reuse. */
+  chapters?: ChapterListing[];
+  volumes?: VolumeListing[];
 }
 
 /** Step 6: multi-select available chapters or volumes. */
-export async function pickRange(opts: RangePickerOptions): Promise<BundleItem[]> {
-  const { hit, mode, adapter } = opts;
+export async function pickRange(opts: RangePickerOptions): Promise<RangePickerResult> {
+  const { hit, mode, adapter, preloadedChapters, preloadedVolumes } = opts;
 
   if (mode === "volume") {
-    const volumes = await adapter.listVolumes(hit.id);
+    const volumes = preloadedVolumes ?? (await adapter.listVolumes(hit.id));
     if (volumes.length === 0) {
       throw new WalkthroughError(
         "This source did not expose volume metadata for this title. Try chapter mode.",
@@ -33,18 +52,21 @@ export async function pickRange(opts: RangePickerOptions): Promise<BundleItem[]>
 
     const selected = volumes.filter((v) => selectedIds.includes(`vol:${v.volume}`));
     if (selected.length === 0) throw new WalkthroughError("No bundles selected");
-    return selected.map((v) => ({
-      kind: "volume" as const,
-      label: v.label,
-      id: `vol:${v.volume}`,
-      num: v.volume,
-      chapterIds: v.chapterIds,
-      chapterNums: v.chapterNums,
-    }));
+    return {
+      bundles: selected.map((v) => ({
+        kind: "volume" as const,
+        label: v.label,
+        id: `vol:${v.volume}`,
+        num: v.volume,
+        chapterIds: v.chapterIds,
+        chapterNums: v.chapterNums,
+      })),
+      volumes,
+    };
   }
 
   // chapter mode
-  const chapters = await adapter.listChapters(hit.id);
+  const chapters = preloadedChapters ?? (await adapter.listChapters(hit.id));
   if (chapters.length === 0) {
     throw new WalkthroughError(
       "No chapters found for this title. The source may not have any available chapters.",
@@ -63,10 +85,13 @@ export async function pickRange(opts: RangePickerOptions): Promise<BundleItem[]>
 
   const selected = chapters.filter((ch) => selectedIds.includes(ch.id));
   if (selected.length === 0) throw new WalkthroughError("No bundles selected");
-  return selected.map((ch) => ({
-    kind: "chapter" as const,
-    label: ch.label,
-    id: ch.id,
-    num: ch.num,
-  }));
+  return {
+    bundles: selected.map((ch) => ({
+      kind: "chapter" as const,
+      label: ch.label,
+      id: ch.id,
+      num: ch.num,
+    })),
+    chapters,
+  };
 }
