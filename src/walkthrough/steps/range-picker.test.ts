@@ -57,9 +57,9 @@ describe("pickRange", () => {
     const adapter = makeFakeAdapter(mockChapters, mockVolumes);
     const { pickRange } = await import("./range-picker.ts");
     const result = await pickRange({ hit: mockHit, mode: "chapter", adapter });
-    expect(result).toHaveLength(2);
-    expect(result.map((b) => b.id)).toContain("mock-1-ch-1");
-    expect(result.map((b) => b.id)).toContain("mock-1-ch-3");
+    expect(result.bundles).toHaveLength(2);
+    expect(result.bundles.map((b) => b.id)).toContain("mock-1-ch-1");
+    expect(result.bundles.map((b) => b.id)).toContain("mock-1-ch-3");
   });
 
   test("empty selection — throws error", async () => {
@@ -94,7 +94,7 @@ describe("pickRange", () => {
     const adapter = makeFakeAdapter(mockChapters, mockVolumes);
     const { pickRange } = await import("./range-picker.ts");
     const result = await pickRange({ hit: mockHit, mode: "volume", adapter });
-    expect(result[0]?.label).toMatch(/Volume/);
+    expect(result.bundles[0]?.label).toMatch(/Volume/);
   });
 
   test("chapter mode: throws WalkthroughError when adapter returns empty chapter list", async () => {
