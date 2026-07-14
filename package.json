@@ -24,6 +24,7 @@
   "dependencies": {
     "@inquirer/prompts": "^8.4.3",
     "cheerio": "^1.2.0",
-    "fflate": "^0.8.2"
+    "fflate": "^0.8.2",
+    "sharp": "^0.35.3"
   }
 }
