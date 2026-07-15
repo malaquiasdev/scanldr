@@ -64,6 +64,18 @@ export interface RunWalkthroughOptions extends WalkthroughInput {
    * Defaults to false — callers that don't opt in get the previous log-only behavior.
    */
   progressEnabled?: boolean;
+  /**
+   * Bar-write seam of the shared stderr controller (see @plugins/terminal).
+   * Threaded into `createProgress` so the bar and logger stay coordinated.
+   * Defaults to raw stderr passthrough when omitted (e.g. direct test calls).
+   */
+  barWrite?: (chunk: string) => void;
+  /**
+   * Explicit bar-teardown seam of the shared stderr controller (see
+   * @plugins/terminal). Threaded into `createProgress` so `finish()` resets
+   * controller bar-state explicitly instead of relying on byte-sniffing.
+   */
+  endBar?: () => void;
 }
 
 /** Returned when walkthrough errors out in a handled way (WalkthroughError). */
@@ -170,6 +182,8 @@ export async function runWalkthrough(
           doRefresh,
           executeDeps: opts.executeDeps,
           progressEnabled: opts.progressEnabled ?? false,
+          barWrite: opts.barWrite,
+          endBar: opts.endBar,
         });
       } else {
         // "Same manga" entry point: reuse hit + cached listings, re-enter at pickMode.
@@ -185,6 +199,8 @@ export async function runWalkthrough(
           doRefresh,
           executeDeps: opts.executeDeps,
           progressEnabled: opts.progressEnabled ?? false,
+          barWrite: opts.barWrite,
+          endBar: opts.endBar,
         });
       }
 
@@ -233,6 +249,8 @@ interface DownloadFlowOptions {
   doRefresh: () => Promise<void>;
   executeDeps?: ExecuteDeps;
   progressEnabled: boolean;
+  barWrite?: (chunk: string) => void;
+  endBar?: () => void;
 }
 
 /**
@@ -252,6 +270,8 @@ async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<Walkthrou
     doRefresh,
     executeDeps,
     progressEnabled,
+    barWrite,
+    endBar,
   } = flowOpts;
 
   // Step 5 — mode
@@ -306,6 +326,8 @@ async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<Walkthrou
   const progress = createProgress({
     enabled: progressEnabled,
     totalChapters: selectedBundles.length,
+    write: barWrite,
+    endBar,
   });
   const { failed } = await executeWalkthrough(
     {

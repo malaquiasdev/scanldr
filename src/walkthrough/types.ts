@@ -125,6 +125,13 @@ export interface ProgressOptions {
   totalChapters: number;
   /** Injectable sink for tests; defaults to process.stderr.write. */
   write?: (chunk: string) => void;
+  /**
+   * Explicit bar-teardown seam from the shared stderr controller (see
+   * @plugins/terminal). Invoked by `finish()` so controller bar-state is
+   * reset via an explicit call rather than inferred by sniffing bytes.
+   * Optional so direct/test construction of `createProgress` still works.
+   */
+  endBar?: () => void;
   /** Injectable clock for tests; defaults to Date.now. */
   now?: () => number;
 }
