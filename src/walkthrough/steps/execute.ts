@@ -42,6 +42,15 @@ export interface ExecuteWalkthroughInput {
   refreshFn?: RefreshSession;
   /** Optional stderr progress renderer; no-op handle when disabled/omitted. */
   progress?: ProgressHandle;
+  /**
+   * Whether the stderr progress bar is active (mirrors ProgressOptions.enabled).
+   * Gates the per-page `walkthrough.fetch_page` log: when the bar owns stderr,
+   * the per-page line is suppressed (bar is the feedback); when the bar is
+   * disabled (non-TTY / no --progress) or in JSON mode, the per-page log is
+   * the fallback feedback and stays on.
+   * Defaults to false (per-page log kept) when omitted.
+   */
+  progressEnabled?: boolean;
 }
 
 export interface ExecuteDeps {
@@ -88,6 +97,7 @@ export async function executeWalkthrough(
     logger,
     refreshFn,
     progress,
+    progressEnabled = false,
   } = opts;
   const { downloader, packer } = deps;
 
@@ -152,6 +162,11 @@ export async function executeWalkthrough(
 
         progress?.updateChapter(bundleIndex, totalPages);
 
+        // Same "count completions, not dispatch order" rule as the progress bar
+        // (pages resolve out of order under concurrency): this is a completion
+        // counter, not a page index/ordinal — under concurrency it does NOT
+        // correspond to "page N of the chapter".
+        let pagesFetched = 0;
         const result = await downloader.downloadBundle({
           outDir,
           format: "cbz",
@@ -165,6 +180,27 @@ export async function executeWalkthrough(
           logger,
           onPageProgress: () => {
             progress?.updatePage();
+            pagesFetched++;
+            // Per-page terminal log — moved here from the mangakakalot adapter (#171):
+            // it's the same signal as the progress bar, so exactly one may own stderr.
+            // Suppressed when the bar is enabled (bar is the feedback); kept as the
+            // long-running-fetch fallback otherwise (non-TTY / no --progress / json mode).
+            // NOTE trace-store consequence: in interactive/TTY runs (bar enabled) these
+            // per-page rows are absent from the trace; chapter-level rows are unaffected.
+            // This layer only knows the bundle's aggregate page count (not per-chapter
+            // page/url), so those fields are omitted rather than fabricated.
+            if (!progressEnabled) {
+              logger.info(
+                {
+                  event: "walkthrough.fetch_page",
+                  context: "walkthrough",
+                  completed: pagesFetched,
+                  total: totalPages,
+                  bundle_id: bundle.id,
+                },
+                `fetched ${pagesFetched}/${totalPages} pages of ${bundle.label}`,
+              );
+            }
           },
         });
 

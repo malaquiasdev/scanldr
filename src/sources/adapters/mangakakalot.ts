@@ -125,8 +125,6 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
 
     const pages: ImageRef[] = imageRefs.map((ref, i) => ({ url: ref.url, page: i + 1 }));
 
-    const total = pages.length;
-    const chapterNumLabel = chapterNum ?? "?";
     const imageFetcher = async (ref: ImageRef): Promise<Uint8Array> => {
       // Image CDN (img-r1.2xstorage.com) is a different Cloudflare zone with hotlink
       // protection. We must NOT forward the site cookie (cross-origin leakage) and
@@ -139,17 +137,10 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
         "sec-fetch-site": "cross-site",
       }); // CloudflareError or short-circuit throws here — no log emitted
       const buf = await res.arrayBuffer();
-      logger.info(
-        {
-          event: "walkthrough.fetch_page",
-          context: "walkthrough",
-          url: ref.url,
-          page: ref.page,
-          total,
-          chapter: chapterNumLabel,
-        },
-        `fetched page ${ref.page}/${total} of chapter ${chapterNumLabel}`,
-      );
+      // Per-page fetch feedback moved to the execute/progress layer (walkthrough/steps/execute.ts,
+      // #171) — it owns the decision of whether the stderr progress bar or this log line gets
+      // stderr, which this adapter has no visibility into. Emitting it here duplicated/clobbered
+      // the bar's redraw.
       return new Uint8Array(buf);
     };
 
