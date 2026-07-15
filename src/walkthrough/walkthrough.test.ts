@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChapterInput } from "@integrations/_shared/media.ts";
@@ -12,6 +13,21 @@ import { WalkthroughError } from "./types.ts";
 const noop = () => {};
 const logger = createLogger({ level: "info", format: "human", write: noop });
 const outDir = join(tmpdir(), `walkthrough-test-${Date.now()}`);
+
+/**
+ * Mangakakalot (the sole remaining source, #177) requiresAuth === true, so runWalkthrough
+ * now always exercises checkAuth. Tests inject an isolated dataHome pre-seeded with a valid
+ * auth.json so the file-presence check passes without a real network probe or editor paste.
+ */
+function makeAuthedDataHome(): string {
+  const dir = join(tmpdir(), `walkthrough-authhome-${Date.now()}-${Math.random()}`);
+  mkdirSync(join(dir, "scanldr"), { recursive: true });
+  writeFileSync(
+    join(dir, "scanldr", "auth.json"),
+    JSON.stringify({ cookies: { session: "fake" }, userAgent: "test", savedAt: Date.now() }),
+  );
+  return dir;
+}
 
 const fakeHits: SearchHit[] = [
   { id: "mock-1", title: "Naruto", originalLanguage: "ja", year: 1999 },
@@ -82,9 +98,8 @@ describe("runWalkthrough — full happy path", () => {
       },
       select: async () => {
         selectCall++;
-        if (selectCall === 1) return "mangadex"; // source
-        if (selectCall === 2) return "mock-1"; // search result
-        if (selectCall === 3) return "chapter"; // mode
+        if (selectCall === 1) return "mock-1"; // search result
+        if (selectCall === 2) return "chapter"; // mode
         return "quit"; // next-action
       },
       checkbox: async () => ["mock-1-ch-1", "mock-1-ch-2"],
@@ -99,6 +114,8 @@ describe("runWalkthrough — full happy path", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: fakeAdapterFactory,
       executeDeps: { downloader: fakeDownloader, packer: fakePacker },
@@ -133,9 +150,8 @@ describe("runWalkthrough — full happy path", () => {
       },
       select: async () => {
         selectCall++;
-        if (selectCall === 1) return "mangadex";
-        if (selectCall === 2) return "mock-1";
-        if (selectCall === 3) return "chapter";
+        if (selectCall === 1) return "mock-1";
+        if (selectCall === 2) return "chapter";
         return "quit"; // next-action
       },
       checkbox: async () => ["mock-1-ch-1"],
@@ -150,6 +166,8 @@ describe("runWalkthrough — full happy path", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: fakeAdapterFactory,
       executeDeps: { downloader: fakeDownloader, packer: fakePacker },
@@ -171,9 +189,8 @@ describe("runWalkthrough — full happy path", () => {
       input: async (opts: { default?: string }) => opts.default ?? "One Piece",
       select: async () => {
         selectCall++;
-        if (selectCall === 1) return "mangadex"; // source
-        if (selectCall === 2) return "mock-1"; // search result
-        if (selectCall === 3) return "volume"; // mode
+        if (selectCall === 1) return "mock-1"; // search result
+        if (selectCall === 2) return "volume"; // mode
         return "quit"; // next-action
       },
       checkbox: async () => ["vol:1"],
@@ -185,6 +202,8 @@ describe("runWalkthrough — full happy path", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
       executeDeps: { downloader: fakeDownloader, packer: fakePacker },
@@ -211,9 +230,8 @@ describe("runWalkthrough — full happy path", () => {
       },
       select: async () => {
         selectCall++;
-        if (selectCall === 1) return "mangadex";
-        if (selectCall === 2) return "mock-1";
-        if (selectCall === 3) return "chapter";
+        if (selectCall === 1) return "mock-1";
+        if (selectCall === 2) return "chapter";
         return "quit"; // next-action
       },
       checkbox: async () => ["mock-1-ch-1"],
@@ -226,6 +244,8 @@ describe("runWalkthrough — full happy path", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: fakeAdapterFactory,
       executeDeps: { downloader: fakeDownloader, packer: fakePacker },
@@ -253,29 +273,30 @@ describe("runWalkthrough — full happy path", () => {
       },
       checkbox: async () => [],
       confirm: async () => false,
-      editor: async () => "",
+      editor: async () => {
+        throw new ExitPromptError("User force closed the prompt");
+      },
     }));
 
     const { runWalkthrough } = await import("./index.ts");
-    const result = await runWalkthrough({ logger, adapterFactory: fakeAdapterFactory });
+    const result = await runWalkthrough({
+      logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
+      adapterFactory: fakeAdapterFactory,
+    });
     expect(result).toEqual({ cancelled: true });
   });
 
   test("non-CF error from search → propagates as { ok: false } without retry", async () => {
-    let selectCall = 0;
     mock.module("./prompts.ts", () => ({
       input: async (opts: { default?: string }) => opts.default ?? "Some Manga",
-      select: async () => {
-        selectCall++;
-        if (selectCall === 1) return "mangadex";
-        return "chapter";
-      },
+      select: async () => "chapter",
       checkbox: async () => [],
       confirm: async () => false,
       editor: async () => "",
     }));
 
-    selectCall = 0;
     let searchCallCount = 0;
     const failAdapter = makeFakeAdapter({
       search: async () => {
@@ -289,8 +310,9 @@ describe("runWalkthrough — full happy path", () => {
     await expect(
       runWalkthrough({
         logger,
-        adapterFactory: () => failAdapter,
+        dataHome: makeAuthedDataHome(),
         probeClientFactory: null,
+        adapterFactory: () => failAdapter,
         refreshFn: async () => {
           refreshCalled = true;
         },
@@ -306,9 +328,8 @@ describe("runWalkthrough — full happy path", () => {
       input: async (opts: { default?: string }) => opts.default ?? "Naruto",
       select: async () => {
         selectCall++;
-        if (selectCall === 1) return "mangadex"; // source
-        if (selectCall === 2) return "mock-1"; // search result
-        if (selectCall === 3) return "chapter"; // mode
+        if (selectCall === 1) return "mock-1"; // search result
+        if (selectCall === 2) return "chapter"; // mode
         return "quit"; // next-action
       },
       checkbox: async () => ["mock-1-ch-1"],
@@ -332,9 +353,10 @@ describe("runWalkthrough — full happy path", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
-      probeClientFactory: null,
       refreshFn: async () => {
         refreshCallCount++;
       },
@@ -348,20 +370,14 @@ describe("runWalkthrough — full happy path", () => {
   });
 
   test("search hits CF, refresh fails on second probe → returns { ok: false }", async () => {
-    let selectCall = 0;
     mock.module("./prompts.ts", () => ({
       input: async (opts: { default?: string }) => opts.default ?? "Naruto",
-      select: async () => {
-        selectCall++;
-        if (selectCall === 1) return "mangadex";
-        return "chapter";
-      },
+      select: async () => "chapter",
       checkbox: async () => [],
       confirm: async () => false,
       editor: async () => "",
     }));
 
-    selectCall = 0;
     const cfError = new CloudflareError("https://example.com/cf-rejected");
     const fakeAdapter = makeFakeAdapter({
       search: async () => {
@@ -371,8 +387,9 @@ describe("runWalkthrough — full happy path", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
-      adapterFactory: () => fakeAdapter,
+      dataHome: makeAuthedDataHome(),
       probeClientFactory: null,
+      adapterFactory: () => fakeAdapter,
       refreshFn: async () => {
         throw new WalkthroughError("Session refresh failed twice. Try again later.");
       },
@@ -391,9 +408,8 @@ describe("runWalkthrough — full happy path", () => {
       input: async (opts: { default?: string }) => opts.default ?? "Naruto",
       select: async () => {
         selectCall++;
-        if (selectCall === 1) return "mangadex";
-        if (selectCall === 2) return "mock-1";
-        if (selectCall === 3) return "chapter";
+        if (selectCall === 1) return "mock-1";
+        if (selectCall === 2) return "chapter";
         return "quit"; // next-action
       },
       checkbox: async () => ["mock-1-ch-1"],
@@ -417,9 +433,10 @@ describe("runWalkthrough — full happy path", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
-      probeClientFactory: null,
       refreshFn: async () => {
         refreshCallCount++;
       },
@@ -438,9 +455,8 @@ describe("runWalkthrough — full happy path", () => {
       input: async (opts: { default?: string }) => opts.default ?? "Naruto",
       select: async () => {
         selectCall++;
-        if (selectCall === 1) return "mangadex";
-        if (selectCall === 2) return "mock-1";
-        if (selectCall === 3) return "chapter";
+        if (selectCall === 1) return "mock-1";
+        if (selectCall === 2) return "chapter";
         return "quit"; // next-action
       },
       checkbox: async () => ["mock-1-ch-1"],
@@ -464,9 +480,10 @@ describe("runWalkthrough — full happy path", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
-      probeClientFactory: null,
       refreshFn: async () => {
         refreshCallCount++;
       },
@@ -480,24 +497,20 @@ describe("runWalkthrough — full happy path", () => {
   });
 
   test("empty search results → returns { ok: false, reason: WalkthroughError message }", async () => {
-    let selectCall = 0;
     mock.module("./prompts.ts", () => ({
       input: async (opts: { default?: string }) => opts.default ?? "Unknown Manga",
-      select: async () => {
-        selectCall++;
-        if (selectCall === 1) return "mangadex";
-        return "chapter";
-      },
+      select: async () => "chapter",
       checkbox: async () => [],
       confirm: async () => false,
       editor: async () => "",
     }));
 
-    selectCall = 0;
     const emptyAdapter = makeFakeAdapter({ search: async () => [] });
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       adapterFactory: () => emptyAdapter,
     });
     if ("cancelled" in result) throw new Error("Unexpected cancellation");
@@ -510,23 +523,15 @@ describe("runWalkthrough — full happy path", () => {
 
 describe("runWalkthrough — config threading to adapter factory", () => {
   test("opts.config is forwarded to adapterFactory unchanged (end-to-end wiring)", async () => {
-    let selectCall = 0;
     mock.module("./prompts.ts", () => ({
       input: async (opts: { default?: string }) => opts.default ?? "Naruto",
-      select: async () => {
-        selectCall++;
-        if (selectCall === 1) return "mangadex";
-        return "chapter";
-      },
+      select: async () => "chapter",
       checkbox: async () => [],
       confirm: async () => false,
       editor: async () => "",
     }));
 
-    selectCall = 0;
     const testConfig: Config = {
-      preferred_languages: ["pt-br"],
-      download_quality: "data",
       default_format: "cbz",
       default_out: ".",
       db_path: "",
@@ -547,6 +552,8 @@ describe("runWalkthrough — config threading to adapter factory", () => {
     const { runWalkthrough } = await import("./index.ts");
     await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       config: testConfig,
       adapterFactory: (sourceId, opts) => {
         captured.call = { sourceId, config: opts.config };
@@ -555,9 +562,8 @@ describe("runWalkthrough — config threading to adapter factory", () => {
     });
 
     expect(readCapturedCall()).not.toBeUndefined();
-    expect(readCapturedCall()?.sourceId).toBe("mangadex");
+    expect(readCapturedCall()?.sourceId).toBe("mangakakalot");
     expect(readCapturedCall()?.config).toBe(testConfig);
-    expect(readCapturedCall()?.config?.preferred_languages).toEqual(["pt-br"]);
   });
 });
 
@@ -572,11 +578,10 @@ describe("runWalkthrough — post-download loop", () => {
       },
       select: async () => {
         selectCall++;
-        if (selectCall === 1) return "mangadex"; // source
-        if (selectCall === 2) return "mock-1"; // search result
-        if (selectCall === 3) return "chapter"; // mode (iteration 1)
-        if (selectCall === 4) return "same-manga"; // next-action after iteration 1
-        if (selectCall === 5) return "chapter"; // mode (iteration 2, same manga)
+        if (selectCall === 1) return "mock-1"; // search result
+        if (selectCall === 2) return "chapter"; // mode (iteration 1)
+        if (selectCall === 3) return "same-manga"; // next-action after iteration 1
+        if (selectCall === 4) return "chapter"; // mode (iteration 2, same manga)
         return "quit"; // next-action after iteration 2
       },
       checkbox: async () => ["mock-1-ch-1"],
@@ -601,6 +606,8 @@ describe("runWalkthrough — post-download loop", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
       executeDeps: { downloader: fakeDownloader, packer: fakePacker },
@@ -618,7 +625,6 @@ describe("runWalkthrough — post-download loop", () => {
   test("'New manga' returns to title/search without re-picking source or redoing auth", async () => {
     let inputCall = 0;
     let selectCall = 0;
-    let sourceSelectCount = 0;
     mock.module("./prompts.ts", () => ({
       input: async () => {
         inputCall++;
@@ -626,15 +632,11 @@ describe("runWalkthrough — post-download loop", () => {
       },
       select: async () => {
         selectCall++;
-        if (selectCall === 1) {
-          sourceSelectCount++;
-          return "mangadex"; // source (picked once)
-        }
-        if (selectCall === 2) return "mock-1"; // search result (iteration 1)
-        if (selectCall === 3) return "chapter"; // mode (iteration 1)
-        if (selectCall === 4) return "new-manga"; // next-action after iteration 1
-        if (selectCall === 5) return "mock-1"; // search result (iteration 2, new manga)
-        if (selectCall === 6) return "chapter"; // mode (iteration 2)
+        if (selectCall === 1) return "mock-1"; // search result (iteration 1)
+        if (selectCall === 2) return "chapter"; // mode (iteration 1)
+        if (selectCall === 3) return "new-manga"; // next-action after iteration 1
+        if (selectCall === 4) return "mock-1"; // search result (iteration 2, new manga)
+        if (selectCall === 5) return "chapter"; // mode (iteration 2)
         return "quit"; // next-action after iteration 2
       },
       checkbox: async () => ["mock-1-ch-1"],
@@ -665,10 +667,12 @@ describe("runWalkthrough — post-download loop", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: (sourceId, factoryOpts) => {
         authCallCount++;
-        expect(sourceId).toBe("mangadex");
+        expect(sourceId).toBe("mangakakalot");
         expect(factoryOpts).toBeDefined();
         return fakeAdapter;
       },
@@ -677,7 +681,6 @@ describe("runWalkthrough — post-download loop", () => {
 
     if ("cancelled" in result) throw new Error("Unexpected cancellation");
     if ("ok" in result) throw new Error(`Unexpected failure: ${result.reason}`);
-    expect(sourceSelectCount).toBe(1); // source only picked once
     expect(authCallCount).toBe(1); // adapter (post-auth) resolved once, reused
     expect(searchCallCount).toBe(2); // new manga re-searches
     expect(inputCall).toBe(2); // title re-prompted for the new manga
@@ -693,9 +696,8 @@ describe("runWalkthrough — post-download loop", () => {
       input: async () => "Naruto",
       select: async () => {
         selectCall++;
-        if (selectCall === 1) return "mangadex";
-        if (selectCall === 2) return "mock-1";
-        if (selectCall === 3) return "chapter";
+        if (selectCall === 1) return "mock-1";
+        if (selectCall === 2) return "chapter";
         return "quit";
       },
       checkbox: async () => ["mock-1-ch-1"],
@@ -709,6 +711,8 @@ describe("runWalkthrough — post-download loop", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
       executeDeps: { downloader: fakeDownloader, packer: fakePacker },
@@ -728,9 +732,8 @@ describe("runWalkthrough — post-download loop", () => {
       input: async () => "Naruto",
       select: async () => {
         selectCall++;
-        if (selectCall === 1) return "mangadex";
-        if (selectCall === 2) return "mock-1";
-        if (selectCall === 3) return "chapter";
+        if (selectCall === 1) return "mock-1";
+        if (selectCall === 2) return "chapter";
         throw new ExitPromptError("User force closed the prompt");
       },
       checkbox: async () => ["mock-1-ch-1"],
@@ -744,6 +747,8 @@ describe("runWalkthrough — post-download loop", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
       executeDeps: { downloader: fakeDownloader, packer: fakePacker },
@@ -758,11 +763,10 @@ describe("runWalkthrough — post-download loop", () => {
       input: async () => "Naruto",
       select: async () => {
         selectCall++;
-        if (selectCall === 1) return "mangadex";
-        if (selectCall === 2) return "mock-1";
-        if (selectCall === 3) return "chapter"; // iteration 1: chapter mode
-        if (selectCall === 4) return "same-manga";
-        if (selectCall === 5) return "volume"; // iteration 2: volume mode
+        if (selectCall === 1) return "mock-1";
+        if (selectCall === 2) return "chapter"; // iteration 1: chapter mode
+        if (selectCall === 3) return "same-manga";
+        if (selectCall === 4) return "volume"; // iteration 2: volume mode
         return "quit";
       },
       checkbox: async (opts: { message: string }) => {
@@ -785,6 +789,8 @@ describe("runWalkthrough — post-download loop", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
       executeDeps: { downloader: fakeDownloader, packer: fakePacker },
@@ -802,11 +808,10 @@ describe("runWalkthrough — post-download loop", () => {
       input: async () => "Naruto",
       select: async () => {
         selectCall++;
-        if (selectCall === 1) return "mangadex";
-        if (selectCall === 2) return "mock-1";
-        if (selectCall === 3) return "volume"; // iteration 1: volume mode
-        if (selectCall === 4) return "same-manga";
-        if (selectCall === 5) return "chapter"; // iteration 2: chapter mode
+        if (selectCall === 1) return "mock-1";
+        if (selectCall === 2) return "volume"; // iteration 1: volume mode
+        if (selectCall === 3) return "same-manga";
+        if (selectCall === 4) return "chapter"; // iteration 2: chapter mode
         return "quit";
       },
       checkbox: async (opts: { message: string }) => {
@@ -834,6 +839,8 @@ describe("runWalkthrough — post-download loop", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
       executeDeps: { downloader: fakeDownloader, packer: fakePacker },
@@ -852,13 +859,12 @@ describe("runWalkthrough — post-download loop", () => {
       input: async () => "Naruto",
       select: async () => {
         selectCall++;
-        if (selectCall === 1) return "mangadex";
-        if (selectCall === 2) return "mock-1";
-        if (selectCall === 3) return "chapter"; // iteration 1: chapter mode
-        if (selectCall === 4) return "same-manga";
-        if (selectCall === 5) return "volume"; // iteration 2: volume mode
-        if (selectCall === 6) return "same-manga";
-        if (selectCall === 7) return "chapter"; // iteration 3: chapter mode (reuse iter-1 cache)
+        if (selectCall === 1) return "mock-1";
+        if (selectCall === 2) return "chapter"; // iteration 1: chapter mode
+        if (selectCall === 3) return "same-manga";
+        if (selectCall === 4) return "volume"; // iteration 2: volume mode
+        if (selectCall === 5) return "same-manga";
+        if (selectCall === 6) return "chapter"; // iteration 3: chapter mode (reuse iter-1 cache)
         return "quit";
       },
       checkbox: async (opts: { message: string }) => {
@@ -886,6 +892,8 @@ describe("runWalkthrough — post-download loop", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
       executeDeps: { downloader: fakeDownloader, packer: fakePacker },
@@ -916,11 +924,10 @@ describe("runWalkthrough — post-download loop", () => {
       input: async () => "Naruto",
       select: async () => {
         selectCall++;
-        if (selectCall === 1) return "mangadex";
-        if (selectCall === 2) return "mock-1";
-        if (selectCall === 3) return "chapter"; // iteration 1
-        if (selectCall === 4) return "same-manga"; // proves loop still offers next-action
-        if (selectCall === 5) return "chapter"; // iteration 2
+        if (selectCall === 1) return "mock-1";
+        if (selectCall === 2) return "chapter"; // iteration 1
+        if (selectCall === 3) return "same-manga"; // proves loop still offers next-action
+        if (selectCall === 4) return "chapter"; // iteration 2
         return "quit";
       },
       checkbox: async () => ["mock-1-ch-1", "mock-1-ch-2"],
@@ -941,9 +948,10 @@ describe("runWalkthrough — post-download loop", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger: warnLogger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
-      probeClientFactory: null,
       executeDeps: { downloader: fakeDownloader, packer: fakePacker },
     });
 
@@ -960,9 +968,8 @@ describe("runWalkthrough — post-download loop", () => {
       input: async () => "Naruto",
       select: async () => {
         selectCall++;
-        if (selectCall === 1) return "mangadex";
-        if (selectCall === 2) return "mock-1";
-        if (selectCall === 3) return "chapter";
+        if (selectCall === 1) return "mock-1";
+        if (selectCall === 2) return "chapter";
         return "quit";
       },
       checkbox: async () => ["mock-1-ch-1", "mock-1-ch-2"],
@@ -983,9 +990,10 @@ describe("runWalkthrough — post-download loop", () => {
     const { runWalkthrough } = await import("./index.ts");
     const result = await runWalkthrough({
       logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
-      probeClientFactory: null,
       executeDeps: { downloader: fakeDownloader, packer: fakePacker },
     });
 

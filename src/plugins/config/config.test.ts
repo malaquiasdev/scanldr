@@ -35,8 +35,6 @@ describe("loadConfig — discovery", () => {
     await writeFile(
       cfgPath,
       JSON.stringify({
-        preferred_languages: ["pt-BR", "en"],
-        download_quality: "data-saver",
         default_format: "zip",
         default_out: "./out",
         image_concurrency: 8,
@@ -48,8 +46,6 @@ describe("loadConfig — discovery", () => {
 
     expect(result.source).toBe(cfgPath);
     expect(result.config).toEqual({
-      preferred_languages: ["pt-BR", "en"],
-      download_quality: "data-saver",
       default_format: "zip",
       default_out: "./out",
       db_path: DEFAULT_CONFIG.db_path,
@@ -81,7 +77,6 @@ describe("loadConfig — discovery", () => {
 
     expect(result.source).toBe(xdgPath);
     expect(result.config.default_out).toBe("/tmp/from-xdg");
-    expect(result.config.preferred_languages).toEqual(DEFAULT_CONFIG.preferred_languages);
   });
 
   test("respects $XDG_CONFIG_HOME when set", async () => {
@@ -166,6 +161,30 @@ describe("loadConfig — discovery", () => {
       }),
     ).rejects.toThrow(/--config path does not exist/);
   });
+
+  test("loads a legacy config with removed keys (preferred_languages, download_quality) without erroring", async () => {
+    const cfgPath = join(workDir, "scanldr.json");
+    await writeFile(
+      cfgPath,
+      JSON.stringify({
+        default_format: "zip",
+        image_concurrency: 2,
+        preferred_languages: ["en", "pt-BR"],
+        download_quality: "high",
+      }),
+    );
+
+    const result = await loadConfig({ env: {}, cwd: workDir, home: homeDir });
+
+    expect(result.source).toBe(cfgPath);
+    expect(result.config).toEqual({
+      ...DEFAULT_CONFIG,
+      default_format: "zip",
+      image_concurrency: 2,
+    });
+    expect(result.config).not.toHaveProperty("preferred_languages");
+    expect(result.config).not.toHaveProperty("download_quality");
+  });
 });
 
 describe("loadConfig — parsing errors", () => {
@@ -219,42 +238,8 @@ describe("validateAndMerge — field validations", () => {
     expect(cfg.chapter_delay_ms).toBe(0);
   });
 
-  test("rejects unknown download_quality", () => {
-    expect(() => validateAndMerge({ download_quality: "ultra" })).toThrow(/download_quality/);
-  });
-
   test("rejects unknown default_format", () => {
     expect(() => validateAndMerge({ default_format: "rar" })).toThrow(/default_format/);
-  });
-
-  test("rejects empty preferred_languages array", () => {
-    expect(() => validateAndMerge({ preferred_languages: [] })).toThrow(/preferred_languages/);
-  });
-
-  test("rejects empty-string language code", () => {
-    expect(() => validateAndMerge({ preferred_languages: ["en", ""] })).toThrow(
-      /preferred_languages/,
-    );
-  });
-
-  test("rejects malformed BCP 47 code", () => {
-    expect(() => validateAndMerge({ preferred_languages: ["english"] })).toThrow(
-      /preferred_languages/,
-    );
-  });
-
-  test("accepts canonical BCP 47 codes", () => {
-    const cfg = validateAndMerge({
-      preferred_languages: ["en", "pt-BR", "zh-CN"],
-    });
-    expect(cfg.preferred_languages).toEqual(["en", "pt-BR", "zh-CN"]);
-  });
-
-  test("normalizes BCP 47 codes to canonical form", () => {
-    const cfg = validateAndMerge({
-      preferred_languages: ["PT-br", "EN", "zh-cn"],
-    });
-    expect(cfg.preferred_languages).toEqual(["pt-BR", "en", "zh-CN"]);
   });
 
   test("rejects empty default_out", () => {

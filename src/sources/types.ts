@@ -1,4 +1,4 @@
-export type SourceId = "mangakakalot" | "mangadex";
+export type SourceId = "mangakakalot";
 
 export interface SourceDescriptor {
   id: SourceId;

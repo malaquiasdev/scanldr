@@ -36,9 +36,9 @@ describe("createStderrController — enabled (ANSI mode)", () => {
     const controller = createStderrController({ enabled: true, write: sink.write });
 
     controller.barWrite("\rChapter 2/5 (page 40/85) [====>               ] 20%");
-    controller.logWrite("2026-07-15T12:00:00.000Z warn mangadex.rate_limited\n");
+    controller.logWrite("2026-07-15T12:00:00.000Z warn mangakakalot.rate_limited\n");
 
-    expect(sink.chunks).toContain("2026-07-15T12:00:00.000Z warn mangadex.rate_limited\n");
+    expect(sink.chunks).toContain("2026-07-15T12:00:00.000Z warn mangakakalot.rate_limited\n");
     // bar is re-rendered after the warning, pinned back at the bottom
     expect(sink.chunks.at(-1)).toBe("\rChapter 2/5 (page 40/85) [====>               ] 20%");
   });

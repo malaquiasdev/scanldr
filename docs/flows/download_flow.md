@@ -5,8 +5,8 @@
 The current single-walkthrough CLI (post-epic #116) runs these steps:
 
 1. **Title prompt** — free-text input ("Manga title:").
-2. **Source picker** — choose MangaDex or Mangakakalot.
-3. **Auth check** — if the chosen source requires auth and no valid session exists, prompts for a cURL paste; silently skipped for MangaDex.
+2. **Source picker** — auto-selects Mangakakalot, the sole registered source (see [ADR-008](../adr/008-retire-mangadex-source.md); MangaDex was retired).
+3. **Auth check** — Mangakakalot requires auth, so every run prompts for a cURL paste when no valid session exists.
 4. **Search results** — visual numbered picker, single select.
 5. **Mode picker** — Chapter or Volume.
 6. **Range picker** — visual multi-select list of available chapters or volumes; no range-string parser.
@@ -17,6 +17,9 @@ The current single-walkthrough CLI (post-epic #116) runs these steps:
 See [docs/auth-manual.md](../auth-manual.md) for step 3 in detail.
 
 ## Historical `download` command (pre-epic #116)
+
+> This section describes the legacy multi-command CLI, which used MangaDex as its primary
+> source — retired by [ADR-008](../adr/008-retire-mangadex-source.md). Kept as historical record.
 
 Covers the `download` command. The CLI always resolves metadata via MangaDex first. If the title or an acceptable language is not available, the user is prompted to choose a fallback site.
 

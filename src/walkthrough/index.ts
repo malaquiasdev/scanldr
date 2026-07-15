@@ -41,8 +41,10 @@ export interface RunWalkthroughOptions extends WalkthroughInput {
   logger: Logger;
   /** Output directory for downloads. Defaults to current working directory. */
   outDir?: string;
-  /** User config — threaded into the adapter factory (mangadex language/quality). */
+  /** User config — threaded into the adapter factory. */
   config?: Config;
+  /** Override the XDG data home used to resolve the auth.json path (tests inject a tmp dir). */
+  dataHome?: string;
   /** Override adapter factory (tests inject fakes). */
   adapterFactory?: (sourceId: string, opts: { logger: Logger; config?: Config }) => SourceAdapter;
   /** Override downloader/packer deps (tests inject fakes). */
@@ -123,6 +125,7 @@ export async function runWalkthrough(
       requiresAuth: source.requiresAuth,
       logger: opts.logger,
       probeClientFactory,
+      dataHome: opts.dataHome,
     });
 
     // Build a refresh closure reused by all adapter-call retry wrappers.
