@@ -321,6 +321,7 @@ async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<Walkthrou
       logger,
       refreshFn: doRefresh,
       progress,
+      progressEnabled,
     },
     executeDeps,
   );

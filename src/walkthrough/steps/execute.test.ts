@@ -910,4 +910,132 @@ describe("executeWalkthrough", () => {
     expect(events).toContain("page:1");
     expect(events[events.length - 1]).toBe("finish");
   });
+
+  // #171 — per-page fetch log vs stderr progress bar clobber
+  describe("walkthrough.fetch_page log gating (#171)", () => {
+    function makeCapturingLogger() {
+      const infoEvents: Array<{ event?: string; msg: string; fields: Record<string, unknown> }> =
+        [];
+      const capturingLogger = createLogger({ level: "info", format: "human", write: noop });
+      const origInfo = capturingLogger.info.bind(capturingLogger);
+      capturingLogger.info = (obj: Record<string, unknown>, msg: string) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          infoEvents.push({ event: obj.event as string, msg, fields: obj });
+        }
+        return origInfo(obj, msg);
+      };
+      return { capturingLogger, infoEvents };
+    }
+
+    // Drives a multi-page bundle (3 pages) so the fetch-page counter is actually
+    // exercised past 1, proving monotonic increment rather than a single no-op tick.
+    function makeMultiPageDownloader(): Downloader {
+      return {
+        downloadBundle: async (input) => {
+          const totalPages = input.chapters.reduce((sum, c) => sum + c.pages.length, 0);
+          for (let i = 0; i < totalPages; i++) {
+            input.onPageProgress?.(totalPages);
+          }
+          return {
+            chapterIds: input.chapters.map((c) => c.id),
+            outputPath: join(outDir, "naruto", "naruto-chapter-001.cbz"),
+            byteSize: 100,
+          };
+        },
+      };
+    }
+
+    test("bar enabled (progressEnabled=true) → per-page log suppressed, chapter-level logs unaffected", async () => {
+      const { capturingLogger, infoEvents } = makeCapturingLogger();
+
+      const opts: ExecuteWalkthroughInput = {
+        ...plan,
+        outDir,
+        adapter: makeFakeAdapter(),
+        logger: capturingLogger,
+        progressEnabled: true,
+      };
+
+      const result = await executeWalkthrough(opts, {
+        downloader: makeMultiPageDownloader(),
+        packer: makeFakePacker(),
+      });
+
+      expect(result.failed).toBe(0);
+      expect(infoEvents.some((e) => e.event === "walkthrough.fetch_page")).toBe(false);
+      // chapter/bundle-level logs still fire
+      expect(infoEvents.some((e) => e.event === "walkthrough.execute_start")).toBe(true);
+      expect(infoEvents.some((e) => e.event === "walkthrough.download_bundle_done")).toBe(true);
+    });
+
+    test("bar disabled (progressEnabled=false) → per-page log present with correct shape, message, and monotonic counter (non-TTY/no --progress fallback)", async () => {
+      const { capturingLogger, infoEvents } = makeCapturingLogger();
+
+      const multiPageAdapter = makeFakeAdapter({
+        fetchChapterInput: async () => ({
+          ...fakeChapterInput,
+          pages: [
+            { url: "https://example.com/page1.jpg", page: 1 },
+            { url: "https://example.com/page2.jpg", page: 2 },
+            { url: "https://example.com/page3.jpg", page: 3 },
+          ],
+        }),
+      });
+
+      const opts: ExecuteWalkthroughInput = {
+        ...plan,
+        outDir,
+        adapter: multiPageAdapter,
+        logger: capturingLogger,
+        progressEnabled: false,
+      };
+
+      const result = await executeWalkthrough(opts, {
+        downloader: makeMultiPageDownloader(),
+        packer: makeFakePacker(),
+      });
+
+      expect(result.failed).toBe(0);
+      const fetchPageEvents = infoEvents.filter((e) => e.event === "walkthrough.fetch_page");
+      // 3-page bundle -> counter increments once per page, ending at total.
+      expect(fetchPageEvents.length).toBe(3);
+      expect(fetchPageEvents.map((e) => e.fields.completed)).toEqual([1, 2, 3]);
+
+      const lastEvent = fetchPageEvents[fetchPageEvents.length - 1];
+      expect(lastEvent).toBeDefined();
+      expect(lastEvent?.fields).toEqual({
+        event: "walkthrough.fetch_page",
+        context: "walkthrough",
+        completed: 3,
+        total: 3,
+        bundle_id: "hit-1-ch-1",
+      });
+      expect(lastEvent?.fields.completed).toBe(lastEvent?.fields.total);
+      expect("page" in (lastEvent?.fields ?? {})).toBe(false);
+      expect(lastEvent?.msg).toBe("fetched 3/3 pages of Chapter 1");
+
+      expect(infoEvents.some((e) => e.event === "walkthrough.download_bundle_done")).toBe(true);
+    });
+
+    test("progressEnabled omitted (defaults to false, e.g. json mode) → per-page log present", async () => {
+      const { capturingLogger, infoEvents } = makeCapturingLogger();
+
+      const opts: ExecuteWalkthroughInput = {
+        ...plan,
+        outDir,
+        adapter: makeFakeAdapter(),
+        logger: capturingLogger,
+        // progressEnabled intentionally omitted — json mode never constructs a bar, so
+        // callers pass progressEnabled: false (or omit it) in that path too.
+      };
+
+      const result = await executeWalkthrough(opts, {
+        downloader: makeMultiPageDownloader(),
+        packer: makeFakePacker(),
+      });
+
+      expect(result.failed).toBe(0);
+      expect(infoEvents.some((e) => e.event === "walkthrough.fetch_page")).toBe(true);
+    });
+  });
 });
