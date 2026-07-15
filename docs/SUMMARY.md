@@ -12,6 +12,7 @@ This document is the central index of all technical documentation for **scanldr*
 - [ADR-003: SQLite for Download History](adr/003-sqlite-download-history.md) _(superseded by ADR-006)_
 - [ADR-004: Subscriptions Stored in SQLite](adr/004-subscriptions-in-sqlite.md) _(withdrawn)_
 - [ADR-006: Trace store as state, with TTL retention](adr/006-trace-store-as-state-with-ttl.md)
+- [ADR-007: Reassemble CDN vertically-tiled mangakakalot pages](adr/007-reassemble-cdn-tiled-pages.md) _(proposed)_
 
 ## Historical Flows (pre-epic #116)
 
