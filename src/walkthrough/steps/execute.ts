@@ -167,7 +167,7 @@ export async function executeWalkthrough(
             `resolved ${totalPages} pages for ${bundle.label}`,
           );
 
-          progress?.updateChapter(bundleIndex, totalPages);
+          progress?.updateChapter(bundleIndex, totalPages, bundle.label);
 
           // Same "count completions, not dispatch order" rule as the progress bar
           // (pages resolve out of order under concurrency): this is a completion

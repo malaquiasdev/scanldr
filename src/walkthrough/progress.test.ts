@@ -21,7 +21,7 @@ describe("createProgress — enabled/disabled gating", () => {
     const sink = makeSink();
     const progress = createProgress({ enabled: false, totalChapters: 3, write: sink.write });
 
-    progress.updateChapter(1, 10);
+    progress.updateChapter(1, 10, "Chapter 1");
     progress.updatePage();
     progress.finish();
 
@@ -38,10 +38,10 @@ describe("createProgress — enabled/disabled gating", () => {
       now: clock.now,
     });
 
-    progress.updateChapter(1, 10);
+    progress.updateChapter(1, 10, "Chapter 1");
 
     expect(sink.chunks.length).toBe(1);
-    expect(sink.chunks[0]).toContain("Chapter 1/2");
+    expect(sink.chunks[0]).toContain("Chapter 1 [1/2]");
     expect(sink.chunks[0]).toContain("page 0/10");
   });
 
@@ -52,7 +52,7 @@ describe("createProgress — enabled/disabled gating", () => {
     progress.finish();
 
     expect(sink.chunks.length).toBe(2);
-    expect(sink.chunks[0]).toContain("Chapter 0/1");
+    expect(sink.chunks[0]).toContain("[0/1]");
     expect(sink.chunks[1]).toBe("\n");
   });
 
@@ -77,7 +77,7 @@ describe("createProgress — finish() flushes the true final frame", () => {
       now: clock.now,
     });
 
-    progress.updateChapter(1, 10); // force render #1
+    progress.updateChapter(1, 10, "Chapter 1"); // force render #1
     sink.chunks.length = 0;
 
     // Simulate pages 1..9 within the throttle window (all dropped), then the true final
@@ -109,7 +109,7 @@ describe("createProgress — throttling (~5 updates/sec)", () => {
       now: clock.now,
     });
 
-    progress.updateChapter(1, 100); // force render #1
+    progress.updateChapter(1, 100, "Chapter 1"); // force render #1
     sink.chunks.length = 0;
 
     progress.updatePage(); // within throttle window -> no render
@@ -129,7 +129,7 @@ describe("createProgress — throttling (~5 updates/sec)", () => {
       now: clock.now,
     });
 
-    progress.updateChapter(1, 100);
+    progress.updateChapter(1, 100, "Chapter 1");
     sink.chunks.length = 0;
 
     progress.updatePage();
@@ -158,7 +158,7 @@ describe("createProgress — monotonic progress under out-of-order completion", 
     // (e.g. page 3 finishes first, then page 1, then page 2). The renderer never sees an
     // index — it must count completions, so the sequence of rendered pages must be
     // strictly 1, 2, 3 (never backward), ending at 3/3 = 100%.
-    progress.updateChapter(1, 3);
+    progress.updateChapter(1, 3, "Chapter 1");
 
     const renderedPages: number[] = [];
     const captureFrame = () => {
@@ -189,6 +189,61 @@ describe("createProgress — monotonic progress under out-of-order completion", 
   });
 });
 
+describe("createProgress — chapter/volume label rendering", () => {
+  test("renders label alongside the position index", () => {
+    const sink = makeSink();
+    const progress = createProgress({ enabled: true, totalChapters: 5, write: sink.write });
+
+    progress.updateChapter(3, 79, "Chapter 33");
+
+    const line = sink.chunks[sink.chunks.length - 1] ?? "";
+    expect(line).toContain("Chapter 33 [3/5]");
+  });
+
+  test("decimal chapter label renders verbatim", () => {
+    const sink = makeSink();
+    const progress = createProgress({ enabled: true, totalChapters: 5, write: sink.write });
+
+    progress.updateChapter(5, 20, "Chapter 34.5");
+
+    const line = sink.chunks[sink.chunks.length - 1] ?? "";
+    expect(line).toContain("Chapter 34.5 [5/5]");
+  });
+
+  test("volume mode label renders", () => {
+    const sink = makeSink();
+    const progress = createProgress({ enabled: true, totalChapters: 1, write: sink.write });
+
+    progress.updateChapter(1, 30, "Volume 9");
+
+    const line = sink.chunks[sink.chunks.length - 1] ?? "";
+    expect(line).toContain("Volume 9 [1/1]");
+  });
+
+  test("a long label is truncated with an ellipsis to avoid wrapping the single-line redraw", () => {
+    const sink = makeSink();
+    const progress = createProgress({ enabled: true, totalChapters: 1, write: sink.write });
+    const longLabel = "Chapter 1 — A Very Long Title That Goes On And On Forever";
+
+    progress.updateChapter(1, 10, longLabel);
+
+    const line = sink.chunks[sink.chunks.length - 1] ?? "";
+    expect(line).not.toContain(longLabel);
+    expect(line).toContain("Chapter 1 — A Very Long…");
+  });
+
+  test("empty/initial label (before first updateChapter) does not render 'undefined'", () => {
+    const sink = makeSink();
+    const progress = createProgress({ enabled: true, totalChapters: 1, write: sink.write });
+
+    progress.finish();
+
+    const line = sink.chunks[0] ?? "";
+    expect(line).not.toContain("undefined");
+    expect(line).toContain("[0/1]");
+  });
+});
+
 describe("createProgress — progress math and ETA", () => {
   test("percent reflects completed chapters + fractional progress in the current chapter", () => {
     const sink = makeSink();
@@ -201,7 +256,7 @@ describe("createProgress — progress math and ETA", () => {
     });
 
     // Chapter 1/2, page 5/10 -> 0 completed chapters + 0.5 fraction, over 2 chapters = 25%
-    progress.updateChapter(1, 10);
+    progress.updateChapter(1, 10, "Chapter 1");
     clock.advance(250);
     for (let i = 1; i <= 5; i++) {
       progress.updatePage();
@@ -222,7 +277,7 @@ describe("createProgress — progress math and ETA", () => {
       now: clock.now,
     });
 
-    progress.updateChapter(1, 4);
+    progress.updateChapter(1, 4, "Chapter 1");
     clock.advance(1000); // simulate 1s per page
     progress.updatePage();
     clock.advance(1000);
@@ -238,7 +293,7 @@ describe("createProgress — progress math and ETA", () => {
     const sink = makeSink();
     const progress = createProgress({ enabled: true, totalChapters: 1, write: sink.write });
 
-    progress.updateChapter(1, 10);
+    progress.updateChapter(1, 10, "Chapter 1");
 
     const line = sink.chunks[sink.chunks.length - 1] ?? "";
     expect(line).toContain("ETA ~--");
@@ -249,7 +304,7 @@ describe("createProgress — progress math and ETA", () => {
     const sink = makeSink();
     const progress = createProgress({ enabled: true, totalChapters: 3, write: sink.write });
 
-    progress.updateChapter(1, 10);
+    progress.updateChapter(1, 10, "Chapter 1");
 
     const line = sink.chunks[sink.chunks.length - 1] ?? "";
     expect(line).toContain("0%");
@@ -265,7 +320,7 @@ describe("createProgress — progress math and ETA", () => {
       now: clock.now,
     });
 
-    progress.updateChapter(1, 5);
+    progress.updateChapter(1, 5, "Chapter 1");
     clock.advance(300);
     // Overshoot: more completions than totalPages (e.g. a stray extra callback).
     for (let i = 0; i < 7; i++) {
@@ -281,7 +336,7 @@ describe("createProgress — progress math and ETA", () => {
     const sink = makeSink();
     const progress = createProgress({ enabled: true, totalChapters: 2, write: sink.write });
 
-    progress.updateChapter(1, 0);
+    progress.updateChapter(1, 0, "Chapter 1");
 
     const line = sink.chunks[sink.chunks.length - 1] ?? "";
     expect(line).toContain("0%");
@@ -298,13 +353,13 @@ describe("createProgress — progress math and ETA", () => {
       now: clock.now,
     });
 
-    progress.updateChapter(1, 10);
+    progress.updateChapter(1, 10, "Chapter 1");
     progress.updatePage();
     clock.advance(300);
-    progress.updateChapter(2, 20);
+    progress.updateChapter(2, 20, "Chapter 2");
 
     const line = sink.chunks[sink.chunks.length - 1] ?? "";
-    expect(line).toContain("Chapter 2/2");
+    expect(line).toContain("Chapter 2 [2/2]");
     expect(line).toContain("page 0/20");
   });
 });

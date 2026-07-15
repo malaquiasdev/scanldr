@@ -144,11 +144,13 @@ export interface ProgressState {
   percent: number;
   avgPageMs: number;
   etaMs: number;
+  /** Bundle display label (e.g. "Chapter 33" or "Volume 9"); empty before first updateChapter. */
+  label: string;
 }
 
 export interface ProgressHandle {
   /** Call when starting a new chapter/bundle; resets page counter. */
-  updateChapter(chapterIndex: number, chapterTotalPages: number): void;
+  updateChapter(chapterIndex: number, chapterTotalPages: number, label: string): void;
   /** Call after each page completes. Counts completions internally; order-agnostic. */
   updatePage(): void;
   /** Clears the line with a trailing newline. No-op when disabled. */
