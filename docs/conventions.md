@@ -6,11 +6,11 @@
 src/
 ├── index.ts            # CLI entrypoint — trace store + logger init → runWalkthrough
 ├── walkthrough/        # Orchestrates the 9-step one-shot download walkthrough
-├── sources/            # Source adapter layer (mangadex, mangakakalot wrappers)
+├── sources/            # Source adapter layer (mangakakalot wrapper — sole source, see ADR-008)
 ├── pack/               # CBZ/ZIP packaging primitives
 ├── plugins/            # Infrastructure: config/, logger/, db/, errors/, guards/, trace/
 ├── downloader/         # Business logic: image fetch + packaging
-└── integrations/       # External site clients: mangadex/, mangakakalot/
+└── integrations/       # External site clients: mangakakalot/
 migrations/             # Versioned SQL migrations (applied in lexicographic order)
 ```
 
@@ -41,7 +41,7 @@ Signature follows the pino convention — structured fields first, human message
 
 ```ts
 logger.info({ event: "downloader.chapter_start", context: "downloader", id, num }, "downloading chapter")
-logger.warn({ event: "mangadex.rate_limited", context: "http", attempt, waitMs }, "429 rate-limited, backing off")
+logger.warn({ event: "fallback_http.retry", context: "fallback-http", attempt, waitMs }, "page fetch failed, retrying")
 logger.error({ event: "cli.boot_failed", context: "main", err }, "failed to open database")
 ```
 

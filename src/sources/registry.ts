@@ -4,7 +4,6 @@ export type { SourceDescriptor } from "./types.ts";
 
 export const SOURCES: readonly SourceDescriptor[] = [
   { id: "mangakakalot", label: "Mangakakalot", requiresAuth: true },
-  { id: "mangadex", label: "MangaDex", requiresAuth: false },
 ] as const;
 
 export function getSource(id: string): SourceDescriptor {

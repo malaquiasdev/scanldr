@@ -26,7 +26,7 @@ mock.module("../../pack/index.ts", () => ({
 
 import { executeWalkthrough } from "./execute.ts";
 
-const source = getSource("mangadex");
+const source = getSource("mangakakalot");
 
 const plan: WalkthroughResult = {
   title: "Naruto",

@@ -9,24 +9,12 @@ import type { Config, LoadConfigOptions, LoadConfigResult } from "./types.ts";
 export type { Config, LoadConfigOptions, LoadConfigResult } from "./types.ts";
 
 export const DEFAULT_CONFIG: Config = {
-  preferred_languages: ["en"],
-  download_quality: "data",
   default_format: "cbz",
   default_out: "./download",
   db_path: join(homedir(), ".local", "share", "scanldr", "scanldr.db"),
   image_concurrency: 4,
   chapter_delay_ms: 1000,
 };
-
-const BCP47 = /^[a-z]{2,3}(?:-[A-Z]{2})?(?:-[a-zA-Z0-9]{1,8})*$/;
-
-function normalizeBcp47(tag: string): string {
-  const [lang, region, ...rest] = tag.split("-");
-  if (!lang) return tag;
-  const parts = [lang.toLowerCase()];
-  if (region) parts.push(region.length === 2 ? region.toUpperCase() : region.toLowerCase());
-  return [...parts, ...rest].join("-");
-}
 
 async function resolveConfigPath(opts: LoadConfigOptions): Promise<string | null> {
   const env = opts.env ?? process.env;
@@ -69,29 +57,6 @@ export function validateAndMerge(parsed: unknown, source?: string): Config {
 
   const merged: Config = { ...DEFAULT_CONFIG };
   const p = parsed;
-
-  if ("preferred_languages" in p) {
-    const v = p.preferred_languages;
-    check(
-      Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string" && x.length > 0),
-      new ConfigError("preferred_languages must be a non-empty array of strings", source),
-    );
-    const normalized = (v as string[]).map(normalizeBcp47);
-    check(
-      normalized.every((x) => BCP47.test(x)),
-      new ConfigError("preferred_languages contains an invalid BCP 47 code", source),
-    );
-    merged.preferred_languages = normalized;
-  }
-
-  if ("download_quality" in p) {
-    const v = p.download_quality;
-    check(
-      v === "data" || v === "data-saver",
-      new ConfigError("download_quality must be 'data' or 'data-saver'", source),
-    );
-    merged.download_quality = v;
-  }
 
   if ("default_format" in p) {
     const v = p.default_format;
