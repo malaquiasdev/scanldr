@@ -654,6 +654,34 @@ describe("executeWalkthrough", () => {
     ).rejects.toBeInstanceOf(MangakakalotParseError);
   });
 
+  test("#173 P1: progress.finish() still runs when a MangakakalotParseError aborts execution (error-path teardown)", async () => {
+    const finishCalls: string[] = [];
+    const fakeProgress: ProgressHandle = {
+      updateChapter: () => {},
+      updatePage: () => {},
+      finish: () => finishCalls.push("finish"),
+    };
+    const adapter = makeFakeAdapter({
+      fetchChapterInput: async () => {
+        throw new MangakakalotParseError("div.chapter-list", "https://example.com", "DOM drift");
+      },
+    });
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      outDir,
+      adapter,
+      logger,
+      progress: fakeProgress,
+    };
+
+    await expect(
+      executeWalkthrough(opts, { downloader: makeFakeDownloader(), packer: makeFakePacker() }),
+    ).rejects.toBeInstanceOf(MangakakalotParseError);
+
+    expect(finishCalls).toEqual(["finish"]);
+  });
+
   test("MangakakalotParseError thrown from downloader propagates, aborts walkthrough", async () => {
     const downloader = makeFakeDownloader({
       downloadBundle: mock(async () => {
