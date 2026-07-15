@@ -1,9 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 import type { ImageRef } from "@integrations/_shared/media.ts";
-import type { MangakakalotClient, VolumeBucket } from "@integrations/mangakakalot/client/index.ts";
+import type { MangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
 import { createLogger } from "@plugins/logger/index.ts";
-import { WalkthroughError } from "../../walkthrough/types.ts";
 import { createMangakakalotAdapter } from "./mangakakalot.ts";
 
 const noop = () => {};
@@ -37,25 +36,10 @@ const chapterFixtures: ChapterRef[] = [
   },
 ];
 
-const volumeFixtures: VolumeBucket[] = [
-  {
-    volume: "1",
-    chapters: [
-      { id: "naruto/chapter-1", chapter: "1" },
-      { id: "naruto/chapter-2", chapter: "2" },
-    ],
-  },
-  {
-    volume: "2",
-    chapters: [{ id: "naruto/chapter-3", chapter: "3" }],
-  },
-];
-
 function makeFakeClient(overrides: Partial<MangakakalotClient> = {}): MangakakalotClient {
   return {
     searchManga: async () => candidateFixtures,
     getChapterList: async () => chapterFixtures,
-    getVolumeMap: async () => volumeFixtures,
     getChapterImages: async (): Promise<ImageRef[]> => [
       { url: "https://cdn.mangakakalot.gg/naruto/chapter-1/page-01.jpg", page: 1 },
     ],
@@ -91,30 +75,6 @@ describe("MangakakalotAdapter", () => {
     expect(chapters).toHaveLength(2);
     expect(chapters[0]).toMatchObject({ id: "naruto/chapter-1", num: "1", label: "Chapter 1" });
     expect(chapters[1]).toMatchObject({ id: "naruto/chapter-2", num: "2", label: "Chapter 2" });
-  });
-
-  test("listVolumes maps VolumeBucket to VolumeListing with chapterIds and chapterNums", async () => {
-    const adapter = createMangakakalotAdapter({ logger, client: makeFakeClient() });
-    const volumes = await adapter.listVolumes("naruto");
-    expect(volumes).toHaveLength(2);
-    expect(volumes[0]?.label).toMatch(/Volume 1/);
-    expect(volumes[0]?.volume).toBe("1");
-    // chapterIds populated in source order
-    expect(volumes[0]?.chapterIds).toEqual(["naruto/chapter-1", "naruto/chapter-2"]);
-    // chapterNums parallel to chapterIds
-    expect(volumes[0]?.chapterNums).toEqual(["1", "2"]);
-    expect(volumes[0]?.chapterIds?.length).toBe(volumes[0]?.chapterNums?.length);
-    // second volume
-    expect(volumes[1]?.chapterIds).toEqual(["naruto/chapter-3"]);
-    expect(volumes[1]?.chapterNums).toEqual(["3"]);
-  });
-
-  test("listVolumes throws WalkthroughError when volume map is empty", async () => {
-    const adapter = createMangakakalotAdapter({
-      logger,
-      client: makeFakeClient({ getVolumeMap: async () => [] }),
-    });
-    await expect(adapter.listVolumes("naruto")).rejects.toThrow(WalkthroughError);
   });
 
   test("listChapters maps chapter:null to the 'none' sentinel, not a synthetic sequential number", async () => {
@@ -201,27 +161,6 @@ describe("MangakakalotAdapter", () => {
     // the resulting filenames are distinct.
     const sanitized = chapters.map((c) => c.num.replace(/[^a-z0-9.]/gi, "-"));
     expect(new Set(sanitized).size).toBe(2);
-  });
-
-  test("listVolumes maps chapter:null to the 'none' sentinel, not a bucketIndex-based number", async () => {
-    const volumeFixturesWithNull: VolumeBucket[] = [
-      {
-        volume: "1",
-        chapters: [
-          { id: "naruto/chapter-1", chapter: "1" },
-          { id: "naruto/extra-1", chapter: null },
-        ],
-      },
-    ];
-    const adapter = createMangakakalotAdapter({
-      logger,
-      client: makeFakeClient({ getVolumeMap: async () => volumeFixturesWithNull }),
-    });
-    const volumes = await adapter.listVolumes("naruto");
-    expect(volumes).toHaveLength(1);
-    expect(volumes[0]?.chapterNums).toEqual(["1", "none-1"]);
-    // Must never produce the old synthetic bucketIndex*1000 + i + 1 shape (e.g. "1002").
-    expect(volumes[0]?.chapterNums?.some((n) => /^\d{4}$/.test(n))).toBe(false);
   });
 
   test("fetchChapterInput resolves pages from getChapterImages", async () => {

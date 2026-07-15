@@ -7,23 +7,9 @@ import { MangakakalotParseError } from "../../integrations/mangakakalot/client/t
 import { createLogger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import { getSource } from "../../sources/index.ts";
-import type { Downloader, Packer, ProgressHandle, WalkthroughResult } from "../types.ts";
+import type { Downloader, ProgressHandle, WalkthroughResult } from "../types.ts";
 import { WalkthroughError } from "../types.ts";
 import type { ExecuteWalkthroughInput } from "./execute.ts";
-
-const mockInjectCoverIntoCbz = mock(async () => {});
-const mockFetchCover = mock(async (url: string) => {
-  if (url.includes("fail")) throw new Error("fetch failed");
-  return { bytes: new Uint8Array([1, 2, 3]), ext: ".jpg" };
-});
-
-mock.module("../../pack/index.ts", () => ({
-  buildVolumeFilename: (slug: string, name: string) => `${slug}-volume-${name}.cbz`,
-  fetchCover: mockFetchCover,
-  injectCoverIntoCbz: mockInjectCoverIntoCbz,
-  packVolume: mock(async () => ({ outputPath: "path", byteSize: 0 })),
-}));
-
 import { executeWalkthrough } from "./execute.ts";
 
 const source = getSource("mangakakalot");
@@ -32,11 +18,7 @@ const plan: WalkthroughResult = {
   title: "Naruto",
   source,
   hit: { id: "hit-1", title: "Naruto", originalLanguage: "ja", year: 1999 },
-  mode: "chapter",
-  selectedBundles: [{ kind: "chapter", label: "Chapter 1", id: "hit-1-ch-1", num: "1" }],
-  groupIntoVolume: false,
-  volumeName: null,
-  coverUrl: null,
+  selectedBundles: [{ label: "Chapter 1", id: "hit-1-ch-1", num: "1" }],
 };
 
 const noop = () => {};
@@ -54,7 +36,6 @@ function makeFakeAdapter(overrides: Partial<SourceAdapter> = {}): SourceAdapter 
   return {
     search: async () => [],
     listChapters: async () => [],
-    listVolumes: async () => [],
     fetchChapterInput: async () => fakeChapterInput,
     ...overrides,
   };
@@ -66,16 +47,6 @@ function makeFakeDownloader(overrides: Partial<Downloader> = {}): Downloader {
       chapterIds: ["hit-1-ch-1"],
       outputPath: join(outDir, "naruto", "naruto-chapter-001.cbz"),
       byteSize: 100,
-    })),
-    ...overrides,
-  };
-}
-
-function makeFakePacker(overrides: Partial<Packer> = {}): Packer {
-  return {
-    packVolume: mock(async (input) => ({
-      outputPath: join(outDir, "naruto", `${input.slug}-volume-001.cbz`),
-      byteSize: 500,
     })),
     ...overrides,
   };
@@ -94,7 +65,6 @@ describe("executeWalkthrough", () => {
     const opts: ExecuteWalkthroughInput = { ...plan, outDir, adapter, logger };
     const result = await executeWalkthrough(opts, {
       downloader: makeFakeDownloader(),
-      packer: makeFakePacker(),
     });
 
     expect(fetchedIds).toContain("hit-1-ch-1");
@@ -116,276 +86,10 @@ describe("executeWalkthrough", () => {
     };
     const result = await executeWalkthrough(opts, {
       downloader: makeFakeDownloader(),
-      packer: makeFakePacker(),
     });
 
     expect(result.failed).toBe(1);
     expect(result.outputs).toHaveLength(0);
-  });
-
-  test("groupIntoVolume=true calls packVolume when no failures", async () => {
-    const packCalls: string[] = [];
-
-    const opts: ExecuteWalkthroughInput = {
-      ...plan,
-      groupIntoVolume: true,
-      outDir,
-      adapter: makeFakeAdapter(),
-      logger,
-    };
-    const result = await executeWalkthrough(opts, {
-      downloader: makeFakeDownloader(),
-      packer: makeFakePacker({
-        packVolume: mock(async (input) => {
-          packCalls.push(input.slug);
-          return { outputPath: join(outDir, "naruto", "naruto-volume-001.cbz"), byteSize: 500 };
-        }),
-      }),
-    });
-
-    expect(packCalls).toContain("naruto");
-    expect(result.failed).toBe(0);
-  });
-
-  test("groupIntoVolume=false does not call packVolume", async () => {
-    const packCalls: string[] = [];
-
-    const opts: ExecuteWalkthroughInput = {
-      ...plan,
-      groupIntoVolume: false,
-      outDir,
-      adapter: makeFakeAdapter(),
-      logger,
-    };
-    await executeWalkthrough(opts, {
-      downloader: makeFakeDownloader(),
-      packer: makeFakePacker({
-        packVolume: mock(async (input) => {
-          packCalls.push(input.slug);
-          return { outputPath: "", byteSize: 0 };
-        }),
-      }),
-    });
-
-    expect(packCalls).toHaveLength(0);
-  });
-
-  test("volume mode: fetchChapterInput called once per chapter id, downloader called once with all inputs", async () => {
-    const fetchedIds: string[] = [];
-    const adapter = makeFakeAdapter({
-      fetchChapterInput: async (id, num) => {
-        fetchedIds.push(id);
-        return { ...fakeChapterInput, id, num: Number(num ?? "0") };
-      },
-    });
-
-    const volumeBundle = {
-      kind: "volume" as const,
-      label: "Volume 1",
-      id: "vol:1",
-      num: "1",
-      chapterIds: ["c1", "c2", "c3"],
-      chapterNums: ["1", "2", "3"],
-    };
-
-    const opts: ExecuteWalkthroughInput = {
-      ...plan,
-      mode: "volume",
-      selectedBundles: [volumeBundle],
-      groupIntoVolume: true,
-      outDir,
-      adapter,
-      logger,
-    };
-
-    const fakeDownloader = makeFakeDownloader();
-    const result = await executeWalkthrough(opts, {
-      downloader: fakeDownloader,
-      packer: makeFakePacker(),
-    });
-
-    expect(fetchedIds).toEqual(["c1", "c2", "c3"]);
-    expect(result.failed).toBe(0);
-    // downloader called once with all 3 chapter inputs
-    expect((fakeDownloader.downloadBundle as ReturnType<typeof mock>).mock.calls.length).toBe(1);
-    const rawCall = (fakeDownloader.downloadBundle as ReturnType<typeof mock>).mock
-      .calls[0] as unknown[];
-    const downloadArg = rawCall[0] as { chapters: unknown[] };
-    expect(downloadArg.chapters).toHaveLength(3);
-  });
-
-  test("volume mode → packer.packVolume is NOT called", async () => {
-    const packer = makeFakePacker();
-    const volumeBundle = {
-      kind: "volume" as const,
-      label: "Volume 1",
-      id: "vol:1",
-      num: "1",
-      chapterIds: ["c1", "c2"],
-      chapterNums: ["1", "2"],
-    };
-
-    const opts: ExecuteWalkthroughInput = {
-      ...plan,
-      mode: "volume",
-      selectedBundles: [volumeBundle],
-      groupIntoVolume: true,
-      coverUrl: null,
-      outDir,
-      adapter: makeFakeAdapter(),
-      logger,
-    };
-
-    const result = await executeWalkthrough(opts, {
-      downloader: makeFakeDownloader(),
-      packer,
-    });
-
-    expect((packer.packVolume as ReturnType<typeof mock>).mock.calls.length).toBe(0);
-    // downloader-produced path is the final artifact
-    expect(result.outputs).toHaveLength(1);
-    expect(result.failed).toBe(0);
-  });
-
-  test("volume mode with coverUrl → injects cover and logs success", async () => {
-    mockInjectCoverIntoCbz.mockClear();
-    mockFetchCover.mockClear();
-    mockFetchCover.mockImplementation(async () => ({ bytes: new Uint8Array([1, 2]), ext: ".jpg" }));
-    mockInjectCoverIntoCbz.mockImplementation(async () => {});
-
-    const infoEvents: string[] = [];
-    const capturingLogger = createLogger({ level: "info", format: "human", write: noop });
-    const origInfo = capturingLogger.info.bind(capturingLogger);
-    capturingLogger.info = (obj: Record<string, unknown>, msg: string) => {
-      if (typeof obj === "object" && obj !== null && "event" in obj) {
-        infoEvents.push(obj.event as string);
-      }
-      return origInfo(obj, msg);
-    };
-
-    const volumeBundle = {
-      kind: "volume" as const,
-      label: "Volume 1",
-      id: "vol:1",
-      num: "1",
-      chapterIds: ["c1"],
-      chapterNums: ["1"],
-    };
-
-    const opts: ExecuteWalkthroughInput = {
-      ...plan,
-      mode: "volume",
-      selectedBundles: [volumeBundle],
-      groupIntoVolume: true,
-      coverUrl: "https://example.com/cover.jpg",
-      outDir,
-      adapter: makeFakeAdapter(),
-      logger: capturingLogger,
-    };
-
-    await executeWalkthrough(opts, {
-      downloader: makeFakeDownloader(),
-      packer: makeFakePacker(),
-    });
-
-    expect(mockFetchCover).toHaveBeenCalledWith("https://example.com/cover.jpg");
-    expect(mockInjectCoverIntoCbz).toHaveBeenCalled();
-    expect(infoEvents).toContain("walkthrough.cover_injected");
-  });
-
-  test("volume mode with coverUrl → cover fetch fails, warns and continues", async () => {
-    mockInjectCoverIntoCbz.mockClear();
-    mockFetchCover.mockClear();
-    mockFetchCover.mockImplementation(async () => {
-      throw new Error("fetch failed");
-    });
-
-    const warnEvents: string[] = [];
-    const capturingLogger = createLogger({ level: "warn", format: "human", write: noop });
-    const origWarn = capturingLogger.warn.bind(capturingLogger);
-    capturingLogger.warn = (obj: Record<string, unknown>, msg: string) => {
-      if (typeof obj === "object" && obj !== null && "event" in obj) {
-        warnEvents.push(obj.event as string);
-      }
-      return origWarn(obj, msg);
-    };
-
-    const volumeBundle = {
-      kind: "volume" as const,
-      label: "Volume 1",
-      id: "vol:1",
-      num: "1",
-      chapterIds: ["c1"],
-      chapterNums: ["1"],
-    };
-
-    const opts: ExecuteWalkthroughInput = {
-      ...plan,
-      mode: "volume",
-      selectedBundles: [volumeBundle],
-      groupIntoVolume: true,
-      coverUrl: "https://example.com/cover.jpg",
-      outDir,
-      adapter: makeFakeAdapter(),
-      logger: capturingLogger,
-    };
-
-    await executeWalkthrough(opts, {
-      downloader: makeFakeDownloader(),
-      packer: makeFakePacker(),
-    });
-
-    expect(mockFetchCover).toHaveBeenCalledWith("https://example.com/cover.jpg");
-    expect(mockInjectCoverIntoCbz).not.toHaveBeenCalled();
-    expect(warnEvents).toContain("walkthrough.cover_fetch_failed");
-  });
-
-  test("volume mode with coverUrl → cover injection fails, warns and continues", async () => {
-    mockInjectCoverIntoCbz.mockClear();
-    mockFetchCover.mockClear();
-    mockFetchCover.mockImplementation(async () => ({ bytes: new Uint8Array([1, 2]), ext: ".jpg" }));
-    mockInjectCoverIntoCbz.mockImplementation(async () => {
-      throw new Error("injection failed");
-    });
-
-    const warnEvents: string[] = [];
-    const capturingLogger = createLogger({ level: "warn", format: "human", write: noop });
-    const origWarn = capturingLogger.warn.bind(capturingLogger);
-    capturingLogger.warn = (obj: Record<string, unknown>, msg: string) => {
-      if (typeof obj === "object" && obj !== null && "event" in obj) {
-        warnEvents.push(obj.event as string);
-      }
-      return origWarn(obj, msg);
-    };
-
-    const volumeBundle = {
-      kind: "volume" as const,
-      label: "Volume 1",
-      id: "vol:1",
-      num: "1",
-      chapterIds: ["c1"],
-      chapterNums: ["1"],
-    };
-
-    const opts: ExecuteWalkthroughInput = {
-      ...plan,
-      mode: "volume",
-      selectedBundles: [volumeBundle],
-      groupIntoVolume: true,
-      coverUrl: "https://example.com/cover.jpg",
-      outDir,
-      adapter: makeFakeAdapter(),
-      logger: capturingLogger,
-    };
-
-    await executeWalkthrough(opts, {
-      downloader: makeFakeDownloader(),
-      packer: makeFakePacker(),
-    });
-
-    expect(mockFetchCover).toHaveBeenCalledWith("https://example.com/cover.jpg");
-    expect(mockInjectCoverIntoCbz).toHaveBeenCalled();
-    expect(warnEvents).toContain("walkthrough.cover_injection_failed");
   });
 
   test("CF during page download triggers refresh + retry succeeds", async () => {
@@ -407,7 +111,7 @@ describe("executeWalkthrough", () => {
     });
 
     const opts: ExecuteWalkthroughInput = { ...plan, outDir, adapter, logger, refreshFn };
-    const result = await executeWalkthrough(opts, { downloader, packer: makeFakePacker() });
+    const result = await executeWalkthrough(opts, { downloader });
 
     expect(refreshFn).toHaveBeenCalledTimes(1);
     expect(result.failed).toBe(0);
@@ -430,9 +134,7 @@ describe("executeWalkthrough", () => {
       refreshFn,
     };
 
-    await expect(
-      executeWalkthrough(opts, { downloader, packer: makeFakePacker() }),
-    ).rejects.toBeInstanceOf(WalkthroughError);
+    await expect(executeWalkthrough(opts, { downloader })).rejects.toBeInstanceOf(WalkthroughError);
   });
 
   test("non-CF error → failed incremented, function returns normally", async () => {
@@ -450,7 +152,7 @@ describe("executeWalkthrough", () => {
       logger,
       refreshFn,
     };
-    const result = await executeWalkthrough(opts, { downloader, packer: makeFakePacker() });
+    const result = await executeWalkthrough(opts, { downloader });
 
     expect(refreshFn).not.toHaveBeenCalled();
     expect(result.failed).toBe(1);
@@ -473,7 +175,6 @@ describe("executeWalkthrough", () => {
     const opts: ExecuteWalkthroughInput = { ...plan, outDir, adapter, logger, refreshFn };
     const result = await executeWalkthrough(opts, {
       downloader: makeFakeDownloader(),
-      packer: makeFakePacker(),
     });
 
     expect(refreshFn).toHaveBeenCalledTimes(1);
@@ -486,8 +187,8 @@ describe("executeWalkthrough", () => {
     const downloadCalls: string[] = [];
     const refreshFn = mock(async () => {});
 
-    const bundle1 = { kind: "chapter" as const, label: "Chapter 1", id: "ch-1", num: "1" };
-    const bundle2 = { kind: "chapter" as const, label: "Chapter 2", id: "ch-2", num: "2" };
+    const bundle1 = { label: "Chapter 1", id: "ch-1", num: "1" };
+    const bundle2 = { label: "Chapter 2", id: "ch-2", num: "2" };
 
     let bundle2Attempts = 0;
     const downloader = makeFakeDownloader({
@@ -525,7 +226,7 @@ describe("executeWalkthrough", () => {
       refreshFn,
     };
 
-    const result = await executeWalkthrough(opts, { downloader, packer: makeFakePacker() });
+    const result = await executeWalkthrough(opts, { downloader });
 
     expect(result.outputs).toHaveLength(2);
     expect(result.failed).toBe(0);
@@ -535,82 +236,6 @@ describe("executeWalkthrough", () => {
     expect(fetchCalls.filter((id) => id === "ch-1")).toHaveLength(1);
     // bundle 2 fetched twice: initial attempt + retry after refresh
     expect(fetchCalls.filter((id) => id === "ch-2")).toHaveLength(2);
-  });
-
-  // P1 #2 — CF on volume-mode fetchChapterInput inside Promise.all
-  test("CF in volume fetchChapterInput: retries whole doBundle, total fetchChapterInput calls = 6", async () => {
-    const refreshFn = mock(async () => {});
-    let fetchCallCount = 0;
-
-    const adapter = makeFakeAdapter({
-      fetchChapterInput: async (id, num) => {
-        fetchCallCount++;
-        // On the very first call to c2 in the first attempt, throw CF
-        // Since Promise.all runs concurrently, we track total calls: first 3 calls = attempt 1
-        // Throw on the 2nd call (c2) during first attempt only
-        if (fetchCallCount === 2) {
-          throw new CloudflareError("https://example.com/api/chapter");
-        }
-        return { ...fakeChapterInput, id, num: Number(num ?? "0") };
-      },
-    });
-
-    const volumeBundle = {
-      kind: "volume" as const,
-      label: "Volume 1",
-      id: "vol:1",
-      num: "1",
-      chapterIds: ["c1", "c2", "c3"],
-      chapterNums: ["1", "2", "3"],
-    };
-
-    const opts: ExecuteWalkthroughInput = {
-      ...plan,
-      mode: "volume",
-      selectedBundles: [volumeBundle],
-      groupIntoVolume: true,
-      outDir,
-      adapter,
-      logger,
-      refreshFn,
-    };
-
-    const result = await executeWalkthrough(opts, {
-      downloader: makeFakeDownloader(),
-      packer: makeFakePacker(),
-    });
-
-    expect(refreshFn).toHaveBeenCalledTimes(1);
-    expect(result.outputs).toHaveLength(1);
-    expect(result.failed).toBe(0);
-    // 3 calls on first attempt (one throws CF) + 3 calls on retry = 6
-    expect(fetchCallCount).toBe(6);
-  });
-
-  // P2 — pack is skipped when WalkthroughError aborts mid-loop
-  test("packVolume NOT called when WalkthroughError aborts execution", async () => {
-    const refreshFn = mock(async () => {});
-    const downloader = makeFakeDownloader({
-      downloadBundle: mock(async () => {
-        throw new CloudflareError("https://example.com/page.jpg");
-      }),
-    });
-    const packer = makeFakePacker();
-
-    const opts: ExecuteWalkthroughInput = {
-      ...plan,
-      groupIntoVolume: true,
-      outDir,
-      adapter: makeFakeAdapter(),
-      logger,
-      refreshFn,
-    };
-
-    await expect(executeWalkthrough(opts, { downloader, packer })).rejects.toBeInstanceOf(
-      WalkthroughError,
-    );
-
-    expect((packer.packVolume as ReturnType<typeof mock>).mock.calls.length).toBe(0);
   });
 
   // P2 — refreshFn undefined + CF falls through to outer catch
@@ -629,7 +254,7 @@ describe("executeWalkthrough", () => {
       // refreshFn intentionally omitted
     };
 
-    const result = await executeWalkthrough(opts, { downloader, packer: makeFakePacker() });
+    const result = await executeWalkthrough(opts, { downloader });
 
     expect(result.failed).toBe(1);
     expect(result.outputs).toHaveLength(0);
@@ -650,7 +275,7 @@ describe("executeWalkthrough", () => {
     };
 
     await expect(
-      executeWalkthrough(opts, { downloader: makeFakeDownloader(), packer: makeFakePacker() }),
+      executeWalkthrough(opts, { downloader: makeFakeDownloader() }),
     ).rejects.toBeInstanceOf(MangakakalotParseError);
   });
 
@@ -676,7 +301,7 @@ describe("executeWalkthrough", () => {
     };
 
     await expect(
-      executeWalkthrough(opts, { downloader: makeFakeDownloader(), packer: makeFakePacker() }),
+      executeWalkthrough(opts, { downloader: makeFakeDownloader() }),
     ).rejects.toBeInstanceOf(MangakakalotParseError);
 
     expect(finishCalls).toEqual(["finish"]);
@@ -700,9 +325,9 @@ describe("executeWalkthrough", () => {
       logger,
     };
 
-    await expect(
-      executeWalkthrough(opts, { downloader, packer: makeFakePacker() }),
-    ).rejects.toBeInstanceOf(MangakakalotParseError);
+    await expect(executeWalkthrough(opts, { downloader })).rejects.toBeInstanceOf(
+      MangakakalotParseError,
+    );
   });
 
   test("generic Error during download is still swallowed (not MangakakalotParseError)", async () => {
@@ -721,7 +346,6 @@ describe("executeWalkthrough", () => {
 
     const result = await executeWalkthrough(opts, {
       downloader: makeFakeDownloader(),
-      packer: makeFakePacker(),
     });
 
     // generic error is swallowed, not rethrown
@@ -729,161 +353,31 @@ describe("executeWalkthrough", () => {
     expect(result.outputs).toHaveLength(0);
   });
 
-  test("pack filename uses bundle.num (numeric), not bundle.id (opaque)", async () => {
-    const capturedChapters: Array<{ num: string }> = [];
+  test("downloadBundle receives bundle.num (numeric), not bundle.id (opaque)", async () => {
+    const capturedBundleNumbers: string[] = [];
     const opts: ExecuteWalkthroughInput = {
       ...plan,
-      selectedBundles: [
-        { kind: "chapter", label: "Chapter 103.5", id: "naruto/chapter-103.5", num: "103.5" },
-      ],
-      groupIntoVolume: true,
+      selectedBundles: [{ label: "Chapter 103.5", id: "naruto/chapter-103.5", num: "103.5" }],
       outDir,
       adapter: makeFakeAdapter(),
       logger,
     };
 
     await executeWalkthrough(opts, {
-      downloader: makeFakeDownloader(),
-      packer: makeFakePacker({
-        packVolume: mock(async (input) => {
-          capturedChapters.push(...input.chapters);
-          return { outputPath: join(outDir, "out.cbz"), byteSize: 1 };
+      downloader: makeFakeDownloader({
+        downloadBundle: mock(async (input) => {
+          capturedBundleNumbers.push(input.bundleNumber);
+          return {
+            chapterIds: ["naruto/chapter-103.5"],
+            outputPath: join(outDir, "out.cbz"),
+            byteSize: 1,
+          };
         }),
       }),
     });
 
-    expect(capturedChapters[0]?.num).toBe("103.5");
-    expect(capturedChapters[0]?.num).not.toContain("/");
-  });
-
-  test("volume mode with coverUrl === null → no cover operations run", async () => {
-    mockInjectCoverIntoCbz.mockClear();
-    mockFetchCover.mockClear();
-
-    const infoEvents: string[] = [];
-    const warnEvents: string[] = [];
-    const capturingLogger = createLogger({ level: "info", format: "human", write: noop });
-    const origInfo = capturingLogger.info.bind(capturingLogger);
-    const origWarn = capturingLogger.warn.bind(capturingLogger);
-    capturingLogger.info = (obj: Record<string, unknown>, msg: string) => {
-      if (typeof obj === "object" && obj !== null && "event" in obj) {
-        infoEvents.push(obj.event as string);
-      }
-      return origInfo(obj, msg);
-    };
-    capturingLogger.warn = (obj: Record<string, unknown>, msg: string) => {
-      if (typeof obj === "object" && obj !== null && "event" in obj) {
-        warnEvents.push(obj.event as string);
-      }
-      return origWarn(obj, msg);
-    };
-
-    const volumeBundle = {
-      kind: "volume" as const,
-      label: "Volume 1",
-      id: "vol:1",
-      num: "1",
-      chapterIds: ["c1"],
-      chapterNums: ["1"],
-    };
-
-    const opts: ExecuteWalkthroughInput = {
-      ...plan,
-      mode: "volume",
-      selectedBundles: [volumeBundle],
-      groupIntoVolume: true,
-      coverUrl: null,
-      outDir,
-      adapter: makeFakeAdapter(),
-      logger: capturingLogger,
-    };
-
-    const result = await executeWalkthrough(opts, {
-      downloader: makeFakeDownloader(),
-      packer: makeFakePacker(),
-    });
-
-    expect(mockFetchCover).not.toHaveBeenCalled();
-    expect(mockInjectCoverIntoCbz).not.toHaveBeenCalled();
-    expect(infoEvents.some((e) => e.includes("cover_injected"))).toBe(false);
-    expect(warnEvents.some((e) => e.includes("cover_fetch_failed"))).toBe(false);
-    expect(result.failed).toBe(0);
-    expect(result.outputs).toHaveLength(1);
-  });
-
-  test("volume mode with multiple volume bundles → injects cover into each output path", async () => {
-    mockInjectCoverIntoCbz.mockClear();
-    mockFetchCover.mockClear();
-    mockFetchCover.mockImplementation(async () => ({ bytes: new Uint8Array([1, 2]), ext: ".jpg" }));
-    mockInjectCoverIntoCbz.mockImplementation(async () => {});
-
-    const volumeBundles = [
-      {
-        kind: "volume" as const,
-        label: "Volume 1",
-        id: "vol:1",
-        num: "1",
-        chapterIds: ["c1"],
-        chapterNums: ["1"],
-      },
-      {
-        kind: "volume" as const,
-        label: "Volume 2",
-        id: "vol:2",
-        num: "2",
-        chapterIds: ["c2"],
-        chapterNums: ["2"],
-      },
-    ];
-
-    const fakeDownloader = {
-      downloadBundle: mock(async (input) => {
-        const bundleNum = (input as { bundleNumber: string }).bundleNumber;
-        return {
-          chapterIds: bundleNum === "1" ? ["c1"] : ["c2"],
-          outputPath: join(outDir, "naruto", `naruto-volume-${bundleNum}.cbz`),
-          byteSize: 100,
-        };
-      }),
-    };
-
-    const opts: ExecuteWalkthroughInput = {
-      ...plan,
-      mode: "volume",
-      selectedBundles: volumeBundles,
-      groupIntoVolume: true,
-      coverUrl: "https://example.com/cover.jpg",
-      outDir,
-      adapter: makeFakeAdapter(),
-      logger,
-    };
-
-    const result = await executeWalkthrough(opts, {
-      downloader: fakeDownloader,
-      packer: makeFakePacker(),
-    });
-
-    expect(mockFetchCover).toHaveBeenCalledTimes(1);
-    expect(mockFetchCover).toHaveBeenCalledWith("https://example.com/cover.jpg");
-
-    expect((mockInjectCoverIntoCbz as ReturnType<typeof mock>).mock.calls).toHaveLength(2);
-    const call0 = (mockInjectCoverIntoCbz as ReturnType<typeof mock>).mock.calls[0] as unknown[];
-    const path0 = call0[0] as string;
-    const cover0 = call0[1] as { bytes: Uint8Array; ext: string };
-    expect(path0).toBe(join(outDir, "naruto", "naruto-volume-1.cbz"));
-    expect(cover0).toEqual({ bytes: new Uint8Array([1, 2]), ext: ".jpg" });
-
-    const call1 = (mockInjectCoverIntoCbz as ReturnType<typeof mock>).mock.calls[1] as unknown[];
-    const path1 = call1[0] as string;
-    const cover1 = call1[1] as { bytes: Uint8Array; ext: string };
-    expect(path1).toBe(join(outDir, "naruto", "naruto-volume-2.cbz"));
-    expect(cover1).toEqual({ bytes: new Uint8Array([1, 2]), ext: ".jpg" });
-
-    expect(result.failed).toBe(0);
-    expect(result.outputs).toEqual([
-      join(outDir, "naruto", "naruto-volume-1.cbz"),
-      join(outDir, "naruto", "naruto-volume-2.cbz"),
-    ]);
+    expect(capturedBundleNumbers[0]).toBe("103.5");
+    expect(capturedBundleNumbers[0]).not.toContain("/");
   });
 
   test("progress handle is driven end-to-end: updateChapter/updatePage/finish are called from a fake downloader, ending at 100%", async () => {
@@ -929,7 +423,6 @@ describe("executeWalkthrough", () => {
 
     const result = await executeWalkthrough(opts, {
       downloader: fakeDownloader,
-      packer: makeFakePacker(),
     });
 
     expect(result.failed).toBe(0);
@@ -986,7 +479,6 @@ describe("executeWalkthrough", () => {
 
       const result = await executeWalkthrough(opts, {
         downloader: makeMultiPageDownloader(),
-        packer: makeFakePacker(),
       });
 
       expect(result.failed).toBe(0);
@@ -1020,7 +512,6 @@ describe("executeWalkthrough", () => {
 
       const result = await executeWalkthrough(opts, {
         downloader: makeMultiPageDownloader(),
-        packer: makeFakePacker(),
       });
 
       expect(result.failed).toBe(0);
@@ -1059,7 +550,6 @@ describe("executeWalkthrough", () => {
 
       const result = await executeWalkthrough(opts, {
         downloader: makeMultiPageDownloader(),
-        packer: makeFakePacker(),
       });
 
       expect(result.failed).toBe(0);

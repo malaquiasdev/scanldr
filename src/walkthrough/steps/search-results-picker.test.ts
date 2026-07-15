@@ -12,7 +12,6 @@ function makeFakeAdapter(hits: SearchHit[]): SourceAdapter {
   return {
     search: async () => hits,
     listChapters: async () => [],
-    listVolumes: async () => [],
     fetchChapterInput: async () => {
       throw new Error("not implemented");
     },
