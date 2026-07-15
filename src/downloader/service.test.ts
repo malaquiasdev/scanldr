@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChapterInput, ImageRef } from "@integrations/_shared/media.ts";
+import { unzipSync } from "fflate";
+import sharp from "sharp";
 import { createLogger } from "../plugins/logger/index.ts";
 import { downloadBundle } from "./service.ts";
 import type { DownloadBundleInput } from "./types.ts";
@@ -98,6 +100,86 @@ describe("downloadBundle — onPageProgress under concurrent fetches", () => {
     try {
       const result = await downloadBundle(input);
       expect(result.chapterIds).toEqual(["c"]);
+    } finally {
+      await rm(outDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("downloadBundle — filename numbering across chapters with CDN-tiled pages", () => {
+  test("a later chapter's filenames shift down by the earlier chapter's collapsed tile count, with no gap/overlap", async () => {
+    const outDir = join(tmpdir(), `downloader-test-${Date.now()}-${Math.random()}`);
+
+    // Chapter A: a tiled pair (2 fetched tiles -> 1 emitted page) + a standalone page.
+    // 3 fetched tiles collapse to 2 emitted pages.
+    const tileTop = await sharp({
+      create: { width: 1500, height: 1500, channels: 3, background: { r: 255, g: 0, b: 0 } },
+    })
+      .webp()
+      .toBuffer();
+    const tileBottom = await sharp({
+      create: { width: 1500, height: 652, channels: 3, background: { r: 0, g: 255, b: 0 } },
+    })
+      .webp()
+      .toBuffer();
+    const standaloneA = await sharp({
+      create: { width: 1500, height: 1076, channels: 3, background: { r: 0, g: 0, b: 255 } },
+    })
+      .webp()
+      .toBuffer();
+    const chapterAImages = [tileTop, tileBottom, standaloneA];
+
+    const chapterA: ChapterInput = {
+      id: "a",
+      num: 1,
+      pages: chapterAImages.map((_, i) => ({
+        url: `https://example.com/a/${i + 1}.webp`,
+        page: i + 1,
+      })),
+      imageFetcher: async (ref: ImageRef) => new Uint8Array(chapterAImages[ref.page - 1] ?? []),
+    };
+
+    // Chapter B: 3 plain, non-tiled pages (distinct sizes so nothing merges).
+    const chapterBImages = await Promise.all(
+      [1200, 1300, 1400].map((h) =>
+        sharp({ create: { width: 900, height: h, channels: 3, background: { r: 9, g: 9, b: 9 } } })
+          .webp()
+          .toBuffer(),
+      ),
+    );
+    const chapterB: ChapterInput = {
+      id: "b",
+      num: 2,
+      pages: chapterBImages.map((_, i) => ({
+        url: `https://example.com/b/${i + 1}.webp`,
+        page: i + 1,
+      })),
+      imageFetcher: async (ref: ImageRef) => new Uint8Array(chapterBImages[ref.page - 1] ?? []),
+    };
+
+    const input: DownloadBundleInput = {
+      outDir,
+      format: "cbz",
+      slug: "shift-test",
+      kind: "chapter",
+      bundleNumber: "1",
+      chapters: [chapterA, chapterB],
+      imageConcurrency: 3,
+      delayMs: 0,
+      dryRun: false,
+      logger,
+    };
+
+    try {
+      const result = await downloadBundle(input);
+      const bytes = await readFile(result.outputPath);
+      const entries = unzipSync(bytes);
+      const names = Object.keys(entries).sort();
+
+      // Chapter A: 3 fetched tiles collapse to 2 emitted pages -> 0001, 0002.
+      // Chapter B: 3 non-tiled pages continue contiguously -> 0003, 0004, 0005.
+      // No gap (e.g. missing 0003 from naive fetch-count offset) and no overlap.
+      expect(names).toEqual(["0001.webp", "0002.webp", "0003.webp", "0004.webp", "0005.webp"]);
     } finally {
       await rm(outDir, { recursive: true, force: true });
     }

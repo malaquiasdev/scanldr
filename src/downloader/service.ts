@@ -3,14 +3,15 @@ import { join } from "node:path";
 import type { ChapterInput, ImageRef } from "@integrations/_shared/media.ts";
 import { zipSync } from "fflate";
 import { detectExtFromBytes, pad, padBundleNumber } from "./helpers.ts";
+import { reassembleChapterPages } from "./reassemble.ts";
 import { createSemaphore } from "./semaphore.ts";
-import type { DownloadBundleInput, DownloadBundleResult, Semaphore } from "./types.ts";
+import type { DownloadBundleInput, DownloadBundleResult, RawPage, Semaphore } from "./types.ts";
 
 async function fetchPage(
   ref: ImageRef,
   fetcher: (ref: ImageRef) => Promise<Uint8Array>,
   sem: Semaphore,
-): Promise<{ data: Uint8Array; ext: string }> {
+): Promise<RawPage> {
   return sem.run(async () => {
     const data = await fetcher(ref);
     const ext = detectExtFromBytes(data) ?? ".jpg";
@@ -18,25 +19,26 @@ async function fetchPage(
   });
 }
 
+/**
+ * Fetches one chapter's raw pages, in reader order. Filenames are NOT assigned here —
+ * CDN-tiled pages may still need to be merged (see reassemble.ts) before the final page
+ * count (and therefore filenames) is known. Progress is still reported per fetched tile,
+ * since that's a download signal, not an emitted-page signal.
+ */
 async function fetchChapterPages(
   chapter: ChapterInput,
   sem: Semaphore,
-  globalOffset: number,
   totalPages: number,
   onPageProgress?: (totalPages: number) => void,
-): Promise<Array<{ filename: string; data: Uint8Array }>> {
-  const tasks = chapter.pages.map((ref, localIdx) => {
-    const globalIdx = globalOffset + localIdx;
-    return fetchPage(ref, chapter.imageFetcher, sem).then(({ data, ext }) => {
+): Promise<RawPage[]> {
+  const tasks = chapter.pages.map((ref) =>
+    fetchPage(ref, chapter.imageFetcher, sem).then((page) => {
       // Fired in completion order (not dispatch order) — caller must count completions,
-      // not trust globalIdx, since concurrent fetches resolve out of order.
+      // not trust index, since concurrent fetches resolve out of order.
       onPageProgress?.(totalPages);
-      return {
-        filename: `${pad(globalIdx + 1, 4)}${ext}`,
-        data,
-      };
-    });
-  });
+      return page;
+    }),
+  );
   return Promise.all(tasks);
 }
 
@@ -83,7 +85,10 @@ export async function downloadBundle(input: DownloadBundleInput): Promise<Downlo
 
   const sem = createSemaphore(imageConcurrency);
   const zipEntries: Record<string, Uint8Array> = {};
-  let globalOffset = 0;
+  // Running counter of ACTUAL emitted pages (post-merge), not fetched tiles — a merged
+  // tile group emits one page, so this drifts below globalOffset-by-fetch-count for
+  // chapters with CDN-tiled pages, keeping output filenames sequential/contiguous.
+  let emittedCount = 0;
   const totalPages = sorted.reduce((sum, c) => sum + c.pages.length, 0);
 
   for (let i = 0; i < sorted.length; i++) {
@@ -99,12 +104,28 @@ export async function downloadBundle(input: DownloadBundleInput): Promise<Downlo
       "downloading chapter",
     );
 
-    const pages = await fetchChapterPages(chapter, sem, globalOffset, totalPages, onPageProgress);
-    for (const { filename: fname, data } of pages) {
-      zipEntries[fname] = data;
+    const rawPages = await fetchChapterPages(chapter, sem, totalPages, onPageProgress);
+    const mergedPages = await reassembleChapterPages(rawPages, logger);
+
+    if (mergedPages.length < rawPages.length) {
+      logger.info(
+        {
+          event: "downloader.tiles_reassembled",
+          context: "downloader",
+          id: chapter.id,
+          num: chapter.num,
+          fetchedTiles: rawPages.length,
+          emittedPages: mergedPages.length,
+        },
+        "merged CDN-tiled pages into logical pages",
+      );
     }
 
-    globalOffset += chapter.pages.length;
+    for (const { data, ext } of mergedPages) {
+      emittedCount++;
+      zipEntries[`${pad(emittedCount, 4)}${ext}`] = data;
+    }
+
     if (delayMs > 0 && i < sorted.length - 1) {
       await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
     }

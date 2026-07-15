@@ -33,3 +33,15 @@ export interface DownloadBundleResult {
 export interface Semaphore {
   run: <T>(fn: () => Promise<T>) => Promise<T>;
 }
+
+/** A single fetched page, before filename assignment. */
+export interface RawPage {
+  data: Uint8Array;
+  ext: string;
+}
+
+/** Width/height of a decoded page image, used to drive tile grouping. */
+export interface PageDims {
+  width: number;
+  height: number;
+}
