@@ -92,6 +92,75 @@ interface ChapterListingCache {
   chapters: ChapterListing[] | null;
 }
 
+/** Resolves the session-probe client factory: explicit override, opt-out (null), or the real fallback-http client. */
+function resolveProbeClientFactory(
+  opts: RunWalkthroughOptions,
+): SessionProbeClientFactory | undefined {
+  if (opts.probeClientFactory === null) return undefined;
+  // Lazily wrapped so it reads the auth.json that was just written by the paste prompt.
+  return opts.probeClientFactory ?? (() => createFallbackHttp({ logger: opts.logger }));
+}
+
+/** Builds the session-refresh closure reused by all adapter-call retry wrappers. */
+function buildRefreshFn(
+  opts: RunWalkthroughOptions,
+  probeClientFactory: SessionProbeClientFactory | undefined,
+): () => Promise<void> {
+  if (opts.refreshFn) return opts.refreshFn;
+  if (!probeClientFactory) {
+    return async () => {
+      throw new WalkthroughError(
+        "Session expired but no probe factory is configured to refresh it.",
+      );
+    };
+  }
+  return async () => {
+    const { resolveAuthPath } = await import("../plugins/auth-path/index.ts");
+    const authPath = resolveAuthPath();
+    await refreshSession({ authPath, probeClientFactory, logger: opts.logger });
+  };
+}
+
+interface NewMangaIterationResult {
+  hit: SearchHit;
+  cache: ChapterListingCache;
+  lastResult: WalkthroughResult;
+}
+
+/** "New manga" entry point (also the first iteration): prompt title, search, then download. */
+async function runNewMangaIteration(
+  source: SourceDescriptor,
+  adapter: SourceAdapter,
+  doRefresh: () => Promise<void>,
+  flowBase: Omit<DownloadFlowOptions, "title" | "hit" | "cache">,
+): Promise<NewMangaIterationResult> {
+  const title = await promptTitle();
+
+  const hit = await withSessionRetry(
+    () => pickSearchResult({ query: title, sourceLabel: source.label, adapter }),
+    isCloudflareError,
+    doRefresh,
+    flowBase.logger,
+    "walkthrough.search_retry",
+  );
+  const cache: ChapterListingCache = { chapters: null };
+
+  const lastResult = await runDownloadFlow({ title, hit, cache, ...flowBase });
+  return { hit, cache, lastResult };
+}
+
+/** "Same manga" entry point: reuse hit + cached listing, re-enter at range selection. */
+async function runSameMangaIteration(
+  hit: SearchHit,
+  cache: ChapterListingCache | null,
+  title: string,
+  flowBase: Omit<DownloadFlowOptions, "title" | "hit" | "cache">,
+): Promise<{ cache: ChapterListingCache; lastResult: WalkthroughResult }> {
+  const resolvedCache = cache ?? { chapters: null };
+  const lastResult = await runDownloadFlow({ title, hit, cache: resolvedCache, ...flowBase });
+  return { cache: resolvedCache, lastResult };
+}
+
 /**
  * Composes all 9 walkthrough steps in order.
  * Returns the assembled plan + execution result on success.
@@ -105,19 +174,10 @@ export async function runWalkthrough(
   const outDir = opts.outDir ?? process.cwd();
 
   try {
-    // Step 2 — source (picked once per session; reused across "new manga" iterations)
+    // Picked once per session; reused across "new manga" iterations.
     const source = await pickSource();
 
-    // Step 3 — auth check (probe session when factory provided; production uses real fallback-http)
-    const probeClientFactory: SessionProbeClientFactory | undefined =
-      opts.probeClientFactory === null
-        ? undefined
-        : (opts.probeClientFactory ??
-          ((): SessionProbeClientFactory => {
-            // Default production factory: create a new fallback-http client each call so it
-            // reads the auth.json that was just written by the paste prompt.
-            return () => createFallbackHttp({ logger: opts.logger });
-          })());
+    const probeClientFactory = resolveProbeClientFactory(opts);
     await checkAuth({
       requiresAuth: source.requiresAuth,
       logger: opts.logger,
@@ -125,86 +185,44 @@ export async function runWalkthrough(
       dataHome: opts.dataHome,
     });
 
-    // Build a refresh closure reused by all adapter-call retry wrappers.
-    // In production this re-reads XDG auth path; in tests opts.refreshFn overrides.
-    const doRefresh: () => Promise<void> = opts.refreshFn
-      ? opts.refreshFn
-      : probeClientFactory
-        ? async () => {
-            const { resolveAuthPath } = await import("../plugins/auth-path/index.ts");
-            const authPath = resolveAuthPath();
-            await refreshSession({ authPath, probeClientFactory, logger: opts.logger });
-          }
-        : async () => {
-            // No probe factory — cannot refresh; surface as error
-            throw new WalkthroughError(
-              "Session expired but no probe factory is configured to refresh it.",
-            );
-          };
+    const doRefresh = buildRefreshFn(opts, probeClientFactory);
 
-    // Resolve adapter for this source (after auth check so session is persisted if needed)
+    // Resolve adapter after auth check so a freshly-persisted session is available to it.
     const adapter = resolveAdapter(source.id, { logger: opts.logger, config: opts.config });
+
+    const flowBase: Omit<DownloadFlowOptions, "title" | "hit" | "cache"> = {
+      adapter,
+      source,
+      outDir,
+      logger: opts.logger,
+      doRefresh,
+      executeDeps: opts.executeDeps,
+      progressEnabled: opts.progressEnabled ?? false,
+      barWrite: opts.barWrite,
+      endBar: opts.endBar,
+    };
 
     let lastResult: WalkthroughResult | null = null;
     let hit: SearchHit | null = null;
     let cache: ChapterListingCache | null = null;
 
-    // Post-auth/source loop: each iteration resolves a manga (search or reuse) and downloads.
     outer: for (;;) {
-      // "New manga" entry point (also the first iteration): title + search.
       if (hit === null) {
-        // Step 1 — title
-        const title = await promptTitle();
-
-        // Step 4 — search results (with CF retry)
-        hit = await withSessionRetry(
-          () =>
-            pickSearchResult({
-              query: title,
-              sourceLabel: source.label,
-              adapter,
-            }),
-          isCloudflareError,
-          doRefresh,
-          opts.logger,
-          "walkthrough.search_retry",
-        );
-        cache = { chapters: null };
-
-        lastResult = await runDownloadFlow({
-          title,
-          hit,
-          cache,
-          adapter,
-          source,
-          outDir,
-          logger: opts.logger,
-          doRefresh,
-          executeDeps: opts.executeDeps,
-          progressEnabled: opts.progressEnabled ?? false,
-          barWrite: opts.barWrite,
-          endBar: opts.endBar,
-        });
+        const iteration = await runNewMangaIteration(source, adapter, doRefresh, flowBase);
+        hit = iteration.hit;
+        cache = iteration.cache;
+        lastResult = iteration.lastResult;
       } else {
-        // "Same manga" entry point: reuse hit + cached listing, re-enter at range selection.
-        if (cache === null) cache = { chapters: null };
-        lastResult = await runDownloadFlow({
-          title: lastResult?.title ?? "",
+        const iteration = await runSameMangaIteration(
           hit,
           cache,
-          adapter,
-          source,
-          outDir,
-          logger: opts.logger,
-          doRefresh,
-          executeDeps: opts.executeDeps,
-          progressEnabled: opts.progressEnabled ?? false,
-          barWrite: opts.barWrite,
-          endBar: opts.endBar,
-        });
+          lastResult?.title ?? "",
+          flowBase,
+        );
+        cache = iteration.cache;
+        lastResult = iteration.lastResult;
       }
 
-      // Post-download: what next?
       const next = await promptNextAction();
       switch (next) {
         case "same-manga":
@@ -223,7 +241,7 @@ export async function runWalkthrough(
     }
     return lastResult;
   } catch (err) {
-    // @inquirer/prompts throws ExitPromptError when the user presses Ctrl+C
+    // ExitPromptError is @inquirer/prompts' Ctrl+C signal, not a real failure.
     if (err instanceof Error && err.name === "ExitPromptError") {
       return { cancelled: true };
     }
@@ -274,7 +292,6 @@ async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<Walkthrou
     endBar,
   } = flowOpts;
 
-  // Step 6 — range (with CF retry). Reuse cached listing for this hit when available.
   const rangeResult = await withSessionRetry(
     () =>
       pickRange({
@@ -289,16 +306,10 @@ async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<Walkthrou
   );
   const selectedBundles = rangeResult.bundles;
 
-  // Cache the listing actually used (fetched or preloaded) for subsequent "same manga" iterations.
   if (rangeResult.chapters) cache.chapters = rangeResult.chapters;
 
-  // Step 7 — pack prompt: group the selected chapters into a single volume .cbz?
   const groupIntoVolume = await promptPack();
-
-  // Step 7b — volume name (only when grouping)
   const volumeName = groupIntoVolume ? await promptVolumeName({ logger }) : null;
-
-  // Step 8 — cover URL (only when grouping)
   const coverUrl = groupIntoVolume ? await promptCoverUrl({ logger }) : null;
 
   const result: WalkthroughResult = {
@@ -311,9 +322,7 @@ async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<Walkthrou
     coverUrl,
   };
 
-  // Step 9 — execute (fetchChapterInput calls are wrapped inside executeWalkthrough).
-  // A fresh progress handle is created per download flow iteration so the bar always
-  // reflects this iteration's own bundle count, then finished before returning.
+  // Fresh progress handle per iteration so the bar reflects this run's own bundle count.
   const progress = createProgress({
     enabled: progressEnabled,
     totalChapters: selectedBundles.length,
@@ -338,8 +347,7 @@ async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<Walkthrou
     executeDeps,
   );
 
-  // Partial failure is resilient: still return to the next-action prompt, but
-  // surface a one-line summary so the user isn't left guessing.
+  // Resilient to partial failure: still return to the next-action prompt with a one-line summary.
   if (failed > 0) {
     logger.warn(
       {

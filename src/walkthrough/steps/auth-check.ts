@@ -108,17 +108,15 @@ async function probeSession(client: SessionProbeClient, logger: Logger): Promise
     return { kind: "network_error", message };
   }
 
-  // 5xx: transient
   if (res.status >= 500) {
     return { kind: "transient_error", status: res.status };
   }
 
-  // 4xx other than 403 (403 is thrown by client as CloudflareError above): transient
+  // 403 is already caught above as CloudflareError; other 4xx are transient.
   if (res.status >= 400) {
     return { kind: "transient_error", status: res.status };
   }
 
-  // 2xx — check body for CF challenge HTML
   if (res.status >= 200 && res.status < 300) {
     try {
       const text = await res.text();
@@ -210,10 +208,8 @@ export interface RefreshSessionOptions {
 export async function refreshSession(opts: RefreshSessionOptions): Promise<AuthResult> {
   const { authPath, probeClientFactory, logger } = opts;
 
-  // Do NOT unlink here. persistSession writes atomically via .tmp + rename,
-  // so it will overwrite the stale file safely. Deleting upfront is purely
-  // destructive: if the user hits Ctrl+C during the paste prompt, they lose
-  // their existing credentials and cannot retry.
+  // Do NOT unlink here — persistSession overwrites atomically via .tmp+rename.
+  // Ctrl+C during the paste prompt would otherwise lose existing credentials before retry.
   const session = await promptAndParseSession(logger);
   await persistSession(session, authPath);
   logger.info(
@@ -230,33 +226,30 @@ export async function refreshSession(opts: RefreshSessionOptions): Promise<AuthR
   throw new WalkthroughError("Session refresh failed twice. Try again later.");
 }
 
-/** Step 3: check auth state. Prompt for cURL paste when needed and persist via auth service. */
-export async function checkAuth(opts: AuthCheckOptions): Promise<AuthResult> {
-  if (!opts.requiresAuth) {
-    return { ok: true, skipped: true };
-  }
-
-  const authPath = resolveAuthPath({ dataHome: opts.dataHome });
-
-  // No probe factory provided — file-presence-only check (no network validation).
-  if (!opts.probeClientFactory) {
-    if (isValidAuthFile(authPath)) {
-      return { ok: true, skipped: false };
-    }
-
-    const session = await promptAndParseSession(opts.logger);
-    await persistSession(session, authPath);
-    opts.logger.info(
-      { event: "walkthrough.auth_persisted", context: "walkthrough", path: authPath },
-      "auth session saved",
-    );
-    return { ok: true, skipped: false, justAuthenticated: true };
-  }
-
-  // --- Probe path ---
-
+/** File-presence-only check (no network validation) — used when no probe factory is configured. */
+async function checkAuthFilePresenceOnly(
+  opts: AuthCheckOptions,
+  authPath: string,
+): Promise<AuthResult> {
   if (isValidAuthFile(authPath)) {
-    // Session file exists — probe it
+    return { ok: true, skipped: false };
+  }
+
+  const session = await promptAndParseSession(opts.logger);
+  await persistSession(session, authPath);
+  opts.logger.info(
+    { event: "walkthrough.auth_persisted", context: "walkthrough", path: authPath },
+    "auth session saved",
+  );
+  return { ok: true, skipped: false, justAuthenticated: true };
+}
+
+/** Probes an existing session file, or prompts for a fresh cURL paste and probes that instead. */
+async function checkAuthWithProbe(
+  opts: AuthCheckOptions & { probeClientFactory: SessionProbeClientFactory },
+  authPath: string,
+): Promise<AuthResult> {
+  if (isValidAuthFile(authPath)) {
     const client = await opts.probeClientFactory();
     const outcome = await probeSession(client, opts.logger);
 
@@ -284,7 +277,6 @@ export async function checkAuth(opts: AuthCheckOptions): Promise<AuthResult> {
     );
   }
 
-  // No valid session file — prompt for cURL paste
   const session = await promptAndParseSession(opts.logger);
   await persistSession(session, authPath);
   opts.logger.info(
@@ -292,7 +284,7 @@ export async function checkAuth(opts: AuthCheckOptions): Promise<AuthResult> {
     "auth session saved",
   );
 
-  // Probe the freshly-pasted session (client reads the file we just wrote)
+  // Re-reads the file we just wrote.
   const freshClient = await opts.probeClientFactory();
   const outcome = await probeSession(freshClient, opts.logger);
   if (outcome.kind === "ok") {
@@ -311,4 +303,19 @@ export async function checkAuth(opts: AuthCheckOptions): Promise<AuthResult> {
   throw new WalkthroughError(
     `Mangakakalot returned an unexpected status (${outcome.status}) during session probe. Try again later.`,
   );
+}
+
+/** Step 3: check auth state. Prompt for cURL paste when needed and persist via auth service. */
+export async function checkAuth(opts: AuthCheckOptions): Promise<AuthResult> {
+  if (!opts.requiresAuth) {
+    return { ok: true, skipped: true };
+  }
+
+  const authPath = resolveAuthPath({ dataHome: opts.dataHome });
+
+  if (!opts.probeClientFactory) {
+    return checkAuthFilePresenceOnly(opts, authPath);
+  }
+
+  return checkAuthWithProbe({ ...opts, probeClientFactory: opts.probeClientFactory }, authPath);
 }
