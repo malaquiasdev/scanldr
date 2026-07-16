@@ -1,15 +1,9 @@
 import type { DownloadBundleInput, DownloadBundleResult } from "../downloader/types.ts";
-import type { PackVolumeInput, PackVolumeResult } from "../pack/types.ts";
 import type { SourceDescriptor } from "../sources/types.ts";
 
 /** Minimal surface of the downloader that executeWalkthrough needs. */
 export interface Downloader {
   downloadBundle(input: DownloadBundleInput): Promise<DownloadBundleResult>;
-}
-
-/** Minimal surface of the packer that executeWalkthrough needs. */
-export interface Packer {
-  packVolume(input: PackVolumeInput): Promise<PackVolumeResult>;
 }
 
 /** @deprecated Empty — kept for backwards compat; will be removed in next major. */
@@ -34,32 +28,13 @@ export interface ChapterListing {
   label: string;
 }
 
-/** DTO returned by adapter.listVolumes() */
-export interface VolumeListing {
-  /** Volume number as a string, e.g. "1", "3.5" */
-  volume: string;
-  /** Human-readable label, e.g. "Volume 3 (Ch. 20–30)" */
-  label: string;
-  /** Ordered list of constituent chapter ids (to pass to fetchChapterInput) */
-  chapterIds: string[];
-  /** Matching chapter numbers (parallel array, same length as chapterIds) */
-  chapterNums: string[];
-}
-
-export type ModeSelection = "chapter" | "volume";
-
 export interface BundleItem {
-  kind: "chapter" | "volume";
-  /** Display label shown to user e.g. "Chapter 1" or "Volume 3" */
+  /** Display label shown to user e.g. "Chapter 1" */
   label: string;
-  /** For chapter mode: the chapter id. For volume mode: synthetic display key (e.g. "vol:1") */
+  /** The chapter id. */
   id: string;
-  /** Chapter number (chapter mode) OR volume number (volume mode) */
+  /** Chapter number */
   num: string;
-  /** Volume mode only: ordered constituent chapter ids */
-  chapterIds?: string[];
-  /** Volume mode only: matching chapter numbers (parallel to chapterIds) */
-  chapterNums?: string[];
 }
 
 export interface AuthResult {
@@ -94,15 +69,7 @@ export interface WalkthroughResult {
   title: string;
   source: SourceDescriptor;
   hit: SearchHit;
-  mode: ModeSelection;
   selectedBundles: BundleItem[];
-  groupIntoVolume: boolean;
-  /**
-   * User-supplied volume number/name for the packed cbz, chapter mode only.
-   * null = use the chapter-range-derived default.
-   */
-  volumeName: string | null;
-  coverUrl: string | null;
 }
 
 /** Sentinel returned when the user cancels the walkthrough (Ctrl+C). */
@@ -144,7 +111,7 @@ export interface ProgressState {
   percent: number;
   avgPageMs: number;
   etaMs: number;
-  /** Bundle display label (e.g. "Chapter 33" or "Volume 9"); empty before first updateChapter. */
+  /** Bundle display label (e.g. "Chapter 33"); empty before first updateChapter. */
   label: string;
 }
 

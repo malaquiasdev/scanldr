@@ -1,7 +1,7 @@
 import type { ChapterInput } from "@integrations/_shared/media.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 
-export type BundleKind = "volume" | "chapter";
+export type BundleKind = "chapter";
 
 export interface DownloadBundleInput {
   outDir: string;

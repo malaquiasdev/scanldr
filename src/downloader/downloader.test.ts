@@ -121,70 +121,6 @@ describe("padBundleNumber", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Archive structure — volume
-// ---------------------------------------------------------------------------
-
-describe("downloadBundle — volume archive structure", () => {
-  test("produces correct filename and directory layout", async () => {
-    const result = await downloadBundle({
-      outDir,
-      format: "cbz",
-      slug: "witch-hat-atelier",
-      kind: "volume",
-      bundleNumber: "3",
-      chapters: [makeChapter("ch-018", 18, 2), makeChapter("ch-019", 19, 1)],
-      imageConcurrency: 2,
-      delayMs: 0,
-      dryRun: false,
-      logger: noopLogger,
-    });
-
-    expect(result.outputPath).toBe(
-      join(outDir, "witch-hat-atelier", "witch-hat-atelier-volume-003.cbz"),
-    );
-    expect(result.chapterIds).toEqual(["ch-018", "ch-019"]);
-    expect(result.byteSize).toBeGreaterThan(0);
-
-    // File must exist at the final path (not .temp)
-    const stat = await readFile(result.outputPath);
-    expect(stat.length).toBe(result.byteSize);
-  });
-
-  test("three-digit volume zero-padding", async () => {
-    const result = await downloadBundle({
-      outDir,
-      format: "cbz",
-      slug: "test-manga",
-      kind: "volume",
-      bundleNumber: "1",
-      chapters: [makeChapter("ch-001", 1, 1)],
-      imageConcurrency: 1,
-      delayMs: 0,
-      dryRun: false,
-      logger: noopLogger,
-    });
-
-    expect(result.outputPath).toContain("volume-001.cbz");
-  });
-
-  test("volume 103 pads correctly", async () => {
-    const result = await downloadBundle({
-      outDir,
-      format: "cbz",
-      slug: "test",
-      kind: "volume",
-      bundleNumber: "103",
-      chapters: [makeChapter("c1", 1, 1)],
-      imageConcurrency: 1,
-      delayMs: 0,
-      dryRun: false,
-      logger: noopLogger,
-    });
-    expect(result.outputPath).toContain("volume-103.cbz");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Archive structure — chapter
 // ---------------------------------------------------------------------------
 
@@ -233,7 +169,7 @@ describe("downloadBundle — page ordering", () => {
       outDir,
       format: "cbz",
       slug: "sorted-manga",
-      kind: "volume",
+      kind: "chapter",
       bundleNumber: "1",
       chapters: [
         makeChapter("ch-002", 2, 3), // chapter 2 first in input
@@ -258,7 +194,7 @@ describe("downloadBundle — page ordering", () => {
       outDir,
       format: "cbz",
       slug: "single-ch",
-      kind: "volume",
+      kind: "chapter",
       bundleNumber: "1",
       chapters: [makeChapter("ch-1", 1, 5)],
       imageConcurrency: 2,
@@ -299,7 +235,7 @@ describe("downloadBundle — concurrency limit", () => {
       outDir,
       format: "cbz",
       slug: "concurrency-test",
-      kind: "volume",
+      kind: "chapter",
       bundleNumber: "1",
       chapters: [makeChapter("ch-1", 1, pages, fetcher)],
       imageConcurrency: limit,
@@ -329,7 +265,7 @@ describe("downloadBundle — dry-run", () => {
       outDir,
       format: "cbz",
       slug: "dry-test",
-      kind: "volume",
+      kind: "chapter",
       bundleNumber: "5",
       chapters: [makeChapter("ch-050", 50, 3, fetcher)],
       imageConcurrency: 2,
@@ -340,7 +276,7 @@ describe("downloadBundle — dry-run", () => {
 
     expect(fetchCalled).toBe(false);
     expect(result.outputPath).toContain("[dry-run]");
-    expect(result.outputPath).toContain("dry-test-volume-005.cbz");
+    expect(result.outputPath).toContain("dry-test-chapter-005.cbz");
     expect(result.byteSize).toBe(0);
     expect(result.chapterIds).toContain("ch-050");
   });
@@ -350,7 +286,7 @@ describe("downloadBundle — dry-run", () => {
       outDir,
       format: "cbz",
       slug: "no-files",
-      kind: "volume",
+      kind: "chapter",
       bundleNumber: "1",
       chapters: [makeChapter("c1", 1, 2)],
       imageConcurrency: 1,
@@ -384,7 +320,7 @@ describe("downloadBundle — interruption simulation", () => {
         outDir,
         format: "cbz",
         slug: "interrupted",
-        kind: "volume",
+        kind: "chapter",
         bundleNumber: "1",
         chapters: [makeChapter("ch-1", 1, 5, fetcher)],
         imageConcurrency: 1,
@@ -411,7 +347,7 @@ describe("downloadBundle — result metadata", () => {
       outDir,
       format: "cbz",
       slug: "meta-test",
-      kind: "volume",
+      kind: "chapter",
       bundleNumber: "1",
       chapters: [
         makeChapter("z-chapter", 3, 1),
@@ -439,7 +375,7 @@ describe("downloadBundle — extension detection from bytes", () => {
       outDir,
       format: "cbz",
       slug: "ext-detect",
-      kind: "volume",
+      kind: "chapter",
       bundleNumber: "1",
       chapters: [makeChapter("c1", 1, 3, async (_ref) => makePng(1))],
       imageConcurrency: 1,
@@ -461,7 +397,7 @@ describe("downloadBundle — extension detection from bytes", () => {
       outDir,
       format: "cbz",
       slug: "ext-fallback",
-      kind: "volume",
+      kind: "chapter",
       bundleNumber: "1",
       chapters: [makeChapter("c1", 1, 2, async (_ref) => makeJpeg(1))],
       imageConcurrency: 1,
@@ -483,7 +419,7 @@ describe("downloadBundle — extension detection from bytes", () => {
       outDir,
       format: "cbz",
       slug: "ext-webp",
-      kind: "volume",
+      kind: "chapter",
       bundleNumber: "1",
       chapters: [makeChapter("c1", 1, 2, async (_ref) => makeWebP())],
       imageConcurrency: 1,

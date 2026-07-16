@@ -8,12 +8,6 @@ export interface MangaCandidate {
   year: number | null;
 }
 
-export interface VolumeRef {
-  volume: string;
-  numeric: number;
-  chapterIds: string[];
-}
-
 export interface ChapterRef {
   id: string;
   volume: string | null;

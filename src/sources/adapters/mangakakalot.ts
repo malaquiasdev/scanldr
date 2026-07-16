@@ -7,12 +7,10 @@ import { createFallbackHttp } from "@integrations/fallback-http/index.ts";
 import type {
   FallbackChapterRef,
   MangakakalotClient,
-  VolumeBucket,
 } from "@integrations/mangakakalot/client/index.ts";
 import { createMangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
-import type { ChapterListing, SearchHit, VolumeListing } from "../../walkthrough/types.ts";
-import { WalkthroughError } from "../../walkthrough/types.ts";
+import type { ChapterListing, SearchHit } from "../../walkthrough/types.ts";
 import type { SourceAdapter } from "./types.ts";
 
 export interface MangakakalotAdapterOptions {
@@ -26,18 +24,6 @@ export interface MangakakalotAdapterOptions {
 function buildChapterLabel(ref: FallbackChapterRef): string {
   const num = ref.chapter !== null ? ref.chapter : "none";
   return `Chapter ${num}`;
-}
-
-function buildVolumeLabel(bucket: VolumeBucket): string {
-  const first = bucket.chapters[0];
-  const last = bucket.chapters[bucket.chapters.length - 1];
-  if (bucket.volume === "unknown") {
-    return "Uncategorised chapters";
-  }
-  if (first && last && first.chapter !== null && last.chapter !== null) {
-    return `Volume ${bucket.volume} (Ch. ${first.chapter}–${last.chapter})`;
-  }
-  return `Volume ${bucket.volume}`;
 }
 
 export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): SourceAdapter {
@@ -90,35 +76,6 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
     });
   }
 
-  async function listVolumes(hitId: string): Promise<VolumeListing[]> {
-    const client = await getClientPromise();
-    const volumeMap = await client.getVolumeMap(hitId);
-
-    if (volumeMap.length === 0) {
-      throw new WalkthroughError(
-        "This source did not expose volume metadata for this title. Try chapter mode.",
-      );
-    }
-
-    // No synthetic bucketIndex-based number — "none" is the sentinel the
-    // downloader/pack layer already understands. Disambiguate multiple null
-    // chapters across the whole listing ("none-1", "none-2", ...) so two
-    // null chapters packed into the same volume never collide on zip prefix.
-    let noneIdx = 0;
-    return volumeMap.map((bucket) => {
-      const chapterIds = bucket.chapters.map((ch) => ch.id);
-      const chapterNums = bucket.chapters.map((ch) =>
-        ch.chapter !== null ? ch.chapter : `none-${++noneIdx}`,
-      );
-      return {
-        volume: bucket.volume,
-        label: buildVolumeLabel(bucket),
-        chapterIds,
-        chapterNums,
-      };
-    });
-  }
-
   async function fetchChapterInput(chapterId: string, chapterNum?: string): Promise<ChapterInput> {
     const [client, http] = await Promise.all([getClientPromise(), getHttpPromise()]);
     const imageRefs = await client.getChapterImages(chapterId);
@@ -162,5 +119,5 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
     };
   }
 
-  return { search, listChapters, listVolumes, fetchChapterInput };
+  return { search, listChapters, fetchChapterInput };
 }

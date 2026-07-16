@@ -22,7 +22,6 @@ describe("getAdapter", () => {
     const adapter = getAdapter("mangakakalot", { logger });
     expect(typeof adapter.search).toBe("function");
     expect(typeof adapter.listChapters).toBe("function");
-    expect(typeof adapter.listVolumes).toBe("function");
     expect(typeof adapter.fetchChapterInput).toBe("function");
   });
 
@@ -40,7 +39,6 @@ describe("getAdapter — config forwarding", () => {
     const adapter = getAdapter("mangakakalot", { logger, config });
     expect(typeof adapter.search).toBe("function");
     expect(typeof adapter.listChapters).toBe("function");
-    expect(typeof adapter.listVolumes).toBe("function");
     expect(typeof adapter.fetchChapterInput).toBe("function");
   });
 });

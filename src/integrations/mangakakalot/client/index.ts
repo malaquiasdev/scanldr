@@ -6,19 +6,13 @@ import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts"
 import type { ImageRef } from "@integrations/_shared/media.ts";
 import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
 import type { Logger } from "@plugins/logger/index.ts";
-import {
-  detectChapterApiPlaceholder,
-  parseChapterImages,
-  parseChapterListFromApi,
-  parseSearchResults,
-} from "./parser.ts";
-import type { MangakakalotClient, VolumeMap } from "./types.ts";
+import { parseChapterImages, parseChapterListFromApi, parseSearchResults } from "./parser.ts";
+import type { MangakakalotClient } from "./types.ts";
 import { MangakakalotParseError } from "./types.ts";
-import { chaptersToVolumeMap, parseVolumeMapping } from "./volume-parser.ts";
 
 export type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 export type { ImageRef } from "@integrations/_shared/media.ts";
-export type { FallbackChapterRef, MangakakalotClient, VolumeBucket, VolumeMap } from "./types.ts";
+export type { FallbackChapterRef, MangakakalotClient } from "./types.ts";
 export { MangakakalotParseError } from "./types.ts";
 
 const SITE_ROOT = "https://www.mangakakalot.gg";
@@ -130,32 +124,6 @@ export function createMangakakalotClient(opts: {
     return allChapters;
   }
 
-  async function getVolumeMap(slug: string): Promise<VolumeMap> {
-    const url = `${SITE_ROOT}/manga/${encodeURIComponent(slug)}`;
-    const html = await fetchHtml(url);
-
-    // Route 1: if HTML embeds the chapter-list-container API placeholder,
-    // fetch via API and map to VolumeMap. This is the path Naruto takes today.
-    const placeholder = detectChapterApiPlaceholder(html);
-    if (placeholder) {
-      logger.info(
-        {
-          event: "mangakakalot.api_placeholder_detected",
-          context: "mangakakalot",
-          slug,
-          placeholderSlug: placeholder.slug,
-        },
-        "manga page uses client-side API placeholder; fetching chapter list from API",
-      );
-      const chapters = await getChapterList(placeholder.slug);
-      return chaptersToVolumeMap(chapters);
-    }
-
-    // Route 2: inline chapter list (current path for dandadan/jjk/etc).
-    // Drift detector still fires when neither inline list nor API placeholder is present.
-    return runParser(url, () => parseVolumeMapping(html, url));
-  }
-
   async function getChapterImages(chapterIdOrUrl: string): Promise<ImageRef[]> {
     // Accept a full URL, a composite id "mangaSlug/chapter-slug" (from parseChapterListFromApi),
     // or the legacy path-style id "chapter/manga-slug/chapter-1".
@@ -174,5 +142,5 @@ export function createMangakakalotClient(opts: {
     return runParser(url, () => parseChapterImages(html, url));
   }
 
-  return { searchManga, getChapterList, getChapterImages, getVolumeMap };
+  return { searchManga, getChapterList, getChapterImages };
 }
