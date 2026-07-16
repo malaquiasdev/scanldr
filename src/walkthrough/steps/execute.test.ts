@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { ChapterInput } from "@integrations/_shared/media.ts";
 import { CloudflareError } from "../../integrations/fallback-http/types.ts";
 import { MangakakalotParseError } from "../../integrations/mangakakalot/client/types.ts";
-import type { PackedChapter } from "../../pack/index.ts";
+import type { PackVolumeInput } from "../../pack/types.ts";
 import { createLogger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import { getSource } from "../../sources/index.ts";
@@ -27,13 +27,13 @@ const plan: WalkthroughResult = {
 
 function makeFakePacker(overrides: Partial<Packer> = {}): Packer {
   return {
-    packVolume: mock(async (input) => ({
-      outputPath: join(outDir, input.slug, "packed-volume.cbz"),
-      byteSize: 200,
+    packVolumeReplacingSources: mock(async (input: PackVolumeInput) => ({
+      volume: {
+        outputPath: join(outDir, input.slug, "packed-volume.cbz"),
+        byteSize: 200,
+      },
+      deleted: input.chapters.map((c) => c.outputPath),
     })),
-    deleteIndividualFiles: mock(async (chapters: PackedChapter[]) =>
-      chapters.map((c) => c.outputPath),
-    ),
     ...overrides,
   };
 }
@@ -615,10 +615,10 @@ describe("executeWalkthrough", () => {
     // bundle 1 succeeded, its output survives the partial-group failure
     expect(result.outputs).toHaveLength(1);
     expect(result.outputs[0]).toContain("naruto-chapter-001.cbz");
-    // pack step is gated on failed === 0 — must not run
-    expect((packer.packVolume as ReturnType<typeof mock>).mock.calls.length).toBe(0);
-    // pack was skipped -> deletion of the surviving per-chapter file must also be skipped
-    expect((packer.deleteIndividualFiles as ReturnType<typeof mock>).mock.calls.length).toBe(0);
+    // pack step is gated on failed === 0 — must not run (and so neither does its deletion)
+    expect((packer.packVolumeReplacingSources as ReturnType<typeof mock>).mock.calls.length).toBe(
+      0,
+    );
   });
 
   // #183 — product decision: after a successful group pack, delete the loose
@@ -645,18 +645,20 @@ describe("executeWalkthrough", () => {
 
     expect(result.failed).toBe(0);
 
-    const deleteMock = packer.deleteIndividualFiles as ReturnType<typeof mock>;
-    expect(deleteMock.mock.calls.length).toBe(1);
-    const [deletedChapters] = deleteMock.mock.calls[0] as [{ num: string; outputPath: string }[]];
-    expect(deletedChapters.map((c) => c.num)).toEqual(["1", "2"]);
-    expect(deletedChapters.every((c) => c.outputPath.endsWith(".cbz"))).toBe(true);
+    const packMock = packer.packVolumeReplacingSources as ReturnType<typeof mock>;
+    expect(packMock.mock.calls.length).toBe(1);
+    const [packInput] = packMock.mock.calls[0] as [
+      { chapters: { num: string; outputPath: string }[] },
+    ];
+    expect(packInput.chapters.map((c) => c.num)).toEqual(["1", "2"]);
+    expect(packInput.chapters.every((c) => c.outputPath.endsWith(".cbz"))).toBe(true);
 
     // outputs reflects the final on-disk artifacts: only the volume survives
     expect(result.outputs).toHaveLength(1);
     expect(result.outputs[0]).toContain("packed-volume.cbz");
   });
 
-  test("groupIntoVolume=false → deleteIndividualFiles never called", async () => {
+  test("groupIntoVolume=false → packVolumeReplacingSources never called", async () => {
     const packer = makeFakePacker();
 
     const opts: ExecuteWalkthroughInput = {
@@ -670,8 +672,9 @@ describe("executeWalkthrough", () => {
     const result = await executeWalkthrough(opts, { downloader: makeFakeDownloader(), packer });
 
     expect(result.failed).toBe(0);
-    expect((packer.deleteIndividualFiles as ReturnType<typeof mock>).mock.calls.length).toBe(0);
-    expect((packer.packVolume as ReturnType<typeof mock>).mock.calls.length).toBe(0);
+    expect((packer.packVolumeReplacingSources as ReturnType<typeof mock>).mock.calls.length).toBe(
+      0,
+    );
   });
 
   test("groupIntoVolume=true, deletion of one file fails → run still succeeds, volume intact, surviving file stays in outputs", async () => {
@@ -706,17 +709,23 @@ describe("executeWalkthrough", () => {
       return origWarn(obj, msg);
     };
 
-    // deleteIndividualFiles graceful-failure behavior is exercised at the pack.ts
-    // unit-test level; here we assert the walkthrough layer doesn't fail the run
-    // even if the underlying call rejects unexpectedly, and that any path NOT
-    // reported as deleted stays in outputs (it still exists on disk).
+    // Deletion graceful-failure behavior is exercised at the pack.ts unit-test
+    // level; here we assert the walkthrough layer doesn't fail the run when the
+    // packer reports a partial delete, and that any path NOT reported as
+    // deleted stays in outputs (it still exists on disk).
     const packer = makeFakePacker({
-      deleteIndividualFiles: mock(async () => {
+      packVolumeReplacingSources: mock(async (input) => {
         capturingLogger.warn(
           { event: "pack.delete_failed", context: "pack", path: chapter2Path },
           `failed to delete ${chapter2Path}`,
         );
-        return [chapter1Path];
+        return {
+          volume: {
+            outputPath: join(outDir, input.slug, "packed-volume.cbz"),
+            byteSize: 200,
+          },
+          deleted: [chapter1Path],
+        };
       }),
     });
 

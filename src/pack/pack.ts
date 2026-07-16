@@ -4,9 +4,14 @@ import { CliError } from "@plugins/errors/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { unzipSync, zipSync } from "fflate";
 import { isNoneToken, padBundleNumber } from "../downloader/helpers.ts";
-import type { PackedChapter, PackVolumeInput, PackVolumeResult } from "./types.ts";
+import type {
+  PackedChapter,
+  PackVolumeInput,
+  PackVolumeReplacingSourcesResult,
+  PackVolumeResult,
+} from "./types.ts";
 
-export type { PackedChapter, PackVolumeInput, PackVolumeResult };
+export type { PackedChapter, PackVolumeInput, PackVolumeReplacingSourcesResult, PackVolumeResult };
 
 /**
  * Sort a chapter token numerically (decimal-aware). "none" (and disambiguated
@@ -178,11 +183,23 @@ export async function packVolume(input: PackVolumeInput): Promise<PackVolumeResu
   return { outputPath: finalPath, byteSize: size };
 }
 
+/**
+ * Pack a volume, then delete its source per-chapter cbz files — in that order,
+ * structurally. deleteIndividualFiles is never reachable before packVolume
+ * resolves, so a caller cannot lose source files on a failed pack: if
+ * packVolume throws, this function throws too and nothing is deleted.
+ */
+export async function packVolumeReplacingSources(
+  input: PackVolumeInput,
+): Promise<PackVolumeReplacingSourcesResult> {
+  const volume = await packVolume(input);
+  // Best-effort: deletion failures are logged and never fail the run (see deleteIndividualFiles).
+  const deleted = await deleteIndividualFiles(input.chapters, input.logger);
+  return { volume, deleted };
+}
+
 /** Delete individual chapter cbz files after packing. */
-export async function deleteIndividualFiles(
-  chapters: PackedChapter[],
-  logger: Logger,
-): Promise<string[]> {
+async function deleteIndividualFiles(chapters: PackedChapter[], logger: Logger): Promise<string[]> {
   logger.info(
     { event: "pack.delete_individuals", context: "pack", count: chapters.length },
     "deleting individual chapter files",

@@ -4,8 +4,7 @@ import type { CoverImage, PackedChapter } from "../../pack/index.ts";
 import {
   buildVolumeFilename,
   fetchCover,
-  deleteIndividualFiles as realDeleteIndividualFiles,
-  packVolume as realPackVolume,
+  packVolumeReplacingSources as realPackVolumeReplacingSources,
 } from "../../pack/index.ts";
 import type { Logger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
@@ -59,7 +58,7 @@ export interface ExecuteWalkthroughResult {
 export function createDefaultExecuteDeps(): ExecuteDeps {
   return {
     downloader: { downloadBundle: realDownloadBundle },
-    packer: { packVolume: realPackVolume, deleteIndividualFiles: realDeleteIndividualFiles },
+    packer: { packVolumeReplacingSources: realPackVolumeReplacingSources },
   };
 }
 
@@ -234,7 +233,9 @@ export async function executeWalkthrough(
 
         const customName = volumeName ? buildVolumeFilename(slug, volumeName) : undefined;
 
-        const packResult = await packer.packVolume({
+        // Pack + delete-sources is one atomic call: deletion is only ever reachable
+        // after a successful write, and any deletion failure is best-effort (never fails the run).
+        const { volume, deleted } = await packer.packVolumeReplacingSources({
           slug,
           outDir,
           chapters: packedChapters,
@@ -247,23 +248,18 @@ export async function executeWalkthrough(
           {
             event: "walkthrough.pack_done",
             context: "walkthrough",
-            output_path: packResult.outputPath,
-            byte_size: packResult.byteSize,
+            output_path: volume.outputPath,
+            byte_size: volume.byteSize,
           },
-          `packed volume: ${packResult.outputPath}`,
+          `packed volume: ${volume.outputPath}`,
         );
 
-        // Delete per-chapter files only after pack succeeds (no data loss if packVolume
-        // throws); deletion failures are handled inside deleteIndividualFiles and never
-        // fail the run.
-        const deletedPaths = await packer.deleteIndividualFiles(packedChapters, logger);
-
         // Drop only the paths actually deleted; failed deletions stay in outputs (still exist).
-        for (const path of deletedPaths) {
+        for (const path of deleted) {
           const idx = outputs.indexOf(path);
           if (idx !== -1) outputs.splice(idx, 1);
         }
-        outputs.push(packResult.outputPath);
+        outputs.push(volume.outputPath);
       } catch (err) {
         failed++;
         logger.warn(

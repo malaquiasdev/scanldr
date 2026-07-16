@@ -1,6 +1,5 @@
 import type { DownloadBundleInput, DownloadBundleResult } from "../downloader/types.ts";
-import type { PackedChapter, PackVolumeInput, PackVolumeResult } from "../pack/types.ts";
-import type { Logger } from "../plugins/logger/index.ts";
+import type { PackVolumeInput, PackVolumeReplacingSourcesResult } from "../pack/types.ts";
 import type { SourceDescriptor } from "../sources/types.ts";
 
 /** Minimal surface of the downloader that executeWalkthrough needs. */
@@ -10,9 +9,12 @@ export interface Downloader {
 
 /** Minimal surface of the packer that executeWalkthrough needs. */
 export interface Packer {
-  packVolume(input: PackVolumeInput): Promise<PackVolumeResult>;
-  /** Delete the per-chapter .cbz files that were just packed into a volume. Returns the paths actually deleted. */
-  deleteIndividualFiles(chapters: PackedChapter[], logger: Logger): Promise<string[]>;
+  /**
+   * Pack the volume, then best-effort-delete its per-chapter source files.
+   * Deletion only ever happens after a successful write — structurally, there
+   * is no way to reach it otherwise.
+   */
+  packVolumeReplacingSources(input: PackVolumeInput): Promise<PackVolumeReplacingSourcesResult>;
 }
 
 /** @deprecated Empty — kept for backwards compat; will be removed in next major. */
