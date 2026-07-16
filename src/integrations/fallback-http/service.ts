@@ -50,20 +50,9 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
   // Mtime-keyed cache: null means not yet loaded (though we verified above it exists).
   let authCache: AuthCache | null = null;
 
-  // CF short-circuit latches — split per lane (see issue #137).
-  // Records the auth.json mtime at the moment a CloudflareError was observed.
-  // While this value matches the current mtime on disk, subsequent requests on
-  // the SAME lane skip the HTTP call entirely (no throttle, no fetch) and throw
-  // immediately — this prevents ~60 seconds of queued tasks spamming 403s while
-  // the user is being prompted for a fresh cURL paste.
-  // Each latch is cleared automatically when a request on its lane observes that
-  // mtime has advanced (i.e. refreshSession has written a new auth.json to disk).
-  //
-  // The lanes are latched independently because a 403 on the anonymous
-  // (cookie-less) image-CDN lane is usually a Referer/hotlink rejection, NOT a
-  // stale site session — it must not short-circuit the cookie lane.
-  let cfRejectedAtMtimeSite: number | null = null;
-  let cfRejectedAtMtimeAnonymous: number | null = null;
+  // per-lane CF short-circuit; see ADR-001 / #137
+  const siteLatch = createCfLatch();
+  const anonLatch = createCfLatch();
 
   // Throttle state — serialized via promise chain so concurrent calls queue up.
   // null = no request made yet; number = timestamp of last request start.
@@ -128,24 +117,10 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
     extraHeaders: Record<string, string> | undefined,
     withCookie: boolean,
   ): Promise<Response> {
-    // CF short-circuit: if a prior request on THIS lane latched a CF rejection
-    // mtime, skip everything (throttle + HTTP) until auth.json is refreshed on
-    // disk. Lanes are independent — see latch declarations above.
-    const cfRejectedAtMtime = withCookie ? cfRejectedAtMtimeSite : cfRejectedAtMtimeAnonymous;
-    if (cfRejectedAtMtime !== null) {
-      const currentMtime = await statMtime(path);
-      if (currentMtime === cfRejectedAtMtime) {
-        // Auth file unchanged — session still stale. Short-circuit silently.
-        // No "Cloudflare rejected" log here; the original log was already emitted
-        // by the first rejection. Logging here again is exactly the spam we fix.
-        throw withCookie ? new CloudflareError(url) : new CrossOriginCloudflareError(url);
-      }
-      // mtime advanced → refreshSession wrote new credentials; clear this lane's latch.
-      if (withCookie) {
-        cfRejectedAtMtimeSite = null;
-      } else {
-        cfRejectedAtMtimeAnonymous = null;
-      }
+    const latch = withCookie ? siteLatch : anonLatch;
+    if (await latch.shouldShortCircuit(path)) {
+      // Silent short-circuit — no re-log here (see createCfLatch).
+      throw withCookie ? new CloudflareError(url) : new CrossOriginCloudflareError(url);
     }
 
     // Throttle: sleep if last request was < 1000ms ago.
@@ -190,13 +165,8 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
           },
           "Cloudflare rejected the request",
         );
-        const rejectedMtime = await statMtime(path);
-        if (withCookie) {
-          cfRejectedAtMtimeSite = rejectedMtime;
-          throw new CloudflareError(url);
-        }
-        cfRejectedAtMtimeAnonymous = rejectedMtime;
-        throw new CrossOriginCloudflareError(url);
+        await latch.record(path);
+        throw withCookie ? new CloudflareError(url) : new CrossOriginCloudflareError(url);
       }
 
       // 200 with CF challenge HTML — treat symmetrically with 403.
@@ -216,13 +186,8 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
             },
             "Cloudflare challenge in 200 body — session is stale",
           );
-          const rejectedMtime = await statMtime(path);
-          if (withCookie) {
-            cfRejectedAtMtimeSite = rejectedMtime;
-            throw new CloudflareError(url);
-          }
-          cfRejectedAtMtimeAnonymous = rejectedMtime;
-          throw new CrossOriginCloudflareError(url);
+          await latch.record(path);
+          throw withCookie ? new CloudflareError(url) : new CrossOriginCloudflareError(url);
         }
         // Return a synthetic response that re-streams the body we already consumed.
         return rebuildResponse(res, body);
@@ -295,6 +260,31 @@ function mergeHeadersPreservingAuth(
 /** True for content-types safe to decode as text (binary bodies corrupt bytes if decoded). */
 function isTextualContentType(contentType: string): boolean {
   return /^(text\/|application\/(json|xml|xhtml\+xml))/i.test(contentType) || contentType === "";
+}
+
+/**
+ * Per-lane CF short-circuit latch. Records the auth.json mtime at the moment
+ * a CloudflareError was observed; while that mtime still matches the file on
+ * disk, `shouldShortCircuit` returns true and the caller skips the HTTP call
+ * entirely. The latch clears itself once it observes the mtime has advanced
+ * (i.e. refreshSession wrote new credentials). See ADR-001 / #137.
+ */
+function createCfLatch() {
+  let rejectedAtMtime: number | null = null;
+
+  return {
+    async shouldShortCircuit(authPath: string): Promise<boolean> {
+      if (rejectedAtMtime === null) return false;
+      const currentMtime = await statMtime(authPath);
+      if (currentMtime === rejectedAtMtime) return true;
+      // mtime advanced → refreshSession wrote new credentials; clear the latch.
+      rejectedAtMtime = null;
+      return false;
+    },
+    async record(authPath: string): Promise<void> {
+      rejectedAtMtime = await statMtime(authPath);
+    },
+  };
 }
 
 /** Returns the mtime (ms) of the given file path, or -1 if the file is missing. */
