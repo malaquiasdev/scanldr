@@ -1,5 +1,9 @@
 # Model — Download History
 
+> **Historical record (pre-epic #116).** Describes the `downloads` table, dropped in the #116
+> redesign Phase 4; kept for history. See [ADR-008](../adr/008-retire-mangadex-source.md) /
+> [ADR-009](../adr/009-retire-volume-mode.md) for current state.
+
 Persisted in `scanldr.db` (SQLite) via `bun:sqlite`. Lives by default at `$XDG_DATA_HOME/scanldr/scanldr.db`, alongside `auth.json`. Configurable via `db_path` in `scanldr.json`.
 
 The history is the single source of truth for "what has been downloaded". It is intentionally decoupled from the output directory — the user can delete `.cbz` files freely and the CLI will not re-download them.

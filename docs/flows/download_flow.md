@@ -24,6 +24,8 @@ The download history (SQLite) is checked before any network request — already-
 
 ## Sequence Diagram
 
+> **Historical (pre-ADR-008/009)** — describes the retired MangaDex source and volume mode.
+
 ```mermaid
 sequenceDiagram
     actor User
@@ -130,6 +132,8 @@ All chapters belonging to a volume were merged into a single `.cbz` archive, sor
 
 ## Decisions
 
+> **Historical (pre-ADR-008/009)** — describes the retired MangaDex source and volume mode.
+
 1. **History check before any network call** — avoids unnecessary requests for already-downloaded volumes. A volume counts as "already downloaded" only when **all** its chapters (for the chosen language) are present in `downloads`.
 2. **History writes are atomic per volume** — chapters are accumulated in memory while downloading; once the `.cbz` is renamed from `.temp` to its final path, all chapter rows are inserted in a single SQLite transaction. Either every chapter of the volume lands in history or none does — no orphan rows pointing at a volume archive that was never produced.
 3. **Preferred languages from config** — CLI only prompts for language selection when none of the user's `preferred_languages` (from `scanldr.json`) are available. If a preferred language is found, it is used silently.
@@ -148,6 +152,8 @@ All chapters belonging to a volume were merged into a single `.cbz` archive, sor
 13. **`--no-track` flag** — disables history recording for a single run. Useful for one-off downloads the user does not want persisted.
 
 ## Rate-limit response handling
+
+> **Historical (pre-ADR-008/009)** — describes the retired MangaDex source and volume mode.
 
 Any MangaDex request (manga search, aggregate, feed, `/at-home/server/:chapterId`, or image fetch) may return `HTTP 429 Too Many Requests`. The client behavior is:
 
