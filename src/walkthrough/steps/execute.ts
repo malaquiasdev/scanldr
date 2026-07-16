@@ -111,11 +111,8 @@ export async function executeWalkthrough(
 
   const packedChapters: PackedChapter[] = [];
 
-  // The bundle loop (and the pack/cover step below it) can re-throw
-  // (MangakakalotParseError / WalkthroughError) to abort the whole walkthrough
-  // early. Wrapping everything in try/finally guarantees progress.finish()
-  // (and thus the shared stderr controller's endBar() teardown) still runs on
-  // that error path, so a re-entrant post-download-loop iteration never
+  // try/finally guarantees progress.finish() (and endBar() teardown) runs even if this loop
+  // re-throws (MangakakalotParseError/WalkthroughError), so a re-entrant iteration never
   // inherits phantom stale bar state from this aborted run.
   try {
     for (const bundle of selectedBundles) {
@@ -146,10 +143,8 @@ export async function executeWalkthrough(
 
           progress?.updateChapter(bundleIndex, totalPages, bundle.label);
 
-          // Same "count completions, not dispatch order" rule as the progress bar
-          // (pages resolve out of order under concurrency): this is a completion
-          // counter, not a page index/ordinal — under concurrency it does NOT
-          // correspond to "page N of the chapter".
+          // Completion counter, not a page index — pages resolve out of order under
+          // concurrency (same rule as the progress bar).
           let pagesFetched = 0;
           const result = await downloader.downloadBundle({
             outDir,
@@ -165,12 +160,9 @@ export async function executeWalkthrough(
             onPageProgress: () => {
               progress?.updatePage();
               pagesFetched++;
-              // Per-page terminal log — moved here from the mangakakalot adapter (#171):
-              // it's the same signal as the progress bar, so exactly one may own stderr.
-              // Suppressed when the bar is enabled (bar is the feedback); kept as the
-              // long-running-fetch fallback otherwise (non-TTY / no --progress / json mode).
-              // NOTE trace-store consequence: in interactive/TTY runs (bar enabled) these
-              // per-page rows are absent from the trace; chapter-level rows are unaffected.
+              // Same signal as the progress bar (moved from mangakakalot adapter, #171) —
+              // exactly one may own stderr, so suppressed when the bar is enabled and kept
+              // as fallback otherwise (non-TTY / no --progress / json mode).
               if (!progressEnabled) {
                 logger.info(
                   {
@@ -200,9 +192,7 @@ export async function executeWalkthrough(
           );
         };
 
-        // Wrap the entire per-bundle work (fetchChapterInput + downloadBundle) in a single
-        // withSessionRetry call when refreshFn is available. Any CloudflareError raised during
-        // metadata fetch OR page downloads triggers one session refresh and retries the whole bundle.
+        // Retries the whole bundle (fetch + download) once on Cloudflare rejection when refreshFn is available.
         if (refreshFn) {
           await withSessionRetry(
             doBundle,
@@ -215,11 +205,9 @@ export async function executeWalkthrough(
           await doBundle();
         }
       } catch (err) {
-        // DOM drift (MangakakalotParseError) is a systemic failure — site layout changed.
-        // Every remaining bundle will fail the same way, so abort immediately.
+        // DOM drift is systemic — every remaining bundle would fail the same way; abort immediately.
         if (err instanceof MangakakalotParseError) throw err;
-        // CF survived refresh → WalkthroughError thrown by withSessionRetry.
-        // Subsequent bundles would fail the same way; abort the entire walkthrough.
+        // CF survived refresh (WalkthroughError) — subsequent bundles would fail identically; abort.
         if (err instanceof WalkthroughError) throw err;
         failed++;
         logger.warn(
@@ -269,14 +257,12 @@ export async function executeWalkthrough(
           `packed volume: ${packResult.outputPath}`,
         );
 
-        // Volume write succeeded: the per-chapter .cbz files packed into it are now
-        // redundant. Delete AFTER the pack succeeded (never before — no data loss
-        // if packVolume throws). Deletion failures are graceful (warn + continue,
-        // handled inside deleteIndividualFiles) and never fail the run.
+        // Delete per-chapter files only after pack succeeds (no data loss if packVolume
+        // throws); deletion failures are handled inside deleteIndividualFiles and never
+        // fail the run.
         const deletedPaths = await packer.deleteIndividualFiles(packedChapters, logger);
 
-        // Reflect the final on-disk artifacts: drop only the per-chapter paths that
-        // were actually deleted (failed deletions stay in outputs — they still exist).
+        // Drop only the paths actually deleted; failed deletions stay in outputs (still exist).
         for (const path of deletedPaths) {
           const idx = outputs.indexOf(path);
           if (idx !== -1) outputs.splice(idx, 1);
