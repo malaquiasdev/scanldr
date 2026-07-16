@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.1.0](https://github.com/malaquiasdev/scanldr/compare/v1.0.0...v1.1.0) (2026-07-16)
+
+
+### Features
+
+* **auth:** multi-step recovery guide when paste is not a cURL command ([#104](https://github.com/malaquiasdev/scanldr/issues/104)) ([#158](https://github.com/malaquiasdev/scanldr/issues/158)) ([4a80ed4](https://github.com/malaquiasdev/scanldr/commit/4a80ed43c85620daa47e2777136a146e04051383))
+* **downloader:** reassemble CDN vertically-tiled mangakakalot pages ([#170](https://github.com/malaquiasdev/scanldr/issues/170)) ([27766b7](https://github.com/malaquiasdev/scanldr/commit/27766b722f48f6c8fb9efeabf13edc11ec4a46c9))
+* **downloader:** stderr progress indicator for long-running fetches ([#108](https://github.com/malaquiasdev/scanldr/issues/108)) ([#165](https://github.com/malaquiasdev/scanldr/issues/165)) ([c9c13b2](https://github.com/malaquiasdev/scanldr/commit/c9c13b2ddc19541082b8e3b0dcbd4dd356ba31f0))
+* **walkthrough:** post-download loop — download more without restarting ([#163](https://github.com/malaquiasdev/scanldr/issues/163)) ([#166](https://github.com/malaquiasdev/scanldr/issues/166)) ([9f215a5](https://github.com/malaquiasdev/scanldr/commit/9f215a568a7dd61604bfd24431c185cf0e4a7f3f))
+* **walkthrough:** restore chapter→volume grouping (pack + cover) ([#184](https://github.com/malaquiasdev/scanldr/issues/184)) ([e69132e](https://github.com/malaquiasdev/scanldr/commit/e69132eace459e7e996833667d35872d71305560))
+* **walkthrough:** show the actual chapter/volume label in the progress bar ([#176](https://github.com/malaquiasdev/scanldr/issues/176)) ([106dab3](https://github.com/malaquiasdev/scanldr/commit/106dab3b9e481f5e396cd0c0c8e78e66eacc1390))
+
+
+### Bug Fixes
+
+* **fallback-http:** scope CF short-circuit latch per cookie lane ([#137](https://github.com/malaquiasdev/scanldr/issues/137)) ([#148](https://github.com/malaquiasdev/scanldr/issues/148)) ([a08bc78](https://github.com/malaquiasdev/scanldr/commit/a08bc78a5af54ba194a4bc07cca68b4ca6787acf))
+* **mangadex:** paginate feedChapters beyond 500-chapter cap ([#121](https://github.com/malaquiasdev/scanldr/issues/121)) ([#149](https://github.com/malaquiasdev/scanldr/issues/149)) ([a3e12d0](https://github.com/malaquiasdev/scanldr/commit/a3e12d072383ae3480d3d1287b586ebb66d84a9e))
+* **mangadex:** thread user config (language/quality) into adapter ([#124](https://github.com/malaquiasdev/scanldr/issues/124)) ([#152](https://github.com/malaquiasdev/scanldr/issues/152)) ([6dfbee2](https://github.com/malaquiasdev/scanldr/commit/6dfbee24d1066e0248e4547cf951ef10d7e940dc))
+* **mangakakalot:** friendly CLI message on DOM-drift parse error ([#114](https://github.com/malaquiasdev/scanldr/issues/114)) ([#159](https://github.com/malaquiasdev/scanldr/issues/159)) ([13b2e33](https://github.com/malaquiasdev/scanldr/commit/13b2e338a7dc307738ee60eacc6bb9e59d4229af))
+* **mangakakalot:** sentinel instead of synthetic chapter num for null chapters ([#122](https://github.com/malaquiasdev/scanldr/issues/122)) ([#151](https://github.com/malaquiasdev/scanldr/issues/151)) ([7ba02f2](https://github.com/malaquiasdev/scanldr/commit/7ba02f2199f3c963e5ebdd956c554c2b1e860ce4))
+* **walkthrough:** inject cover into volume-mode cbz ([#123](https://github.com/malaquiasdev/scanldr/issues/123)) ([#160](https://github.com/malaquiasdev/scanldr/issues/160)) ([3e0abd8](https://github.com/malaquiasdev/scanldr/commit/3e0abd805279d19bc493a4e86fce0787fe28a56b))
+* **walkthrough:** keep logs and warnings from clobbering the live progress bar ([#174](https://github.com/malaquiasdev/scanldr/issues/174)) ([50f3ac3](https://github.com/malaquiasdev/scanldr/commit/50f3ac3628a1a01743f9b8fd89396f6ee8e04bc2))
+* **walkthrough:** stop per-page fetch log from clobbering the progress bar ([#172](https://github.com/malaquiasdev/scanldr/issues/172)) ([ebd8fa0](https://github.com/malaquiasdev/scanldr/commit/ebd8fa0b55dfb53dafdbeafb748c313d922fd71c))
+
 ## 1.0.0 (2026-07-02)
 
 
