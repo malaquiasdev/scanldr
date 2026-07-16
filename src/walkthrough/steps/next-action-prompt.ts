@@ -7,7 +7,7 @@ export async function promptNextAction(): Promise<NextAction> {
   const result = await select<NextAction>({
     message: "Done. What next?",
     choices: [
-      { name: "Same manga — pick another volume/range", value: "same-manga" },
+      { name: "Same manga — pick another chapter range", value: "same-manga" },
       { name: "New manga — search again", value: "new-manga" },
       { name: "Quit", value: "quit" },
     ],

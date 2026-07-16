@@ -2,27 +2,29 @@
 
 ## Current walkthrough (`bun start`)
 
-The current single-walkthrough CLI (post-epic #116) runs these steps:
+The current single-walkthrough CLI (post-epic #116, chapter-only since [ADR-009](../adr/009-retire-volume-mode.md)) runs these steps:
 
 1. **Title prompt** — free-text input ("Manga title:").
-2. **Source picker** — choose MangaDex or Mangakakalot.
-3. **Auth check** — if the chosen source requires auth and no valid session exists, prompts for a cURL paste; silently skipped for MangaDex.
+2. **Source picker** — auto-selects Mangakakalot, the sole registered source (see [ADR-008](../adr/008-retire-mangadex-source.md); MangaDex was retired).
+3. **Auth check** — Mangakakalot requires auth, so every run prompts for a cURL paste when no valid session exists.
 4. **Search results** — visual numbered picker, single select.
-5. **Mode picker** — Chapter or Volume.
-6. **Range picker** — visual multi-select list of available chapters or volumes; no range-string parser.
-7. **Pack prompt** (chapter mode only; volume mode always packs) — "Group these chapters into a single volume? [Y/n]".
-8. **Cover URL** (when packing) — optional; press Enter to skip.
-9. **Execute** — download images, pack into `.cbz`, write to output directory.
+5. **Range picker** — visual multi-select list of available chapters; no range-string parser, no mode choice (chapter is the only mode).
+6. **Execute** — download images and write each selected chapter as its own `.cbz` to the output directory. No pack step, no cover-injection step — volume grouping and cover art were withdrawn (see ADR-009).
 
 See [docs/auth-manual.md](../auth-manual.md) for step 3 in detail.
 
 ## Historical `download` command (pre-epic #116)
+
+> This section describes the legacy multi-command CLI, which used MangaDex as its primary
+> source — retired by [ADR-008](../adr/008-retire-mangadex-source.md). Kept as historical record.
 
 Covers the `download` command. The CLI always resolves metadata via MangaDex first. If the title or an acceptable language is not available, the user is prompted to choose a fallback site.
 
 The download history (SQLite) is checked before any network request — already-downloaded volumes are skipped regardless of whether the output files still exist on disk.
 
 ## Sequence Diagram
+
+> **Historical (pre-ADR-008/009)** — describes the retired MangaDex source and volume mode.
 
 ```mermaid
 sequenceDiagram
@@ -102,7 +104,21 @@ sequenceDiagram
     end
 ```
 
-## Volume Output Structure
+## Current Output Structure (chapter-only)
+
+```
+./download/
+└── witch-hat-atelier/
+    ├── witch-hat-atelier-chapter-018.cbz
+    ├── witch-hat-atelier-chapter-019.cbz
+    └── witch-hat-atelier-chapter-020.cbz
+```
+
+Each selected chapter is written as its own `.cbz` archive, pages sorted and zero-padded within the chapter. See ADR-009.
+
+## Historical: Volume Output Structure (pre-ADR-009)
+
+> Volume grouping was withdrawn by [ADR-009](../adr/009-retire-volume-mode.md). Kept as historical record.
 
 ```
 ./download/
@@ -112,9 +128,11 @@ sequenceDiagram
     └── witch-hat-atelier-volume-003.cbz
 ```
 
-All chapters belonging to a volume are merged into a single `.cbz` archive, sorted by chapter and page number.
+All chapters belonging to a volume were merged into a single `.cbz` archive, sorted by chapter and page number.
 
 ## Decisions
+
+> **Historical (pre-ADR-008/009)** — describes the retired MangaDex source and volume mode.
 
 1. **History check before any network call** — avoids unnecessary requests for already-downloaded volumes. A volume counts as "already downloaded" only when **all** its chapters (for the chosen language) are present in `downloads`.
 2. **History writes are atomic per volume** — chapters are accumulated in memory while downloading; once the `.cbz` is renamed from `.temp` to its final path, all chapter rows are inserted in a single SQLite transaction. Either every chapter of the volume lands in history or none does — no orphan rows pointing at a volume archive that was never produced.
@@ -134,6 +152,8 @@ All chapters belonging to a volume are merged into a single `.cbz` archive, sort
 13. **`--no-track` flag** — disables history recording for a single run. Useful for one-off downloads the user does not want persisted.
 
 ## Rate-limit response handling
+
+> **Historical (pre-ADR-008/009)** — describes the retired MangaDex source and volume mode.
 
 Any MangaDex request (manga search, aggregate, feed, `/at-home/server/:chapterId`, or image fetch) may return `HTTP 429 Too Many Requests`. The client behavior is:
 

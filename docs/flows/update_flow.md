@@ -1,5 +1,9 @@
 # Flow — Update
 
+> **Historical record (pre-epic #116).** Describes the standalone `update` command removed in
+> the #116 redesign; kept for history. See [ADR-008](../adr/008-retire-mangadex-source.md) /
+> [ADR-009](../adr/009-retire-volume-mode.md) for current state.
+
 The `update` command brings a single manga's local archive up to date with the latest published volumes/chapters. It is the building block `sync` invokes for every active subscription.
 
 `update` is functionally a constrained `download`: the volume/chapter range is computed from the diff between MangaDex and the local `downloads` table — the user does not pass `--volume` or `--chapter`. Everything else (history check, image retry, transactional history insert, .temp rename) is identical to `download`.

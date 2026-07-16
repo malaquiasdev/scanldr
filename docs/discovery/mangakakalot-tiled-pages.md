@@ -20,7 +20,7 @@ The CDN serves the same logical page as two (or more) sequential `<img>` tags, e
 scanldr does zero image processing. Bytes flow verbatim from CDN response to `Uint8Array` to zip entry:
 
 - [`src/downloader/service.ts:117`](../../src/downloader/service.ts) — CDN response body is read straight into a `Uint8Array`, no resize/crop/transform.
-- [`src/pack/pack.ts`](../../src/pack/pack.ts) — bytes are written into the zip entry as-is.
+- `src/pack/pack.ts` — bytes were written into the zip entry as-is (`src/pack/` removed by [ADR-009](../adr/009-retire-volume-mode.md); packaging now lives in [`src/downloader/service.ts`](../../src/downloader/service.ts)).
 
 There is no `sharp`, `jimp`, `canvas`, or `pdfkit` dependency anywhere in the project, and output formats are limited to `cbz`/`zip`. There is no code path capable of cropping or resizing a page. H2 is ruled out entirely.
 
@@ -69,6 +69,6 @@ The only real fix is detect-group + vertical stitch + **re-encode** the grouped 
 
 - [`src/integrations/mangakakalot/client/parser.ts`](../../src/integrations/mangakakalot/client/parser.ts)
 - [`src/downloader/service.ts`](../../src/downloader/service.ts)
-- [`src/pack/pack.ts`](../../src/pack/pack.ts)
+- `src/pack/pack.ts` (removed by [ADR-009](../adr/009-retire-volume-mode.md))
 - Issue [#168](https://github.com/malaquiasdev/scanldr/issues/168)
 - [ADR-007: Reassemble CDN vertically-tiled mangakakalot pages](../adr/007-reassemble-cdn-tiled-pages.md)

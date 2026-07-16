@@ -1,7 +1,10 @@
 # ADR-002: MangaDex as Primary Metadata and Download Source
 
+> **Superseded** by [ADR-008](008-retire-mangadex-source.md) (MangaDex source retired) and
+> [ADR-009](009-retire-volume-mode.md) (volume mode retired). Kept as historical decision record.
+
 **Date:** 2026-04-24
-**Status:** Accepted
+**Status:** Superseded
 
 ## Context
 

@@ -1,5 +1,12 @@
 # Technical Specification: scanldr
 
+> **Historical record (pre-epic #116).** This document describes the multi-command CLI
+> (`list`/`download`/`update`/`sync`/subscriptions) that predates the epic #116 redesign into a
+> single one-shot walkthrough (`src/walkthrough/`). It also predates [ADR-008](adr/008-retire-mangadex-source.md),
+> which retired the MangaDex source described throughout this file — the current CLI uses
+> mangakakalot.gg as its sole source. Kept as-is for historical accuracy; see
+> [SUMMARY.md](SUMMARY.md) for current architecture docs.
+
 ## 1. Overview
 **Project:** scanldr — offline downloader for manga, HQ, manhwa, and webtoon.
 **Repository:** [`malaquiasdev/scanldr`](https://github.com/malaquiasdev/scanldr)

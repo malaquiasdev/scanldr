@@ -6,22 +6,17 @@ import { getAdapter } from "../sources/adapters/index.ts";
 import type { SourceDescriptor } from "../sources/types.ts";
 import { createProgress } from "./progress.ts";
 import { checkAuth, refreshSession } from "./steps/auth-check.ts";
-import { promptCoverUrl } from "./steps/cover-prompt.ts";
 import type { ExecuteDeps } from "./steps/execute.ts";
 import { executeWalkthrough } from "./steps/execute.ts";
-import { pickMode } from "./steps/mode-picker.ts";
 import { promptNextAction } from "./steps/next-action-prompt.ts";
-import { promptPack } from "./steps/pack-prompt.ts";
 import { pickRange } from "./steps/range-picker.ts";
 import { pickSearchResult } from "./steps/search-results-picker.ts";
 import { pickSource } from "./steps/source-picker.ts";
 import { promptTitle } from "./steps/title-prompt.ts";
-import { promptVolumeName } from "./steps/volume-name-prompt.ts";
 import type {
   ChapterListing,
   SearchHit,
   SessionProbeClientFactory,
-  VolumeListing,
   WalkthroughCancelled,
   WalkthroughInput,
   WalkthroughResult,
@@ -41,11 +36,13 @@ export interface RunWalkthroughOptions extends WalkthroughInput {
   logger: Logger;
   /** Output directory for downloads. Defaults to current working directory. */
   outDir?: string;
-  /** User config — threaded into the adapter factory (mangadex language/quality). */
+  /** User config — threaded into the adapter factory. */
   config?: Config;
+  /** Override the XDG data home used to resolve the auth.json path (tests inject a tmp dir). */
+  dataHome?: string;
   /** Override adapter factory (tests inject fakes). */
   adapterFactory?: (sourceId: string, opts: { logger: Logger; config?: Config }) => SourceAdapter;
-  /** Override downloader/packer deps (tests inject fakes). */
+  /** Override downloader deps (tests inject fakes). */
   executeDeps?: ExecuteDeps;
   /**
    * Override the session probe client factory (tests inject fakes).
@@ -64,6 +61,18 @@ export interface RunWalkthroughOptions extends WalkthroughInput {
    * Defaults to false — callers that don't opt in get the previous log-only behavior.
    */
   progressEnabled?: boolean;
+  /**
+   * Bar-write seam of the shared stderr controller (see @plugins/terminal).
+   * Threaded into `createProgress` so the bar and logger stay coordinated.
+   * Defaults to raw stderr passthrough when omitted (e.g. direct test calls).
+   */
+  barWrite?: (chunk: string) => void;
+  /**
+   * Explicit bar-teardown seam of the shared stderr controller (see
+   * @plugins/terminal). Threaded into `createProgress` so `finish()` resets
+   * controller bar-state explicitly instead of relying on byte-sniffing.
+   */
+  endBar?: () => void;
 }
 
 /** Returned when walkthrough errors out in a handled way (WalkthroughError). */
@@ -78,7 +87,6 @@ export interface WalkthroughFailed {
  */
 interface ChapterListingCache {
   chapters: ChapterListing[] | null;
-  volumes: VolumeListing[] | null;
 }
 
 /**
@@ -111,6 +119,7 @@ export async function runWalkthrough(
       requiresAuth: source.requiresAuth,
       logger: opts.logger,
       probeClientFactory,
+      dataHome: opts.dataHome,
     });
 
     // Build a refresh closure reused by all adapter-call retry wrappers.
@@ -157,7 +166,7 @@ export async function runWalkthrough(
           opts.logger,
           "walkthrough.search_retry",
         );
-        cache = { chapters: null, volumes: null };
+        cache = { chapters: null };
 
         lastResult = await runDownloadFlow({
           title,
@@ -170,10 +179,12 @@ export async function runWalkthrough(
           doRefresh,
           executeDeps: opts.executeDeps,
           progressEnabled: opts.progressEnabled ?? false,
+          barWrite: opts.barWrite,
+          endBar: opts.endBar,
         });
       } else {
-        // "Same manga" entry point: reuse hit + cached listings, re-enter at pickMode.
-        if (cache === null) cache = { chapters: null, volumes: null };
+        // "Same manga" entry point: reuse hit + cached listing, re-enter at range selection.
+        if (cache === null) cache = { chapters: null };
         lastResult = await runDownloadFlow({
           title: lastResult?.title ?? "",
           hit,
@@ -185,6 +196,8 @@ export async function runWalkthrough(
           doRefresh,
           executeDeps: opts.executeDeps,
           progressEnabled: opts.progressEnabled ?? false,
+          barWrite: opts.barWrite,
+          endBar: opts.endBar,
         });
       }
 
@@ -233,12 +246,14 @@ interface DownloadFlowOptions {
   doRefresh: () => Promise<void>;
   executeDeps?: ExecuteDeps;
   progressEnabled: boolean;
+  barWrite?: (chunk: string) => void;
+  endBar?: () => void;
 }
 
 /**
- * Runs steps 5-9 (mode → range → pack prompts → execute) for an already-resolved
- * manga (hit). Reuses cached chapter/volume listings when present so "same manga"
- * iterations never re-call adapter.search or adapter.listChapters/listVolumes.
+ * Runs steps 6-9 (range → execute) for an already-resolved manga (hit). Reuses the
+ * cached chapter listing when present so "same manga" iterations never re-call
+ * adapter.search or adapter.listChapters.
  */
 async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<WalkthroughResult> {
   const {
@@ -252,20 +267,17 @@ async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<Walkthrou
     doRefresh,
     executeDeps,
     progressEnabled,
+    barWrite,
+    endBar,
   } = flowOpts;
-
-  // Step 5 — mode
-  const mode = await pickMode();
 
   // Step 6 — range (with CF retry). Reuse cached listing for this hit when available.
   const rangeResult = await withSessionRetry(
     () =>
       pickRange({
         hit,
-        mode,
         adapter,
-        preloadedChapters: mode === "chapter" ? (cache.chapters ?? undefined) : undefined,
-        preloadedVolumes: mode === "volume" ? (cache.volumes ?? undefined) : undefined,
+        preloadedChapters: cache.chapters ?? undefined,
       }),
     isCloudflareError,
     doRefresh,
@@ -276,28 +288,12 @@ async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<Walkthrou
 
   // Cache the listing actually used (fetched or preloaded) for subsequent "same manga" iterations.
   if (rangeResult.chapters) cache.chapters = rangeResult.chapters;
-  if (rangeResult.volumes) cache.volumes = rangeResult.volumes;
-
-  // Step 7 — pack prompt (chapter mode only)
-  // volume mode always packs
-  const groupIntoVolume = mode === "volume" ? true : await promptPack();
-
-  // Step 7b — volume name (chapter mode + groupIntoVolume only; volume mode uses bundle.num)
-  const volumeName =
-    mode === "chapter" && groupIntoVolume ? await promptVolumeName({ logger }) : null;
-
-  // Step 8 — cover URL (only when packing)
-  const coverUrl = groupIntoVolume ? await promptCoverUrl({ logger }) : null;
 
   const result: WalkthroughResult = {
     title,
     source,
     hit,
-    mode,
     selectedBundles,
-    groupIntoVolume,
-    volumeName,
-    coverUrl,
   };
 
   // Step 9 — execute (fetchChapterInput calls are wrapped inside executeWalkthrough).
@@ -306,21 +302,20 @@ async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<Walkthrou
   const progress = createProgress({
     enabled: progressEnabled,
     totalChapters: selectedBundles.length,
+    write: barWrite,
+    endBar,
   });
   const { failed } = await executeWalkthrough(
     {
       source,
       hit,
-      mode,
       selectedBundles,
-      groupIntoVolume,
-      volumeName,
-      coverUrl,
       outDir,
       adapter,
       logger,
       refreshFn: doRefresh,
       progress,
+      progressEnabled,
     },
     executeDeps,
   );

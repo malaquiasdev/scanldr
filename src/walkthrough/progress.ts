@@ -3,6 +3,14 @@ import type { ProgressHandle, ProgressOptions, ProgressState } from "./types.ts"
 const BAR_WIDTH = 20;
 const THROTTLE_MS = 200; // ~5 updates/sec
 const MAX_SAMPLES = 20;
+// Line-width budget, not arbitrary: label + ~70 fixed chars (bar, counters, page, avg, ETA) must stay within ~80 cols.
+const MAX_LABEL_LEN = 24;
+
+/** Defensive truncation: labels are short by design, but a wrapped line would defeat the in-place \r redraw. */
+function truncateLabel(label: string): string {
+  if (label.length <= MAX_LABEL_LEN) return label;
+  return `${label.slice(0, MAX_LABEL_LEN - 1)}…`;
+}
 
 function formatEta(msRemaining: number, hasSample: boolean): string {
   if (!hasSample) return "~--";
@@ -31,12 +39,20 @@ function renderBar(percent: number): string {
 }
 
 function renderLine(state: ProgressState): string {
-  const { currentChapter, totalChapters, currentPage, totalPages, percent, avgPageMs, etaMs } =
-    state;
+  const {
+    currentChapter,
+    totalChapters,
+    currentPage,
+    totalPages,
+    percent,
+    avgPageMs,
+    etaMs,
+    label,
+  } = state;
   const bar = renderBar(percent);
   const pct = Math.round(percent);
   const hasSample = avgPageMs > 0;
-  return `Chapter ${currentChapter}/${totalChapters} (page ${currentPage}/${totalPages}) ${bar} ${pct}% • avg ${formatAvg(avgPageMs)}/page • ETA ${formatEta(etaMs, hasSample)}`;
+  return `${truncateLabel(label)} [${currentChapter}/${totalChapters}] (page ${currentPage}/${totalPages}) ${bar} ${pct}% • avg ${formatAvg(avgPageMs)}/page • ETA ${formatEta(etaMs, hasSample)}`;
 }
 
 /**
@@ -57,12 +73,14 @@ export function createProgress(opts: ProgressOptions): ProgressHandle {
     write = (chunk: string) => {
       process.stderr.write(chunk);
     },
+    endBar,
     now = Date.now,
   } = opts;
 
   let currentChapter = 0;
   let currentPage = 0;
   let totalPages = 0;
+  let label = "";
   let lastRenderAt = 0;
   let lastPageStartedAt: number | null = null;
   const pageDurations: number[] = [];
@@ -104,16 +122,18 @@ export function createProgress(opts: ProgressOptions): ProgressHandle {
       percent: computePercent(),
       avgPageMs,
       etaMs: computeEtaMs(avgPageMs),
+      label,
     };
     write(`\r${renderLine(state)}`);
   }
 
   return {
-    updateChapter(chapterIndex: number, chapterTotalPages: number): void {
+    updateChapter(chapterIndex: number, chapterTotalPages: number, bundleLabel: string): void {
       if (!enabled) return;
       currentChapter = chapterIndex;
       currentPage = 0;
       totalPages = chapterTotalPages;
+      label = bundleLabel;
       lastPageStartedAt = null;
       render(true);
     },
@@ -137,6 +157,10 @@ export function createProgress(opts: ProgressOptions): ProgressHandle {
       // flushed even if the last updatePage() call was dropped by the throttle.
       render(true);
       write("\n");
+      // Explicit teardown: resets the shared controller's bar-state. This is
+      // the only thing that flips `barActive` off now — no more sniffing the
+      // trailing "\n" for it.
+      endBar?.();
     },
   };
 }

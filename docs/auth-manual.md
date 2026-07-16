@@ -1,6 +1,6 @@
 # Manual Auth — Capturing a Cloudflare Session
 
-Capturing your real-browser Cloudflare session lets the fallback downloader (mangakakalot.gg) bypass the bot protection. This happens either via the standalone `scanldr auth` command (historical, pre-epic #116) or inline during the interactive walkthrough (`bun start`), which prompts for the same cURL paste when Mangakakalot is selected and no valid session exists.
+Capturing your real-browser Cloudflare session lets the downloader (mangakakalot.gg) bypass the bot protection. This happens either via the standalone `scanldr auth` command (historical, pre-epic #116) or inline during the interactive walkthrough (`bun start`), which prompts for the same cURL paste when Mangakakalot is selected and no valid session exists.
 
 ## Quick version (walkthrough prompt)
 
@@ -13,6 +13,9 @@ Capturing your real-browser Cloudflare session lets the fallback downloader (man
 The `cf_clearance` cookie extracted from the cURL is persisted to `~/.local/share/scanldr/auth.json` for the session.
 
 ## Detailed version (`scanldr auth` command)
+
+> **Historical.** The standalone `scanldr auth` command is a pre-epic #116 path. The current
+> walkthrough (`bun start`) Quick-version prompt above is the primary way to authenticate.
 
 ## Why manual?
 

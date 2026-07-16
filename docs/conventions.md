@@ -5,12 +5,11 @@
 ```
 src/
 ├── index.ts            # CLI entrypoint — trace store + logger init → runWalkthrough
-├── walkthrough/        # Orchestrates the 9-step one-shot download walkthrough
-├── sources/            # Source adapter layer (mangadex, mangakakalot wrappers)
-├── pack/               # CBZ/ZIP packaging primitives
+├── walkthrough/        # Orchestrates the 6-step one-shot download walkthrough (chapter-only, ADR-009)
+├── sources/            # Source adapter layer (mangakakalot wrapper — sole source, see ADR-008)
 ├── plugins/            # Infrastructure: config/, logger/, db/, errors/, guards/, trace/
 ├── downloader/         # Business logic: image fetch + packaging
-└── integrations/       # External site clients: mangadex/, mangakakalot/
+└── integrations/       # External site clients: mangakakalot/
 migrations/             # Versioned SQL migrations (applied in lexicographic order)
 ```
 
@@ -31,8 +30,8 @@ These files still follow all other rules: no classes, types live in the feature'
   - **Exception:** `Error` subclasses are allowed when a domain needs a typed exception that callers branch on with `instanceof` (`AuthError`, `CliError`, `ConfigError`, `NotImplementedError`). Keep the body trivial — just `super(message)` and `this.name = "..."`.
 - **Interfaces in `types.ts`** — never declare interfaces or types in `index.ts` or `service.ts`. Re-export from `index.ts`.
 - **No flat files in `src/`** — every feature in its own folder. Only `index.ts` at root level (the CLI entrypoint).
-- **Import aliases** — cross-boundary imports use `@plugins/*`, `@integrations/*`. Top-level feature folders (`downloader/`, `pack/`, `sources/`, `walkthrough/`) are imported via relative paths.
-- **`plugins/`** = infrastructure (no business rules). **`integrations/`** = external site clients. Top-level feature folders (`downloader/`, `pack/`, `sources/`, `walkthrough/`) hold business domain logic.
+- **Import aliases** — cross-boundary imports use `@plugins/*`, `@integrations/*`. Top-level feature folders (`downloader/`, `sources/`, `walkthrough/`) are imported via relative paths.
+- **`plugins/`** = infrastructure (no business rules). **`integrations/`** = external site clients. Top-level feature folders (`downloader/`, `sources/`, `walkthrough/`) hold business domain logic.
 - **`integrations/_shared/`** = cross-integration/cross-cutting value & type contracts (e.g. `manga.ts`, `media.ts`) — a leaf module with no upward imports.
 
 ## Logger
@@ -41,7 +40,7 @@ Signature follows the pino convention — structured fields first, human message
 
 ```ts
 logger.info({ event: "downloader.chapter_start", context: "downloader", id, num }, "downloading chapter")
-logger.warn({ event: "mangadex.rate_limited", context: "http", attempt, waitMs }, "429 rate-limited, backing off")
+logger.warn({ event: "fallback_http.retry", context: "fallback-http", attempt, waitMs }, "page fetch failed, retrying")
 logger.error({ event: "cli.boot_failed", context: "main", err }, "failed to open database")
 ```
 

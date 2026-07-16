@@ -23,4 +23,6 @@ First match wins:
 |-----|---------|-------------|
 | `db_path` | `~/.local/share/scanldr/scanldr.db` | Path to the SQLite database file |
 
-All other keys in `DEFAULT_CONFIG` (`preferred_languages`, `download_quality`, `default_format`, `default_out`, `image_concurrency`, `chapter_delay_ms`) are validated and parsed but not read by the walkthrough code path. See [#124](https://github.com/malaquiasdev/scanldr/issues/124).
+All other keys in `DEFAULT_CONFIG` (`default_format`, `default_out`, `image_concurrency`, `chapter_delay_ms`) are validated and parsed but not read by the walkthrough code path.
+
+`preferred_languages` and `download_quality` were removed in [ADR-008](adr/008-retire-mangadex-source.md) — they were consumed only by the now-retired MangaDex adapter.

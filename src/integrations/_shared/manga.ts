@@ -1,4 +1,4 @@
-// Shared manga domain types used across integrations (mangadex, mangakakalot, etc.).
+// Shared manga domain types used across integrations (mangakakalot, etc.).
 // Both integration clients depend on this module — never import types from one integration into another.
 
 export interface MangaCandidate {
@@ -6,12 +6,6 @@ export interface MangaCandidate {
   title: string;
   originalLanguage: string;
   year: number | null;
-}
-
-export interface VolumeRef {
-  volume: string;
-  numeric: number;
-  chapterIds: string[];
 }
 
 export interface ChapterRef {

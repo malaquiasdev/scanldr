@@ -1,5 +1,10 @@
 # Model — Manga, Volume & Chapter
 
+> **Historical record (pre-epic #116).** Describes MangaDex as primary source and the `VolumeRef`
+> volume-mode model, both removed in the #116 redesign; kept for history. See
+> [ADR-008](../adr/008-retire-mangadex-source.md) / [ADR-009](../adr/009-retire-volume-mode.md)
+> for current state.
+
 ## MangaInfo
 
 Resolved from MangaDex (primary) or a fallback site parser.

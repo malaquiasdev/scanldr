@@ -93,11 +93,11 @@ describe("main() — config wiring", () => {
     const spy = { calledWith: null as RunWalkthroughOptions | null };
 
     await main([], {
-      loadConfigFn: makeLoadConfig({ preferred_languages: ["pt-br"] }),
+      loadConfigFn: makeLoadConfig({ default_format: "zip" }),
       runWalkthroughFn: makeSpyWalkthrough(spy),
     });
 
-    expect(spy.calledWith?.config?.preferred_languages).toEqual(["pt-br"]);
+    expect(spy.calledWith?.config?.default_format).toEqual("zip");
   });
 });
 

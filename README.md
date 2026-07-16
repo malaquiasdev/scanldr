@@ -4,14 +4,16 @@
 
 # scanldr
 
-Single-walkthrough CLI to download manga from MangaDex and Mangakakalot, packaged as CBZ archives.
+Single-walkthrough CLI to download manga from Mangakakalot, one chapter per CBZ archive.
 
 ## Features
 
 - Single interactive walkthrough — `bun start`.
-- Two sources: MangaDex (no auth) and Mangakakalot (cURL paste for Cloudflare bypass).
-- Visual pickers for source, search results, mode (chapter/volume), and range — no flag-based syntax.
-- Optional packing of selected chapters into a single CBZ with optional cover injection.
+- Single source: Mangakakalot (cURL paste for Cloudflare bypass) — every run requires auth.
+- Visual pickers for search results and chapter range — no flag-based syntax.
+- Automatic reassembly of CDN vertically-tiled pages into single, unsplit pages.
+- Coordinated stderr progress bar showing the current chapter (e.g. `Chapter 33 [3/5]`).
+- Post-download loop — queue more downloads without restarting the walkthrough.
 - Structured 3-day trace store in SQLite for debug/post-mortem.
 - Human-readable terminal output by default; `--json` flag for structured stderr.
 
@@ -37,7 +39,7 @@ bun start --help           # show usage
 bun start --version        # show version
 ```
 
-The walkthrough guides you through title search, source selection, Cloudflare auth (Mangakakalot only), mode/range picking, and optional packing. See [docs/flows/download_flow.md](docs/flows/download_flow.md) for the full step-by-step and sequence diagram, and [docs/auth-manual.md](docs/auth-manual.md) for how to capture a Mangakakalot cURL session.
+The walkthrough guides you through title search, Cloudflare auth (Mangakakalot cURL paste), chapter range picking, and download, then loops back to let you queue another download without restarting. See [docs/flows/download_flow.md](docs/flows/download_flow.md) for the full step-by-step and sequence diagram, and [docs/auth-manual.md](docs/auth-manual.md) for how to capture a Mangakakalot cURL session.
 
 ## Development
 
@@ -65,10 +67,7 @@ bun --watch run src/index.ts
 
 ## Known limitations
 
-- [#121](https://github.com/malaquiasdev/scanldr/issues/121) — long MangaDex series (>500 chapters) silently truncated.
-- [#122](https://github.com/malaquiasdev/scanldr/issues/122) — Mangakakalot synthetic chapter number when source returns null.
-- [#123](https://github.com/malaquiasdev/scanldr/issues/123) — cover injection in volume mode silently skipped.
-- [#124](https://github.com/malaquiasdev/scanldr/issues/124) — MangaDex adapter hardcodes language/quality, ignores user config.
+See the [issue tracker](https://github.com/malaquiasdev/scanldr/issues) for currently open limitations.
 
 ## License
 

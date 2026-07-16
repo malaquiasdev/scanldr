@@ -1,6 +1,4 @@
 export interface Config {
-  preferred_languages: string[];
-  download_quality: "data" | "data-saver";
   default_format: "cbz" | "zip";
   default_out: string;
   db_path: string;

@@ -7,6 +7,7 @@ import { loadConfig } from "@plugins/config/index.ts";
 import { openDb, runMigrations } from "@plugins/db/index.ts";
 import { CliError } from "@plugins/errors/index.ts";
 import { createLogger, type LogFormat, type LogLevel } from "@plugins/logger/index.ts";
+import { createStderrController } from "@plugins/terminal/index.ts";
 import { createTraceStore } from "@plugins/trace/index.ts";
 import { runWalkthrough } from "./walkthrough/index.ts";
 
@@ -107,13 +108,20 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<void> {
   runMigrations(db);
 
   const traceStore = createTraceStore({ db });
-  const logger = createLogger({ level, format }, traceStore);
+  // Shared stderr coordinator: both the logger and the progress bar route their
+  // `write` seam through it, so chapter-level logs/warnings never clobber the
+  // live bar. Its ANSI-vs-passthrough mode is driven by the same
+  // `progressEnabled` value that gates the bar itself.
+  const stderrController = createStderrController({ enabled: progressEnabled });
+  const logger = createLogger({ level, format, write: stderrController.logWrite }, traceStore);
 
   const result = await runWalkthroughFn({
     logger,
     outDir: config.default_out,
     config,
     progressEnabled,
+    barWrite: stderrController.barWrite,
+    endBar: stderrController.endBar,
   });
   if (typeof result === "object" && "cancelled" in result && result.cancelled) {
     process.exit(130);
