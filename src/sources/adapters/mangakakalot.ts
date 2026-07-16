@@ -60,11 +60,8 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
   async function listChapters(hitId: string): Promise<ChapterListing[]> {
     const client = await getClientPromise();
     const chapters = await client.getChapterList(hitId);
-    // No synthetic sequential/misleading chapter number here — "none" is the
-    // sentinel the downloader/pack layer already understands (padBundleNumber
-    // passes it through unchanged, chapterTokenToNum sorts it last). Multiple
-    // null chapters get a disambiguating suffix ("none-1", "none-2", ...) so
-    // their zip-prefix/filename never collides (see #122 follow-up bug).
+    // Null chapter numbers become the "none" sentinel (downloader/pack understand it);
+    // duplicates get disambiguating suffixes "none-1", "none-2" to avoid zip-prefix collisions (#122).
     let noneIdx = 0;
     return chapters.map((ch) => {
       const num = ch.chapter !== null ? ch.chapter : `none-${++noneIdx}`;
@@ -83,21 +80,18 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
     const pages: ImageRef[] = imageRefs.map((ref, i) => ({ url: ref.url, page: i + 1 }));
 
     const imageFetcher = async (ref: ImageRef): Promise<Uint8Array> => {
-      // Image CDN (img-r1.2xstorage.com) is a different Cloudflare zone with hotlink
-      // protection. We must NOT forward the site cookie (cross-origin leakage) and
-      // MUST include Referer so the CDN allows the request.
+      // Image CDN is a different Cloudflare zone with hotlink protection: must NOT forward the
+      // site cookie (cross-origin leak) and MUST send Referer, or the CDN rejects the request.
+      // getAnonymous throws (CloudflareError / short-circuit) before any log — no per-page log on this failure path.
       const res = await http.getAnonymous(ref.url, {
         referer: "https://www.mangakakalot.gg/",
         accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
         "sec-fetch-dest": "image",
         "sec-fetch-mode": "no-cors",
         "sec-fetch-site": "cross-site",
-      }); // CloudflareError or short-circuit throws here — no log emitted
+      });
       const buf = await res.arrayBuffer();
-      // Per-page fetch feedback moved to the execute/progress layer (walkthrough/steps/execute.ts,
-      // #171) — it owns the decision of whether the stderr progress bar or this log line gets
-      // stderr, which this adapter has no visibility into. Emitting it here duplicated/clobbered
-      // the bar's redraw.
+      // Per-page progress is owned by the execute/progress layer (#171), not logged here.
       return new Uint8Array(buf);
     };
 

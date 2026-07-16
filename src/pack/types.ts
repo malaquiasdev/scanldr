@@ -1,5 +1,3 @@
-// Types shared by pack.ts and cover.ts
-
 export interface CoverImage {
   bytes: Uint8Array;
   /** File extension including dot, e.g. ".jpg" */

@@ -31,7 +31,7 @@ export function runMigrations(db: Db): void {
   try {
     files = readdirSync(MIGRATIONS_DIR)
       .filter((f) => f.endsWith(".sql"))
-      .sort(); // lexicographic order
+      .sort();
   } catch (err) {
     throw new Error(
       `migrations directory not found at ${MIGRATIONS_DIR}: ${(err as Error).message}`,
