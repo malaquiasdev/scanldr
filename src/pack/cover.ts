@@ -1,6 +1,4 @@
-// Cover image fetcher for pack-as-volume.
-// Reuses auth.json cookies + UA when available; falls back to bare UA fetch
-// if auth.json is missing or unreadable (mirrors FallbackHttpClient's pattern).
+// Cover image fetcher for pack-as-volume; reuses auth.json cookies+UA, falls back to bare UA (mirrors FallbackHttpClient).
 
 import { readFile } from "node:fs/promises";
 import { resolveAuthPath } from "@plugins/auth-path/index.ts";
@@ -82,7 +80,6 @@ async function loadAuthHeaders(authPath: string): Promise<Record<string, string>
  * @throws Error with a user-friendly message on any validation failure.
  */
 export async function fetchCover(url: string, opts: FetchCoverOptions = {}): Promise<CoverImage> {
-  // Validate scheme
   let parsed: URL;
   try {
     parsed = new URL(url);

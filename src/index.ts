@@ -108,10 +108,7 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<void> {
   runMigrations(db);
 
   const traceStore = createTraceStore({ db });
-  // Shared stderr coordinator: both the logger and the progress bar route their
-  // `write` seam through it, so chapter-level logs/warnings never clobber the
-  // live bar. Its ANSI-vs-passthrough mode is driven by the same
-  // `progressEnabled` value that gates the bar itself.
+  // See createStderrController (@plugins/terminal/index.ts) for the coordinator rationale.
   const stderrController = createStderrController({ enabled: progressEnabled });
   const logger = createLogger({ level, format, write: stderrController.logWrite }, traceStore);
 

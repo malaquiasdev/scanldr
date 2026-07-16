@@ -64,13 +64,12 @@ export function padBundleNumber(value: string, width: number): string {
   if (isNoneToken(value)) return value;
   const dotIdx = value.indexOf(".");
   if (dotIdx === -1) {
-    // No decimal: try to pad as integer
     const n = Number(value);
     if (Number.isNaN(n)) return value;
     return String(n).padStart(width, "0");
   }
   const intPart = value.slice(0, dotIdx);
-  const decPart = value.slice(dotIdx); // includes the dot
+  const decPart = value.slice(dotIdx);
   const n = Number(intPart);
   if (Number.isNaN(n)) return value;
   return String(n).padStart(width, "0") + decPart;

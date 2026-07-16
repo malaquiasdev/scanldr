@@ -13,6 +13,10 @@ import type {
 
 export type { PackedChapter, PackVolumeInput, PackVolumeReplacingSourcesResult, PackVolumeResult };
 
+function isUnsafeVolumeName(name: string): boolean {
+  return name.includes("/") || name.includes("\\") || name.split(/[\\/]/).some((s) => s === "..");
+}
+
 /**
  * Sort a chapter token numerically (decimal-aware). "none" (and disambiguated
  * "none-<n>" variants) sorts last, and mutually stable relative to each other
@@ -62,13 +66,7 @@ async function readChapterEntries(
 ): Promise<Record<string, Uint8Array>> {
   const raw = await Bun.file(cbzPath).arrayBuffer();
   const entries = unzipSync(new Uint8Array(raw));
-
-  // Sort by existing page filename numerically
-  const names = Object.keys(entries).sort((a, b) => {
-    const an = Number.parseInt(a.replace(/\D/g, ""), 10);
-    const bn = Number.parseInt(b.replace(/\D/g, ""), 10);
-    return an - bn;
-  });
+  const names = sortEntryNamesByPageNumber(Object.keys(entries));
 
   const prefix = `chapter-${padBundleNumber(chapterNum, 3)}`;
   const result: Record<string, Uint8Array> = {};
@@ -84,6 +82,14 @@ async function readChapterEntries(
   return result;
 }
 
+function sortEntryNamesByPageNumber(names: string[]): string[] {
+  return [...names].sort((a, b) => {
+    const an = Number.parseInt(a.replace(/\D/g, ""), 10);
+    const bn = Number.parseInt(b.replace(/\D/g, ""), 10);
+    return an - bn;
+  });
+}
+
 /**
  * Pack multiple chapter cbz files into a single volume cbz.
  * Atomic write: write to .tmp first, then rename.
@@ -91,18 +97,11 @@ async function readChapterEntries(
 export async function packVolume(input: PackVolumeInput): Promise<PackVolumeResult> {
   const { slug, outDir, chapters, customName, logger } = input;
 
-  if (customName !== undefined) {
-    // Reject names with path separators or '..' to prevent path traversal
-    if (
-      customName.includes("/") ||
-      customName.includes("\\") ||
-      customName.split(/[\\/]/).some((s) => s === "..")
-    ) {
-      throw new CliError(
-        `volume name cannot contain path separators or '..' (got: ${customName})`,
-        2,
-      );
-    }
+  if (customName !== undefined && isUnsafeVolumeName(customName)) {
+    throw new CliError(
+      `volume name cannot contain path separators or '..' (got: ${customName})`,
+      2,
+    );
   }
 
   const sorted = [...chapters].sort((a, b) => chapterTokenToNum(a.num) - chapterTokenToNum(b.num));
@@ -126,9 +125,7 @@ export async function packVolume(input: PackVolumeInput): Promise<PackVolumeResu
 
   const allEntries: Record<string, Uint8Array> = {};
 
-  // Write cover first so it sorts before any chapter-NNN/ entries alphabetically.
-  // "00_cover" < "chapter-" in ASCII, so any reader that picks the first-sorted
-  // file as the volume thumbnail will display the cover image.
+  // "00_cover" sorts before "chapter-" so readers using the first zip entry as thumbnail get the cover.
   if (input.cover) {
     const coverName = `00_cover${input.cover.ext}`;
     allEntries[coverName] = input.cover.bytes;
