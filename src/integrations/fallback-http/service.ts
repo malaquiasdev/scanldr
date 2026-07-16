@@ -1,5 +1,4 @@
-// Fallback HTTP client factory.
-// lazy mtime re-read; see ADR-001
+// Fallback HTTP client factory — auth cache uses lazy mtime re-read; see ADR-001.
 
 import { readFile, stat } from "node:fs/promises";
 import type { AuthSession } from "@integrations/mangakakalot/auth/types.ts";
@@ -40,35 +39,28 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
   const sleep = opts.sleep ?? defaultSleep;
   const now = opts.now ?? Date.now;
 
-  // Resolve path once — either from opts or XDG.
   const path = opts.authPath ?? resolveAuthPath();
 
-  // Eagerly verify the file exists and is valid at construction time (fail fast).
-  // The actual cached value is populated lazily on first request.
+  // Fail fast at construction; the cached value itself is populated lazily on first request.
   await loadAuth(path, logger);
 
-  // Mtime-keyed cache: null means not yet loaded (though we verified above it exists).
   let authCache: AuthCache | null = null;
 
   // per-lane CF short-circuit; see ADR-001 / #137
   const siteLatch = createCfLatch();
   const anonLatch = createCfLatch();
 
-  // Throttle state — serialized via promise chain so concurrent calls queue up.
-  // null = no request made yet; number = timestamp of last request start.
+  // Serialized via promise chain so concurrent calls queue up (enforces 1 req/s globally).
   let lastRequestAt: number | null = null;
-  // Pending chain for sequential dispatch (satisfies concurrency test #12).
   let chain: Promise<void> = Promise.resolve();
 
   async function resolveAuth(): Promise<{ cookieHeader: string | undefined; userAgent: string }> {
-    // Read file mtime; re-parse only when it has changed since the last load.
     let mtimeMs: number;
     try {
       const s = await stat(path);
       mtimeMs = s.mtimeMs;
     } catch {
-      // File was deleted between checks — reload will throw MissingAuthError below.
-      mtimeMs = -1;
+      mtimeMs = -1; // deleted between checks — reload will throw MissingAuthError below
     }
 
     if (authCache !== null && authCache.mtimeMs === mtimeMs) {
@@ -91,13 +83,8 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
     extraHeaders: Record<string, string> | undefined,
     withCookie: boolean,
   ): Promise<Response> {
-    // Enqueue behind prior requests — enforces 1 req/s globally.
     const result = chain.then(() => dispatch(url, extraHeaders, withCookie));
-    // Swallow errors on chain to prevent unhandled rejection bleed between calls.
-    chain = result.then(
-      () => {},
-      () => {},
-    );
+    chain = swallowRejection(result);
     return result;
   }
 
@@ -112,6 +99,14 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
     return enqueue(url, extraHeaders, false);
   }
 
+  async function throttle(): Promise<void> {
+    if (lastRequestAt === null) return;
+    const elapsed = now() - lastRequestAt;
+    if (elapsed < 1000) {
+      await sleep(1000 - elapsed);
+    }
+  }
+
   async function dispatch(
     url: string,
     extraHeaders: Record<string, string> | undefined,
@@ -119,31 +114,20 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
   ): Promise<Response> {
     const latch = withCookie ? siteLatch : anonLatch;
     if (await latch.shouldShortCircuit(path)) {
-      // Silent short-circuit — no re-log here (see createCfLatch).
+      // no re-log here — see createCfLatch
       throw withCookie ? new CloudflareError(url) : new CrossOriginCloudflareError(url);
     }
 
-    // Throttle: sleep if last request was < 1000ms ago.
-    if (lastRequestAt !== null) {
-      const elapsed = now() - lastRequestAt;
-      if (elapsed < 1000) {
-        await sleep(1000 - elapsed);
-      }
-    }
+    await throttle();
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      // Throttle is per-fetch (per attempt), not per dispatch.
-      // Retries already exceed the 1s window via exponential backoff, so
-      // marking each attempt keeps the throttle conservative and correct.
-      lastRequestAt = now();
+      lastRequestAt = now(); // marked per-attempt so retries stay throttle-conservative
 
       let res: Response | undefined;
       let fetchError: unknown;
 
       try {
-        // Reload auth credentials if auth.json changed since last request.
-        // This is the core fix for P0-1: after refreshSession writes new
-        // credentials, the next attempt automatically picks them up.
+        // picks up freshly-written credentials if refreshSession ran since the last attempt
         const { cookieHeader, userAgent } = await resolveAuth();
 
         const baseHeaders: Record<string, string> = { "user-agent": userAgent };
@@ -154,7 +138,6 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
         fetchError = err;
       }
 
-      // 403 — Cloudflare rejection, do NOT retry.
       if (res && res.status === 403) {
         logger.warn(
           {
@@ -169,7 +152,7 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
         throw withCookie ? new CloudflareError(url) : new CrossOriginCloudflareError(url);
       }
 
-      // 200 with CF challenge HTML — treat symmetrically with 403.
+      // treat a CF challenge disguised as 200 symmetrically with 403
       if (res && res.status >= 200 && res.status < 300) {
         const contentType = res.headers.get("content-type") ?? "";
         if (!isTextualContentType(contentType)) {
@@ -189,16 +172,13 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
           await latch.record(path);
           throw withCookie ? new CloudflareError(url) : new CrossOriginCloudflareError(url);
         }
-        // Return a synthetic response that re-streams the body we already consumed.
         return rebuildResponse(res, body);
       }
 
-      // 3xx and 4xx other than 403: return to caller (no retry).
       if (res && res.status < 500) {
-        return res;
+        return res; // 3xx/4xx other than 403 — caller's problem, no retry
       }
 
-      // 5xx or network error — retry if attempts remain.
       const isLast = attempt === MAX_ATTEMPTS - 1;
       if (isLast) {
         if (fetchError) {
@@ -240,6 +220,14 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/** Prevents unhandled rejection bleed between chained calls. */
+function swallowRejection(p: Promise<unknown>): Promise<void> {
+  return p.then(
+    () => {},
+    () => {},
+  );
+}
 
 /** Merges caller headers onto base, but cookie/user-agent are always re-enforced from base. */
 function mergeHeadersPreservingAuth(

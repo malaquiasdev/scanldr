@@ -1,6 +1,5 @@
-// Mangakakalot site client.
-// Wraps a FallbackHttpClient (cookie-replay, handles Cloudflare) and returns parsed domain types.
-// Callers are responsible for creating the FallbackHttpClient via createFallbackHttp().
+// Mangakakalot site client. Wraps a FallbackHttpClient (caller-provided via
+// createFallbackHttp()) and returns parsed domain types.
 
 import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 import type { ImageRef } from "@integrations/_shared/media.ts";
@@ -57,8 +56,7 @@ export function createMangakakalotClient(opts: {
   }
 
   async function searchManga(title: string): Promise<MangaCandidate[]> {
-    // URL: https://www.mangakakalot.gg/search/story/<encoded-title>
-    // Words separated by underscores per mangakakalot's search convention.
+    // mangakakalot search slugs use underscores instead of spaces
     const encoded = encodeURIComponent(title.toLowerCase().replace(/\s+/g, "_"));
     const url = `${SEARCH_URL}/${encoded}`;
     const html = await fetchHtml(url);
@@ -117,30 +115,32 @@ export function createMangakakalotClient(opts: {
       );
     }
 
-    // Final sort — pages come back newest-first but each page is sorted ascending;
-    // concat order may produce a mis-sorted result across page boundaries.
+    // re-sort: concat of newest-first pages can be mis-sorted across page boundaries
     allChapters.sort((a, b) => Number(a.chapter) - Number(b.chapter));
 
     return allChapters;
   }
 
   async function getChapterImages(chapterIdOrUrl: string): Promise<ImageRef[]> {
-    // Accept a full URL, a composite id "mangaSlug/chapter-slug" (from parseChapterListFromApi),
-    // or the legacy path-style id "chapter/manga-slug/chapter-1".
-    let url: string;
-    if (chapterIdOrUrl.startsWith("http://") || chapterIdOrUrl.startsWith("https://")) {
-      url = chapterIdOrUrl;
-    } else {
-      // Composite id from JSON API: "<mangaSlug>/<chapter-slug>" → /manga/<mangaSlug>/<chapter-slug>
-      // Legacy path-style: "chapter/..." → /<path>  (kept for backward compat)
-      const isLegacyChapterPath = chapterIdOrUrl.startsWith("chapter/");
-      url = isLegacyChapterPath
-        ? `${SITE_ROOT}/${chapterIdOrUrl}`
-        : `${SITE_ROOT}/manga/${chapterIdOrUrl}`;
-    }
+    const url = resolveChapterUrl(chapterIdOrUrl);
     const html = await fetchHtml(url);
     return runParser(url, () => parseChapterImages(html, url));
   }
 
   return { searchManga, getChapterList, getChapterImages };
+}
+
+/**
+ * Resolves a chapter reference into a fetchable URL. Accepts a full URL, a
+ * composite id "mangaSlug/chapter-slug" (from parseChapterListFromApi), or the
+ * legacy path-style id "chapter/manga-slug/chapter-1" (kept for backward compat).
+ */
+function resolveChapterUrl(chapterIdOrUrl: string): string {
+  if (chapterIdOrUrl.startsWith("http://") || chapterIdOrUrl.startsWith("https://")) {
+    return chapterIdOrUrl;
+  }
+  const isLegacyChapterPath = chapterIdOrUrl.startsWith("chapter/");
+  return isLegacyChapterPath
+    ? `${SITE_ROOT}/${chapterIdOrUrl}`
+    : `${SITE_ROOT}/manga/${chapterIdOrUrl}`;
 }

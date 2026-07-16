@@ -13,7 +13,6 @@ import { AuthError } from "./types.ts";
  * - Bare tokens (split on whitespace)
  */
 export function tokenizeCurl(input: string): string[] {
-  // Normalize line continuations before tokenizing.
   const src = input
     .replace(/\^\r?\n\s*/g, " ") // cmd.exe ^ continuation
     .replace(/\\\r?\n\s*/g, " "); // bash \ continuation
@@ -22,7 +21,6 @@ export function tokenizeCurl(input: string): string[] {
   let i = 0;
 
   while (i < src.length) {
-    // Skip whitespace
     while (i < src.length && /\s/.test(src.charAt(i))) i++;
     if (i >= src.length) break;
 
@@ -30,16 +28,16 @@ export function tokenizeCurl(input: string): string[] {
 
     if (ch === "'") {
       // Unix single-quoted: literal until closing '
-      i++; // skip opening quote
+      i++;
       let tok = "";
       while (i < src.length && src.charAt(i) !== "'") {
         tok += src.charAt(i++);
       }
-      i++; // skip closing quote
+      i++;
       tokens.push(tok);
     } else if (ch === '"') {
       // Unix double-quoted: handle \" and \\ inside
-      i++; // skip opening quote
+      i++;
       let tok = "";
       while (i < src.length && src.charAt(i) !== '"') {
         if (src.charAt(i) === "\\" && i + 1 < src.length) {
@@ -54,7 +52,7 @@ export function tokenizeCurl(input: string): string[] {
           tok += src.charAt(i++);
         }
       }
-      i++; // skip closing quote
+      i++;
       tokens.push(tok);
     } else {
       // Bare token (ends at whitespace)

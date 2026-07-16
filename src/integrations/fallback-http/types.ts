@@ -1,6 +1,5 @@
-// Types and error classes for the fallback HTTP client.
-// Per ADR-001: replays all captured cookies + UA on every request.
-// The walkthrough auth-check step handles capturing and refreshing the session.
+// Types and error classes for the fallback HTTP client. Replays captured cookies + UA
+// per ADR-001; the walkthrough auth-check step handles capturing/refreshing the session.
 
 import type { Logger } from "@plugins/logger/index.ts";
 
