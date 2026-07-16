@@ -48,3 +48,7 @@ This is an explicit, scoped **exception** to the byte-verbatim invariant, limite
 - **Passthrough + document the limitation** — rejected. The bug persists and users keep seeing split pages.
 - **Sidecar/grouping metadata for readers** — rejected. No CBZ reader honors sidecar grouping metadata; dead end.
 - **Pixel-heuristic stitch without the dimension rule** — rejected. The width + height-cap rule is exact and proven clean across a full volume; heuristics risk merging unrelated pages incorrectly.
+
+## Known Edge Case: Cap-Height Page With No Remainder
+
+A genuine logical page that happens to be exactly cap-tall, with no shorter remainder tile following it, is indistinguishable from the top slice of a taller tiled page using dimensions alone. This is accepted as a known limitation rather than special-cased: evidence across the reference volume shows the CDN never emits this shape — every tiled run observed closes with a strictly-shorter remainder tile. `groupTiles` (in `downloader/reassemble.ts`) still handles the case safely (each leftover cap-height tile becomes its own standalone group) rather than silently merging an unbounded run, but the ambiguity itself is not resolvable from tile dimensions alone.

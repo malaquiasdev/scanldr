@@ -1,8 +1,5 @@
 // Fallback HTTP client factory.
-// Reads auth.json lazily on every request, caching by file mtime to avoid
-// re-reads when nothing has changed (ADR-001). This ensures that when
-// refreshSession writes new credentials, the next request automatically
-// picks them up without requiring a new client instance.
+// lazy mtime re-read; see ADR-001
 
 import { readFile, stat } from "node:fs/promises";
 import type { AuthSession } from "@integrations/mangakakalot/auth/types.ts";
@@ -280,8 +277,7 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
       await sleep(waitMs);
     }
 
-    // invariant: every iteration returns or throws — this line is unreachable.
-    throw new Error("invariant: retry loop exited without returning or throwing");
+    throw new Error("invariant: retry loop exited without returning or throwing — unreachable");
   }
 
   return {

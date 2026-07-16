@@ -85,10 +85,8 @@ export async function downloadBundle(input: DownloadBundleInput): Promise<Downlo
 
   const sem = createSemaphore(imageConcurrency);
   const zipEntries: Record<string, Uint8Array> = {};
-  // Running counter of ACTUAL emitted pages (post-merge), not fetched tiles — a merged
-  // tile group emits one page, so this drifts below globalOffset-by-fetch-count for
-  // chapters with CDN-tiled pages, keeping output filenames sequential/contiguous.
-  let emittedCount = 0;
+  // emittedPageCount: post-merge page count, not fetched-tile count — keeps filenames contiguous.
+  let emittedPageCount = 0;
   const totalPages = sorted.reduce((sum, c) => sum + c.pages.length, 0);
 
   for (let i = 0; i < sorted.length; i++) {
@@ -122,8 +120,8 @@ export async function downloadBundle(input: DownloadBundleInput): Promise<Downlo
     }
 
     for (const { data, ext } of mergedPages) {
-      emittedCount++;
-      zipEntries[`${pad(emittedCount, 4)}${ext}`] = data;
+      emittedPageCount++;
+      zipEntries[`${pad(emittedPageCount, 4)}${ext}`] = data;
     }
 
     if (delayMs > 0 && i < sorted.length - 1) {

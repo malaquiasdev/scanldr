@@ -49,3 +49,7 @@ Forcing the user to open DevTools, find the cookie, and copy/paste it is poor UX
 ## Per-Site Strategy
 
 Each additional site will be studied independently. The bypass method (cookie replay, alternative cookie, API endpoints without Cloudflare, etc.) will be documented in a dedicated ADR per site.
+
+## Implementation Detail: Lazy mtime-Cache Re-read
+
+The fallback HTTP client (`integrations/fallback-http/service.ts`) reads `auth.json` lazily on every request rather than once at construction, caching the parsed session keyed by the file's `mtimeMs`. Before each dispatch it stats the file; if the mtime is unchanged since the last load, the cached session is reused, otherwise the file is re-read and re-parsed. This ensures that when `refreshSession` writes new credentials to disk (see ADR-002), the very next request automatically picks them up without requiring a new client instance to be constructed.

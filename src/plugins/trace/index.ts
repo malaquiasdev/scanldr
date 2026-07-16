@@ -43,9 +43,7 @@ export function createTraceStore(opts: CreateTraceStoreOpts): TraceStore {
     );
   }
 
-  function close(): void {
-    // Store does not own the db; caller manages connection lifecycle.
-  }
+  function close(): void {}
 
   return { insert, purge, close, runId };
 }

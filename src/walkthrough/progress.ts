@@ -157,9 +157,7 @@ export function createProgress(opts: ProgressOptions): ProgressHandle {
       // flushed even if the last updatePage() call was dropped by the throttle.
       render(true);
       write("\n");
-      // Explicit teardown: resets the shared controller's bar-state. This is
-      // the only thing that flips `barActive` off now — no more sniffing the
-      // trailing "\n" for it.
+      // Explicit teardown: resets the shared controller's bar-state.
       endBar?.();
     },
   };
