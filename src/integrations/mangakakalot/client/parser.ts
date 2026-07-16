@@ -27,10 +27,8 @@ function slugFromUrl(url: string): string {
   try {
     const parsed = new URL(url);
     const parts = parsed.pathname.split("/").filter(Boolean);
-    // /manga/<slug> or /chapter/<slug>/chapter-N
     const mangaIdx = parts.indexOf("manga");
     if (mangaIdx >= 0 && parts[mangaIdx + 1]) return parts[mangaIdx + 1] as string;
-    // For chapter URLs: /chapter/<manga-slug>/chapter-N
     const chapterIdx = parts.indexOf("chapter");
     if (chapterIdx >= 0 && parts[chapterIdx + 1]) return parts[chapterIdx + 1] as string;
     return parts[parts.length - 1] ?? url;
@@ -56,17 +54,8 @@ export function parseSearchResults(html: string, url: string): MangaCandidate[] 
 
   const items = $(SELECTORS.searchResultItem);
 
-  // Distinguish "no results" (panel_story_list present but empty) from "DOM changed"
-  // (neither .story_item nor any results panel can be found in a page that has a body).
   if (items.length === 0) {
-    const hasBody = $("body").length > 0 && $("body").text().trim().length > 0;
-    const hasResultsPanel =
-      $(".panel_story_list").length > 0 ||
-      $(".story_item_right").length > 0 ||
-      $(".panel-search-story").length > 0;
-
-    // If there's a live page (non-empty body) but no results container at all, DOM drifted.
-    if (hasBody && !hasResultsPanel) {
+    if (isSearchDomDrifted($)) {
       throw new MangakakalotParseError(
         SELECTORS.searchResultItem,
         url,
@@ -87,6 +76,19 @@ export function parseSearchResults(html: string, url: string): MangaCandidate[] 
   });
 
   return results;
+}
+
+/**
+ * True when a live page (non-empty body) has no results container at all —
+ * distinguishing genuine "no results" (panel present but empty) from DOM drift.
+ */
+function isSearchDomDrifted($: ReturnType<typeof cheerio.load>): boolean {
+  const hasBody = $("body").length > 0 && $("body").text().trim().length > 0;
+  const hasResultsPanel =
+    $(".panel_story_list").length > 0 ||
+    $(".story_item_right").length > 0 ||
+    $(".panel-search-story").length > 0;
+  return hasBody && !hasResultsPanel;
 }
 
 function isMkChapterApiItem(v: unknown): v is MkChapterApiItem {
@@ -142,12 +144,9 @@ export function parseChapterListFromApi(
       );
     }
 
-    // id is a composite URL-path segment: "<mangaSlug>/<chapter-slug>"
-    // getChapterImages receives this and reconstructs the reader URL as
-    //   SITE_ROOT/manga/<mangaSlug>/<chapter-slug>
+    // composite id; resolveChapterUrl (client/index.ts) reconstructs SITE_ROOT/manga/<id>
     const id = `${mangaSlug}/${item.chapter_slug}`;
 
-    // Strip the leading "Chapter NUM" label if present, leaving only the subtitle.
     const rawTitle = item.chapter_name.replace(/^chapter[\s\d.]+[:-]?\s*/i, "").trim();
     const title = rawTitle.length > 0 ? rawTitle : null;
 
@@ -173,8 +172,7 @@ export function parseChapterListFromApi(
   return { chapters, hasMore, limit };
 }
 
-// Hosts that belong to the mangakakalot.gg site itself (not CDN).
-// Real manga pages come from external image CDN hosts (e.g. *.2xstorage.com).
+// site's own hosts, not the external image CDN (e.g. *.2xstorage.com) real pages use
 const SITE_HOSTS = new Set(["mangakakalot.gg", "www.mangakakalot.gg"]);
 
 /**
@@ -190,7 +188,6 @@ export function isMangaPageImage(rawUrl: string): boolean {
   try {
     parsed = new URL(rawUrl);
   } catch {
-    // Unparseable URL — not a valid page image.
     return false;
   }
 
