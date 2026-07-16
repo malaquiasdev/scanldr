@@ -1,5 +1,9 @@
 # Model — Subscriptions (Watchlist)
 
+> **Historical record (pre-epic #116).** Describes the `subscriptions` table, dropped in the #116
+> redesign Phase 4; kept for history. See [ADR-008](../adr/008-retire-mangadex-source.md) /
+> [ADR-009](../adr/009-retire-volume-mode.md) for current state.
+
 Subscriptions are the list of manga the user wants `sync` to keep up to date. Stored in `scanldr.db` (SQLite) alongside the download history. There is no plain-text `mangas.txt` — the database is the single source of truth.
 
 For users migrating from a flat list, `scanldr import <file>` and `scanldr export` provide one-shot conversions.

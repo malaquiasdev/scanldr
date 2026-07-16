@@ -1,5 +1,10 @@
 # Flow — Sync
 
+> **Historical record (pre-epic #116).** Describes the standalone `sync` command and its
+> `subscriptions` table, removed in the #116 redesign; kept for history. See
+> [ADR-008](../adr/008-retire-mangadex-source.md) / [ADR-009](../adr/009-retire-volume-mode.md)
+> for current state.
+
 The `sync` command reads the active entries from the `subscriptions` table in `scanldr.db` and runs `update` on each one sequentially. It is designed to be run on a schedule (cron, launchd) to keep a local library up to date.
 
 `sync` itself contains no download logic — it is pure orchestration on top of `update`. Anything that applies to `update` (history check, language resolution, fallback prompt, retries) applies transitively here.

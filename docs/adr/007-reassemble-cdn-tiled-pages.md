@@ -1,7 +1,7 @@
 # ADR-007: Reassemble CDN vertically-tiled mangakakalot pages
 
 **Date:** 2026-07-14
-**Status:** Proposed (build deferred to [#168](https://github.com/malaquiasdev/scanldr/issues/168))
+**Status:** Accepted (reassembly shipped — [#168](https://github.com/malaquiasdev/scanldr/issues/168) / [#170](https://github.com/malaquiasdev/scanldr/pull/170))
 
 **Related:**
 - Scoped exception to the byte-verbatim passthrough design (CDN → zip untouched)

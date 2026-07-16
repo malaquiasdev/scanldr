@@ -1,5 +1,10 @@
 # Model — Auth & Session
 
+> **Historical record (pre-epic #116).** The `auth.json`/session concept below still applies, but
+> the surrounding standalone-command flow was removed in the #116 redesign; kept for history. See
+> [ADR-008](../adr/008-retire-mangadex-source.md) / [ADR-009](../adr/009-retire-volume-mode.md)
+> for current state.
+
 ## AuthSession
 
 Persisted to `$XDG_DATA_HOME/scanldr/auth.json` (falling back to `~/.local/share/scanldr/auth.json` when `$XDG_DATA_HOME` is unset). The file is created with permissions `0600` and the parent directory with `0700` — secrets must not leak across users.

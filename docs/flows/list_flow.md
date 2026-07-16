@@ -1,5 +1,10 @@
 # Flow — List
 
+> **Historical record (pre-epic #116).** Describes the standalone `list` command, which searched
+> MangaDex and was removed in the #116 redesign; kept for history. See
+> [ADR-008](../adr/008-retire-mangadex-source.md) / [ADR-009](../adr/009-retire-volume-mode.md)
+> for current state.
+
 The `list` command searches MangaDex for a title and displays all available volumes, languages, and scanlation groups. It is the primary discovery tool before running `download`.
 
 No files are written and history is not touched.
