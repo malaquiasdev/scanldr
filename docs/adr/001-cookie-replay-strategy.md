@@ -53,3 +53,11 @@ Each additional site will be studied independently. The bypass method (cookie re
 ## Implementation Detail: Lazy mtime-Cache Re-read
 
 The fallback HTTP client (`integrations/fallback-http/service.ts`) reads `auth.json` lazily on every request rather than once at construction, caching the parsed session keyed by the file's `mtimeMs`. Before each dispatch it stats the file; if the mtime is unchanged since the last load, the cached session is reused, otherwise the file is re-read and re-parsed. This ensures that when `refreshSession` writes new credentials to disk (see ADR-002), the very next request automatically picks them up without requiring a new client instance to be constructed.
+
+## Implementation Detail: Per-Lane CF Short-Circuit Latch (#137)
+
+The fallback HTTP client dispatches over two lanes: the site/cookie lane (`get`, used for HTML pages that need the replayed `cf_clearance` cookie) and the anonymous/CDN lane (`getAnonymous`, used for image fetches with no cookie attached). Each lane has its own CF short-circuit latch, instantiated independently via `createCfLatch()`.
+
+When a request on a lane observes a Cloudflare rejection — either a `403` or a `200` response whose body is a CF challenge page — the lane's latch records the `auth.json` mtime at that moment. While that mtime still matches the file on disk, subsequent requests on the *same* lane skip the HTTP call entirely (no throttle, no fetch) and throw immediately. This prevents tens of seconds of queued tasks spamming 403s while the user is being prompted for a fresh cURL paste. The latch clears itself automatically the first time a request on its lane observes that the mtime has advanced, i.e. `refreshSession` has written new credentials to disk.
+
+The two lanes are latched independently, never sharing state, because a 403 on the anonymous (cookie-less) image-CDN lane is usually a Referer/hotlink rejection specific to that request, NOT a stale site session — it must not short-circuit the cookie lane, and vice versa.
