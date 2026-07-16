@@ -201,8 +201,7 @@ export interface RefreshSessionOptions {
 export async function refreshSession(opts: RefreshSessionOptions): Promise<AuthResult> {
   const { authPath, probeClientFactory, logger } = opts;
 
-  // Do NOT unlink here — persistSession overwrites atomically via .tmp+rename.
-  // Ctrl+C during the paste prompt would otherwise lose existing credentials before retry.
+  // No upfront unlink — persistSession overwrites atomically, so a Ctrl+C mid-paste can't lose credentials.
   const session = await promptAndParseSession(logger);
   await persistSession(session, authPath);
   logger.info(

@@ -170,4 +170,22 @@ describe("reassembleChapterPages", () => {
       pageIndices: [0, 1],
     });
   });
+
+  test("stitch failure emits the group's tiles unmerged (no throw, bundle continues)", async () => {
+    const top = await makeCorruptBodyPage(1500, 1500);
+    const bottom = await makePage(1500, 652, [0, 255, 0]);
+    const standalone = await makePage(900, 900, [10, 20, 30]);
+    const warn = mock(() => {});
+    const logger = { error: mock(() => {}), warn, info: mock(() => {}) };
+
+    // No throw across the whole bundle, even though the first group's stitch fails.
+    const result = await reassembleChapterPages([top, bottom, standalone], logger);
+
+    // Failed group's tiles pass through unmerged...
+    expect(result[0]).toEqual(top);
+    expect(result[1]).toEqual(bottom);
+    // ...and the bundle continues processing the next (unrelated) group.
+    expect(result[2]?.data).toBe(standalone.data);
+    expect(result.length).toBe(3);
+  });
 });

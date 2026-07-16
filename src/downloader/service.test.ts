@@ -31,8 +31,8 @@ function makeChapter(id: string, num: number, pageCount: number, delaysMs: numbe
   };
 }
 
-describe("downloadBundle — onPageProgress under concurrent fetches", () => {
-  test("fires exactly once per page, in completion order, even when the low-index page resolves last", async () => {
+describe("downloadBundle — onPageCompleted under concurrent fetches", () => {
+  test("progress callback fires once per completion under out-of-order resolution", async () => {
     const outDir = join(tmpdir(), `downloader-test-${Date.now()}-${Math.random()}`);
 
     // Chapter A: page 1 is slow, page 2/3 are fast -> pages 2/3 complete BEFORE page 1.
@@ -56,7 +56,7 @@ describe("downloadBundle — onPageProgress under concurrent fetches", () => {
       delayMs: 0,
       dryRun: false,
       logger,
-      onPageProgress: (totalPages) => {
+      onPageCompleted: (totalPages) => {
         completionCount += 1;
         completionCounts.push(completionCount);
         expect(totalPages).toBe(5);
@@ -80,7 +80,7 @@ describe("downloadBundle — onPageProgress under concurrent fetches", () => {
     }
   });
 
-  test("onPageProgress is optional — downloadBundle works fine without it", async () => {
+  test("onPageCompleted is optional — downloadBundle works fine without it", async () => {
     const outDir = join(tmpdir(), `downloader-test-${Date.now()}-${Math.random()}`);
     const chapter = makeChapter("c", 1, 2, [0, 0]);
 

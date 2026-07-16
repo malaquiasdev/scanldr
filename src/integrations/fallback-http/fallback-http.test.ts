@@ -1461,6 +1461,103 @@ test("both lanes rejected within the same mtime: latches coexist independently",
 });
 
 // ---------------------------------------------------------------------------
+// C3: isTextualContentType gate — binary bodies must never be decoded as text
+// ---------------------------------------------------------------------------
+
+test("does not decode a binary 200 body as text", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  // Bytes invalid as UTF-8 — decoding as text would corrupt them (replacement chars).
+  const original = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xff, 0xfe, 0xaa, 0xbb]);
+
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () =>
+      new Response(original, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  const res = await client.get("https://example.com/img.png");
+  const buf = new Uint8Array(await res.arrayBuffer());
+  expect(Array.from(buf)).toEqual(Array.from(original));
+});
+
+test("treats a 200 Cloudflare-challenge body like a 403", async () => {
+  const { logger, calls } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  const CF_BODY =
+    "<!DOCTYPE html><html><body>" +
+    "<div id='cf-browser-verification'>cloudflare cf_clearance challenge</div>" +
+    "</body></html>";
+
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => new Response(CF_BODY, { status: 200, headers: { "content-type": "text/html" } });
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  await expect(client.get("https://example.com/page")).rejects.toBeInstanceOf(CloudflareError);
+
+  const warnCall = calls.find(
+    (c) => c.level === "warn" && c.fields.event === "fallback_http.cloudflare_rejected",
+  );
+  expect(warnCall).toBeDefined();
+});
+
+// ---------------------------------------------------------------------------
+// C7: mergeHeadersPreservingAuth — caller headers cannot override auth headers
+// ---------------------------------------------------------------------------
+
+test("caller-supplied headers cannot override cookie/user-agent", async () => {
+  const { logger } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  const capturedHeaders: Record<string, string> = {};
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> = async (
+    _url,
+    init,
+  ) => {
+    Object.assign(capturedHeaders, init?.headers as Record<string, string>);
+    return makeFakeResponse(200);
+  };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  await client.get("https://example.com/page", {
+    cookie: "attacker=evil",
+    "user-agent": "AttackerUA",
+    "x-custom": "kept",
+  });
+
+  const cookieParts = new Set((capturedHeaders.cookie ?? "").split("; "));
+  expect(cookieParts).toContain("cf_clearance=abc123");
+  expect(cookieParts).not.toContain("attacker=evil");
+  expect(capturedHeaders["user-agent"]).toBe(VALID_SESSION.userAgent);
+  expect(capturedHeaders["x-custom"]).toBe("kept");
+});
+
+// ---------------------------------------------------------------------------
 // P2 #4: Explicit dedupe log assertion on anonymous lane short-circuit
 // ---------------------------------------------------------------------------
 

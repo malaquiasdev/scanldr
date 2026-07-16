@@ -137,6 +137,9 @@ export function createProgress(opts: ProgressOptions): ProgressHandle {
       lastPageStartedAt = null;
       render(true);
     },
+    // One call per completed page (not per dispatch) is the caller's contract, enforced at
+    // the onPageCompleted callback boundary — see downloader/service.test.ts and
+    // walkthrough/steps/execute.test.ts.
     updatePage(): void {
       if (!enabled) return;
       const nowMs = now();
@@ -146,18 +149,13 @@ export function createProgress(opts: ProgressOptions): ProgressHandle {
         if (pageDurations.length > MAX_SAMPLES) pageDurations.shift();
       }
       lastPageStartedAt = nowMs;
-      // Count completions rather than trusting the caller's dispatch-order index:
-      // pages resolve out of order under concurrency, so the Nth completion is page N.
       currentPage += 1;
       render(false);
     },
     finish(): void {
       if (!enabled) return;
-      // Force a final render so the true final state (e.g. 100%, last page) is always
-      // flushed even if the last updatePage() call was dropped by the throttle.
-      render(true);
+      render(true); // force final flush, bypassing throttle
       write("\n");
-      // Explicit teardown: resets the shared controller's bar-state.
       endBar?.();
     },
   };

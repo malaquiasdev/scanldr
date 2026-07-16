@@ -29,13 +29,11 @@ async function fetchChapterPages(
   chapter: ChapterInput,
   sem: Semaphore,
   totalPages: number,
-  onPageProgress?: (totalPages: number) => void,
+  onPageCompleted?: (totalPages: number) => void,
 ): Promise<RawPage[]> {
   const tasks = chapter.pages.map((ref) =>
     fetchPage(ref, chapter.imageFetcher, sem).then((page) => {
-      // Fired in completion order (not dispatch order) — caller must count completions,
-      // not trust index, since concurrent fetches resolve out of order.
-      onPageProgress?.(totalPages);
+      onPageCompleted?.(totalPages);
       return page;
     }),
   );
@@ -54,7 +52,7 @@ export async function downloadBundle(input: DownloadBundleInput): Promise<Downlo
     delayMs,
     dryRun,
     logger,
-    onPageProgress,
+    onPageCompleted,
   } = input;
 
   const padded = padBundleNumber(bundleNumber, 3);
@@ -102,7 +100,7 @@ export async function downloadBundle(input: DownloadBundleInput): Promise<Downlo
       "downloading chapter",
     );
 
-    const rawPages = await fetchChapterPages(chapter, sem, totalPages, onPageProgress);
+    const rawPages = await fetchChapterPages(chapter, sem, totalPages, onPageCompleted);
     const mergedPages = await reassembleChapterPages(rawPages, logger);
 
     if (mergedPages.length < rawPages.length) {
