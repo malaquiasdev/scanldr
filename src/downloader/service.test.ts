@@ -184,4 +184,67 @@ describe("downloadBundle — filename numbering across chapters with CDN-tiled p
       await rm(outDir, { recursive: true, force: true });
     }
   });
+
+  test("a tiled chapter yields contiguous NNNN filenames (no gap left by collapsed tiles)", async () => {
+    const outDir = join(tmpdir(), `downloader-test-${Date.now()}-${Math.random()}`);
+
+    // Single chapter: tiled pair (2 fetched tiles -> 1 emitted page) followed by two
+    // standalone pages -> 4 fetched tiles collapse to 3 emitted pages total.
+    const tileTop = await sharp({
+      create: { width: 1500, height: 1500, channels: 3, background: { r: 255, g: 0, b: 0 } },
+    })
+      .webp()
+      .toBuffer();
+    const tileBottom = await sharp({
+      create: { width: 1500, height: 652, channels: 3, background: { r: 0, g: 255, b: 0 } },
+    })
+      .webp()
+      .toBuffer();
+    const standaloneA = await sharp({
+      create: { width: 900, height: 1200, channels: 3, background: { r: 0, g: 0, b: 255 } },
+    })
+      .webp()
+      .toBuffer();
+    const standaloneB = await sharp({
+      create: { width: 900, height: 1300, channels: 3, background: { r: 9, g: 9, b: 9 } },
+    })
+      .webp()
+      .toBuffer();
+    const images = [tileTop, tileBottom, standaloneA, standaloneB];
+
+    const chapter: ChapterInput = {
+      id: "tiled",
+      num: 1,
+      pages: images.map((_, i) => ({
+        url: `https://example.com/tiled/${i + 1}.webp`,
+        page: i + 1,
+      })),
+      imageFetcher: async (ref: ImageRef) => new Uint8Array(images[ref.page - 1] ?? []),
+    };
+
+    const input: DownloadBundleInput = {
+      outDir,
+      format: "cbz",
+      slug: "contiguous-test",
+      kind: "chapter",
+      bundleNumber: "1",
+      chapters: [chapter],
+      imageConcurrency: 4,
+      delayMs: 0,
+      dryRun: false,
+      logger,
+    };
+
+    try {
+      const result = await downloadBundle(input);
+      const bytes = await readFile(result.outputPath);
+      const entries = unzipSync(bytes);
+      const names = Object.keys(entries).sort();
+
+      // 4 fetched tiles collapse to 3 emitted pages -> 0001, 0002, 0003; contiguous, no gap.
+      expect(names).toEqual(["0001.webp", "0002.webp", "0003.webp"]);
+    } finally {
+      await rm(outDir, { recursive: true, force: true });
+    }
+  });
 });

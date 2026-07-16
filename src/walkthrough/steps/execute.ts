@@ -143,9 +143,8 @@ export async function executeWalkthrough(
 
           progress?.updateChapter(bundleIndex, totalPages, bundle.label);
 
-          // Completion counter, not a page index — pages resolve out of order under
-          // concurrency (same rule as the progress bar).
-          let pagesFetched = 0;
+          // pagesCompleted: resolution order, not dispatch order (pages resolve concurrently).
+          let pagesCompleted = 0;
           const result = await downloader.downloadBundle({
             outDir,
             format: "cbz",
@@ -159,20 +158,18 @@ export async function executeWalkthrough(
             logger,
             onPageProgress: () => {
               progress?.updatePage();
-              pagesFetched++;
-              // Same signal as the progress bar (moved from mangakakalot adapter, #171) —
-              // exactly one may own stderr, so suppressed when the bar is enabled and kept
-              // as fallback otherwise (non-TTY / no --progress / json mode).
+              pagesCompleted++;
+              // Fallback feedback when the progress bar doesn't own stderr.
               if (!progressEnabled) {
                 logger.info(
                   {
                     event: "walkthrough.fetch_page",
                     context: "walkthrough",
-                    completed: pagesFetched,
+                    completed: pagesCompleted,
                     total: totalPages,
                     bundle_id: bundle.id,
                   },
-                  `fetched ${pagesFetched}/${totalPages} pages of ${bundle.label}`,
+                  `fetched ${pagesCompleted}/${totalPages} pages of ${bundle.label}`,
                 );
               }
             },

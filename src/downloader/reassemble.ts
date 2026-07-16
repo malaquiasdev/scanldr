@@ -14,11 +14,8 @@ import type { PageDims, RawPage } from "./types.ts";
  * - A sub-cap tile NOT preceded by a cap-height tile of the same width is its own
  *   standalone group (e.g. a standalone short page, or a narrow title card).
  *
- * Known edge (accepted, not fixable from dimensions alone): a genuine logical page that
- * happens to be exactly cap-tall with no remainder tile is indistinguishable from a top
- * slice of a taller tiled page — evidence across the reference volume shows the CDN never
- * emits this shape (every tiled run closes with a strictly-shorter remainder), so we do not
- * special-case it.
+ * Known edge (accepted, not fixable from dimensions alone): see ADR-007 for the
+ * cap-height-with-no-remainder ambiguity.
  *
  * A `null` entry (dims could not be determined — e.g. an undecodable/malformed image)
  * is always its own standalone group and never merges with a neighbor.
@@ -59,9 +56,7 @@ export function groupTiles(dims: Array<PageDims | null>): number[][] {
         groupStart = j + 1;
       }
     }
-    // Any tiles left in the run without a sub-cap closer are all cap-height with no
-    // remainder in this run — each stands alone (never observed in evidence, but handled
-    // safely rather than silently merging unbounded).
+    // Any tiles left in the run without a sub-cap closer stand alone (see ADR-007).
     for (let j = groupStart; j < end; j++) {
       groups.push([j]);
     }

@@ -43,3 +43,7 @@ No Playwright dependency, no headful browser process. The `playwright` package i
 - Slightly more manual friction: user must open DevTools and copy a cURL. Steps are documented in `docs/auth-manual.md`.
 - The copy-as-cURL format differs slightly between Chrome, Firefox, and Safari — the parser handles all three.
 - Session still expires ~30 days out — no change vs. ADR-001.
+
+## Implementation Detail: Session Probe Target
+
+`checkAuth`'s session-validity probe (`walkthrough/steps/auth-check.ts`) targets the search endpoint (`/search/story/…`), not the homepage. As established above, the homepage never triggers a Cloudflare challenge and returns 200 regardless of session validity — probing it would give a false positive. The search endpoint enforces the same stricter CF rules the walkthrough hits in step 4, so a benign query returning a "no results" page confirms the session is genuinely valid, while a CF challenge confirms it is stale.

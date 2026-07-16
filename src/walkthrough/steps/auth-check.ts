@@ -23,14 +23,7 @@ export interface AuthCheckOptions {
 }
 
 const MAX_PASTE_RETRIES = 2;
-/**
- * Probe target: the search endpoint, not the homepage.
- * The homepage has weaker Cloudflare rules and gives false positives — a 200 there
- * does NOT guarantee the session works for search, which has stricter CF rules.
- * A benign query ("__scanldr_probe__") returns a "no results" page when the session
- * is valid, and triggers a CF challenge when the session is stale — exactly the
- * same behaviour the walkthrough encounters in step 4.
- */
+/** Search endpoint, not homepage — see ADR-002. */
 const PROBE_URL = "https://www.mangakakalot.gg/search/story/__scanldr_probe__";
 /** Probe timeout in ms. */
 const PROBE_TIMEOUT_MS = 5000;

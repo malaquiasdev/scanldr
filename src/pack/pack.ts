@@ -144,15 +144,13 @@ export async function packVolume(input: PackVolumeInput): Promise<PackVolumeResu
       `reading chapter ${ch.num}`,
     );
     const entries = await readChapterEntries(ch.num, ch.outputPath);
-    // Collision guard: two chapters must never produce the same zip prefix.
-    // Object.assign would silently overwrite the first chapter's pages —
-    // that is data loss, not a valid state. Fail loudly instead.
     for (const name of Object.keys(entries)) {
       if (name in allEntries) {
         throw new CliError(
           `pack: duplicate zip entry "${name}" while packing chapter "${ch.num}" — ` +
-            "two chapters produced the same zip prefix. This indicates a chapter " +
-            "numbering collision upstream (e.g. duplicate 'none' sentinels).",
+            "two chapters produced the same zip prefix (numbering collision upstream, e.g. " +
+            "duplicate 'none' sentinels); aborting to avoid silently overwriting the first " +
+            "chapter's pages",
           1,
         );
       }

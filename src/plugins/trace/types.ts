@@ -12,6 +12,7 @@ export interface TraceRow {
 export interface TraceStore {
   insert(row: TraceRow): void;
   purge(maxAgeDays: number): void;
+  /** No-op: the store does not own the db connection; caller manages its lifecycle. */
   close(): void;
   runId: string;
 }
