@@ -1,9 +1,18 @@
 import type { DownloadBundleInput, DownloadBundleResult } from "../downloader/types.ts";
+import type { PackedChapter, PackVolumeInput, PackVolumeResult } from "../pack/types.ts";
+import type { Logger } from "../plugins/logger/index.ts";
 import type { SourceDescriptor } from "../sources/types.ts";
 
 /** Minimal surface of the downloader that executeWalkthrough needs. */
 export interface Downloader {
   downloadBundle(input: DownloadBundleInput): Promise<DownloadBundleResult>;
+}
+
+/** Minimal surface of the packer that executeWalkthrough needs. */
+export interface Packer {
+  packVolume(input: PackVolumeInput): Promise<PackVolumeResult>;
+  /** Delete the per-chapter .cbz files that were just packed into a volume. Returns the paths actually deleted. */
+  deleteIndividualFiles(chapters: PackedChapter[], logger: Logger): Promise<string[]>;
 }
 
 /** @deprecated Empty — kept for backwards compat; will be removed in next major. */
@@ -70,6 +79,13 @@ export interface WalkthroughResult {
   source: SourceDescriptor;
   hit: SearchHit;
   selectedBundles: BundleItem[];
+  groupIntoVolume: boolean;
+  /**
+   * User-supplied volume number/name for the packed cbz.
+   * null = use the chapter-range-derived default.
+   */
+  volumeName: string | null;
+  coverUrl: string | null;
 }
 
 /** Sentinel returned when the user cancels the walkthrough (Ctrl+C). */

@@ -1,9 +1,16 @@
 import { downloadBundle as realDownloadBundle } from "../../downloader/index.ts";
 import { MangakakalotParseError } from "../../integrations/mangakakalot/client/types.ts";
+import type { CoverImage, PackedChapter } from "../../pack/index.ts";
+import {
+  buildVolumeFilename,
+  fetchCover,
+  deleteIndividualFiles as realDeleteIndividualFiles,
+  packVolume as realPackVolume,
+} from "../../pack/index.ts";
 import type { Logger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import type { SourceDescriptor } from "../../sources/types.ts";
-import type { BundleItem, Downloader, ProgressHandle, SearchHit } from "../types.ts";
+import type { BundleItem, Downloader, Packer, ProgressHandle, SearchHit } from "../types.ts";
 import { WalkthroughError } from "../types.ts";
 import type { RefreshSession } from "../with-session-retry.ts";
 import { isCloudflareError, withSessionRetry } from "../with-session-retry.ts";
@@ -12,6 +19,10 @@ export interface ExecuteWalkthroughInput {
   source: SourceDescriptor;
   hit: SearchHit;
   selectedBundles: BundleItem[];
+  groupIntoVolume: boolean;
+  /** Optional user-supplied volume number/name; null = auto-derive from chapter range. */
+  volumeName?: string | null;
+  coverUrl: string | null;
   outDir: string;
   adapter: SourceAdapter;
   logger: Logger;
@@ -36,6 +47,7 @@ export interface ExecuteWalkthroughInput {
 
 export interface ExecuteDeps {
   downloader: Downloader;
+  packer: Packer;
 }
 
 export interface ExecuteWalkthroughResult {
@@ -47,6 +59,7 @@ export interface ExecuteWalkthroughResult {
 export function createDefaultExecuteDeps(): ExecuteDeps {
   return {
     downloader: { downloadBundle: realDownloadBundle },
+    packer: { packVolume: realPackVolume, deleteIndividualFiles: realDeleteIndividualFiles },
   };
 }
 
@@ -58,7 +71,7 @@ function toSlug(title: string): string {
     .replace(/^-|-$/g, "");
 }
 
-/** Step 9: execute the assembled plan — download each chapter as its own .cbz. */
+/** Step 9: execute the assembled plan — download each chapter, optionally pack into one volume. */
 export async function executeWalkthrough(
   opts: ExecuteWalkthroughInput,
   deps: ExecuteDeps = createDefaultExecuteDeps(),
@@ -67,6 +80,9 @@ export async function executeWalkthrough(
     source,
     hit,
     selectedBundles,
+    groupIntoVolume,
+    volumeName,
+    coverUrl,
     outDir,
     adapter,
     logger,
@@ -74,7 +90,7 @@ export async function executeWalkthrough(
     progress,
     progressEnabled = false,
   } = opts;
-  const { downloader } = deps;
+  const { downloader, packer } = deps;
 
   const slug = toSlug(hit.title);
   const outputs: string[] = [];
@@ -88,14 +104,18 @@ export async function executeWalkthrough(
       source: source.id,
       slug,
       bundles: selectedBundles.length,
+      groupIntoVolume,
     },
     "starting walkthrough execution",
   );
 
-  // The bundle loop can re-throw (MangakakalotParseError / WalkthroughError) to abort
-  // the whole walkthrough early. Wrapping everything in try/finally guarantees
-  // progress.finish() (and thus the shared stderr controller's endBar() teardown)
-  // still runs on that error path, so a re-entrant post-download-loop iteration never
+  const packedChapters: PackedChapter[] = [];
+
+  // The bundle loop (and the pack/cover step below it) can re-throw
+  // (MangakakalotParseError / WalkthroughError) to abort the whole walkthrough
+  // early. Wrapping everything in try/finally guarantees progress.finish()
+  // (and thus the shared stderr controller's endBar() teardown) still runs on
+  // that error path, so a re-entrant post-download-loop iteration never
   // inherits phantom stale bar state from this aborted run.
   try {
     for (const bundle of selectedBundles) {
@@ -167,6 +187,7 @@ export async function executeWalkthrough(
           });
 
           outputs.push(result.outputPath);
+          packedChapters.push({ num: bundle.num, outputPath: result.outputPath });
 
           logger.info(
             {
@@ -209,6 +230,63 @@ export async function executeWalkthrough(
             err,
           },
           `failed to download ${bundle.label}; continuing`,
+        );
+      }
+    }
+
+    if (groupIntoVolume && packedChapters.length > 0 && failed === 0) {
+      try {
+        let cover: CoverImage | undefined;
+        if (coverUrl !== null) {
+          try {
+            cover = await fetchCover(coverUrl);
+          } catch (err) {
+            logger.warn(
+              { event: "walkthrough.cover_fetch_failed", context: "walkthrough", coverUrl, err },
+              "cover fetch failed; packing without cover",
+            );
+          }
+        }
+
+        const customName = volumeName ? buildVolumeFilename(slug, volumeName) : undefined;
+
+        const packResult = await packer.packVolume({
+          slug,
+          outDir,
+          chapters: packedChapters,
+          cover,
+          customName,
+          logger,
+        });
+
+        logger.info(
+          {
+            event: "walkthrough.pack_done",
+            context: "walkthrough",
+            output_path: packResult.outputPath,
+            byte_size: packResult.byteSize,
+          },
+          `packed volume: ${packResult.outputPath}`,
+        );
+
+        // Volume write succeeded: the per-chapter .cbz files packed into it are now
+        // redundant. Delete AFTER the pack succeeded (never before — no data loss
+        // if packVolume throws). Deletion failures are graceful (warn + continue,
+        // handled inside deleteIndividualFiles) and never fail the run.
+        const deletedPaths = await packer.deleteIndividualFiles(packedChapters, logger);
+
+        // Reflect the final on-disk artifacts: drop only the per-chapter paths that
+        // were actually deleted (failed deletions stay in outputs — they still exist).
+        for (const path of deletedPaths) {
+          const idx = outputs.indexOf(path);
+          if (idx !== -1) outputs.splice(idx, 1);
+        }
+        outputs.push(packResult.outputPath);
+      } catch (err) {
+        failed++;
+        logger.warn(
+          { event: "walkthrough.pack_failed", context: "walkthrough", err },
+          "volume pack failed",
         );
       }
     }

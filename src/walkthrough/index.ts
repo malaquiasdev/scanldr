@@ -6,13 +6,16 @@ import { getAdapter } from "../sources/adapters/index.ts";
 import type { SourceDescriptor } from "../sources/types.ts";
 import { createProgress } from "./progress.ts";
 import { checkAuth, refreshSession } from "./steps/auth-check.ts";
+import { promptCoverUrl } from "./steps/cover-prompt.ts";
 import type { ExecuteDeps } from "./steps/execute.ts";
 import { executeWalkthrough } from "./steps/execute.ts";
 import { promptNextAction } from "./steps/next-action-prompt.ts";
+import { promptPack } from "./steps/pack-prompt.ts";
 import { pickRange } from "./steps/range-picker.ts";
 import { pickSearchResult } from "./steps/search-results-picker.ts";
 import { pickSource } from "./steps/source-picker.ts";
 import { promptTitle } from "./steps/title-prompt.ts";
+import { promptVolumeName } from "./steps/volume-name-prompt.ts";
 import type {
   ChapterListing,
   SearchHit,
@@ -289,11 +292,23 @@ async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<Walkthrou
   // Cache the listing actually used (fetched or preloaded) for subsequent "same manga" iterations.
   if (rangeResult.chapters) cache.chapters = rangeResult.chapters;
 
+  // Step 7 — pack prompt: group the selected chapters into a single volume .cbz?
+  const groupIntoVolume = await promptPack();
+
+  // Step 7b — volume name (only when grouping)
+  const volumeName = groupIntoVolume ? await promptVolumeName({ logger }) : null;
+
+  // Step 8 — cover URL (only when grouping)
+  const coverUrl = groupIntoVolume ? await promptCoverUrl({ logger }) : null;
+
   const result: WalkthroughResult = {
     title,
     source,
     hit,
     selectedBundles,
+    groupIntoVolume,
+    volumeName,
+    coverUrl,
   };
 
   // Step 9 — execute (fetchChapterInput calls are wrapped inside executeWalkthrough).
@@ -310,6 +325,9 @@ async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<Walkthrou
       source,
       hit,
       selectedBundles,
+      groupIntoVolume,
+      volumeName,
+      coverUrl,
       outDir,
       adapter,
       logger,
