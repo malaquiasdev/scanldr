@@ -2,14 +2,27 @@
 
 ## Current walkthrough (`bun start`)
 
-The current single-walkthrough CLI (post-epic #116, chapter-only since [ADR-009](../adr/009-retire-volume-mode.md)) runs these steps:
+The current single-walkthrough CLI (post-epic #116, chapter-selection-only since
+[ADR-009](../adr/009-retire-volume-mode.md); chapter→volume grouping restored by
+[ADR-010](../adr/010-restore-chapter-volume-grouping.md)) runs these steps:
 
 1. **Title prompt** — free-text input ("Manga title:").
 2. **Source picker** — auto-selects Mangakakalot, the sole registered source (see [ADR-008](../adr/008-retire-mangadex-source.md); MangaDex was retired).
 3. **Auth check** — Mangakakalot requires auth, so every run prompts for a cURL paste when no valid session exists.
 4. **Search results** — visual numbered picker, single select.
-5. **Range picker** — visual multi-select list of available chapters; no range-string parser, no mode choice (chapter is the only mode).
-6. **Execute** — download images and write each selected chapter as its own `.cbz` to the output directory. No pack step, no cover-injection step — volume grouping and cover art were withdrawn (see ADR-009).
+5. **Range picker** — visual multi-select list of available chapters; no range-string parser, no mode choice (chapter is the only *discovery* mode — see ADR-009).
+6. **Pack prompt** — "Group these chapters into a single volume?" (yes/no). This is the
+   only place volume grouping re-enters the flow (ADR-010); it never resurrects a
+   discovery-time chapter/volume mode choice.
+   - **No** → one `.cbz` per chapter (unchanged since ADR-009).
+   - **Yes** → **volume name prompt** (optional, Enter keeps a chapter-range-derived default)
+     then **cover URL prompt** (optional, Enter skips).
+7. **Execute** — download images for each selected chapter, writing each as its own `.cbz`.
+   When grouping was requested, the per-chapter `.cbz` files are then packed into a single
+   volume `.cbz` (custom or chapter-range-derived name) with the optional cover injected —
+   and, once the volume is successfully written, the loose per-chapter `.cbz` files that
+   were packed into it are deleted, so only the single volume `.cbz` remains on disk
+   (a per-file deletion failure is warn-logged and does not fail the run).
 
 See [docs/auth-manual.md](../auth-manual.md) for step 3 in detail.
 

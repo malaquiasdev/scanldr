@@ -4,10 +4,11 @@ import { join } from "node:path";
 import type { ChapterInput } from "@integrations/_shared/media.ts";
 import { CloudflareError } from "../../integrations/fallback-http/types.ts";
 import { MangakakalotParseError } from "../../integrations/mangakakalot/client/types.ts";
+import type { PackedChapter } from "../../pack/index.ts";
 import { createLogger } from "../../plugins/logger/index.ts";
 import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import { getSource } from "../../sources/index.ts";
-import type { Downloader, ProgressHandle, WalkthroughResult } from "../types.ts";
+import type { Downloader, Packer, ProgressHandle, WalkthroughResult } from "../types.ts";
 import { WalkthroughError } from "../types.ts";
 import type { ExecuteWalkthroughInput } from "./execute.ts";
 import { executeWalkthrough } from "./execute.ts";
@@ -19,7 +20,23 @@ const plan: WalkthroughResult = {
   source,
   hit: { id: "hit-1", title: "Naruto", originalLanguage: "ja", year: 1999 },
   selectedBundles: [{ label: "Chapter 1", id: "hit-1-ch-1", num: "1" }],
+  groupIntoVolume: false,
+  volumeName: null,
+  coverUrl: null,
 };
+
+function makeFakePacker(overrides: Partial<Packer> = {}): Packer {
+  return {
+    packVolume: mock(async (input) => ({
+      outputPath: join(outDir, input.slug, "packed-volume.cbz"),
+      byteSize: 200,
+    })),
+    deleteIndividualFiles: mock(async (chapters: PackedChapter[]) =>
+      chapters.map((c) => c.outputPath),
+    ),
+    ...overrides,
+  };
+}
 
 const noop = () => {};
 const logger = createLogger({ level: "info", format: "human", write: noop });
@@ -65,6 +82,7 @@ describe("executeWalkthrough", () => {
     const opts: ExecuteWalkthroughInput = { ...plan, outDir, adapter, logger };
     const result = await executeWalkthrough(opts, {
       downloader: makeFakeDownloader(),
+      packer: makeFakePacker(),
     });
 
     expect(fetchedIds).toContain("hit-1-ch-1");
@@ -86,6 +104,7 @@ describe("executeWalkthrough", () => {
     };
     const result = await executeWalkthrough(opts, {
       downloader: makeFakeDownloader(),
+      packer: makeFakePacker(),
     });
 
     expect(result.failed).toBe(1);
@@ -111,7 +130,7 @@ describe("executeWalkthrough", () => {
     });
 
     const opts: ExecuteWalkthroughInput = { ...plan, outDir, adapter, logger, refreshFn };
-    const result = await executeWalkthrough(opts, { downloader });
+    const result = await executeWalkthrough(opts, { downloader, packer: makeFakePacker() });
 
     expect(refreshFn).toHaveBeenCalledTimes(1);
     expect(result.failed).toBe(0);
@@ -134,7 +153,9 @@ describe("executeWalkthrough", () => {
       refreshFn,
     };
 
-    await expect(executeWalkthrough(opts, { downloader })).rejects.toBeInstanceOf(WalkthroughError);
+    await expect(
+      executeWalkthrough(opts, { downloader, packer: makeFakePacker() }),
+    ).rejects.toBeInstanceOf(WalkthroughError);
   });
 
   test("non-CF error → failed incremented, function returns normally", async () => {
@@ -152,7 +173,7 @@ describe("executeWalkthrough", () => {
       logger,
       refreshFn,
     };
-    const result = await executeWalkthrough(opts, { downloader });
+    const result = await executeWalkthrough(opts, { downloader, packer: makeFakePacker() });
 
     expect(refreshFn).not.toHaveBeenCalled();
     expect(result.failed).toBe(1);
@@ -175,6 +196,7 @@ describe("executeWalkthrough", () => {
     const opts: ExecuteWalkthroughInput = { ...plan, outDir, adapter, logger, refreshFn };
     const result = await executeWalkthrough(opts, {
       downloader: makeFakeDownloader(),
+      packer: makeFakePacker(),
     });
 
     expect(refreshFn).toHaveBeenCalledTimes(1);
@@ -226,7 +248,7 @@ describe("executeWalkthrough", () => {
       refreshFn,
     };
 
-    const result = await executeWalkthrough(opts, { downloader });
+    const result = await executeWalkthrough(opts, { downloader, packer: makeFakePacker() });
 
     expect(result.outputs).toHaveLength(2);
     expect(result.failed).toBe(0);
@@ -254,7 +276,7 @@ describe("executeWalkthrough", () => {
       // refreshFn intentionally omitted
     };
 
-    const result = await executeWalkthrough(opts, { downloader });
+    const result = await executeWalkthrough(opts, { downloader, packer: makeFakePacker() });
 
     expect(result.failed).toBe(1);
     expect(result.outputs).toHaveLength(0);
@@ -275,7 +297,7 @@ describe("executeWalkthrough", () => {
     };
 
     await expect(
-      executeWalkthrough(opts, { downloader: makeFakeDownloader() }),
+      executeWalkthrough(opts, { downloader: makeFakeDownloader(), packer: makeFakePacker() }),
     ).rejects.toBeInstanceOf(MangakakalotParseError);
   });
 
@@ -301,7 +323,7 @@ describe("executeWalkthrough", () => {
     };
 
     await expect(
-      executeWalkthrough(opts, { downloader: makeFakeDownloader() }),
+      executeWalkthrough(opts, { downloader: makeFakeDownloader(), packer: makeFakePacker() }),
     ).rejects.toBeInstanceOf(MangakakalotParseError);
 
     expect(finishCalls).toEqual(["finish"]);
@@ -325,9 +347,9 @@ describe("executeWalkthrough", () => {
       logger,
     };
 
-    await expect(executeWalkthrough(opts, { downloader })).rejects.toBeInstanceOf(
-      MangakakalotParseError,
-    );
+    await expect(
+      executeWalkthrough(opts, { downloader, packer: makeFakePacker() }),
+    ).rejects.toBeInstanceOf(MangakakalotParseError);
   });
 
   test("generic Error during download is still swallowed (not MangakakalotParseError)", async () => {
@@ -346,6 +368,7 @@ describe("executeWalkthrough", () => {
 
     const result = await executeWalkthrough(opts, {
       downloader: makeFakeDownloader(),
+      packer: makeFakePacker(),
     });
 
     // generic error is swallowed, not rethrown
@@ -374,6 +397,7 @@ describe("executeWalkthrough", () => {
           };
         }),
       }),
+      packer: makeFakePacker(),
     });
 
     expect(capturedBundleNumbers[0]).toBe("103.5");
@@ -423,6 +447,7 @@ describe("executeWalkthrough", () => {
 
     const result = await executeWalkthrough(opts, {
       downloader: fakeDownloader,
+      packer: makeFakePacker(),
     });
 
     expect(result.failed).toBe(0);
@@ -479,6 +504,7 @@ describe("executeWalkthrough", () => {
 
       const result = await executeWalkthrough(opts, {
         downloader: makeMultiPageDownloader(),
+        packer: makeFakePacker(),
       });
 
       expect(result.failed).toBe(0);
@@ -512,6 +538,7 @@ describe("executeWalkthrough", () => {
 
       const result = await executeWalkthrough(opts, {
         downloader: makeMultiPageDownloader(),
+        packer: makeFakePacker(),
       });
 
       expect(result.failed).toBe(0);
@@ -550,10 +577,166 @@ describe("executeWalkthrough", () => {
 
       const result = await executeWalkthrough(opts, {
         downloader: makeMultiPageDownloader(),
+        packer: makeFakePacker(),
       });
 
       expect(result.failed).toBe(0);
       expect(infoEvents.some((e) => e.event === "walkthrough.fetch_page")).toBe(true);
     });
+  });
+
+  // P2 (#183 QA gap) — groupIntoVolume=true but one chapter fails: pack step
+  // must be skipped (gated on failed === 0), and the surviving per-chapter
+  // output is still returned.
+  test("groupIntoVolume=true with one failed chapter → pack skipped, surviving output still returned", async () => {
+    const bundle1 = { label: "Chapter 1", id: "ch-1", num: "1" };
+    const bundle2 = { label: "Chapter 2", id: "ch-2", num: "2" };
+
+    const adapter = makeFakeAdapter({
+      fetchChapterInput: async (id, num) => {
+        if (id === "ch-2") throw new Error("network error");
+        return { ...fakeChapterInput, id, num: Number(num ?? "0") };
+      },
+    });
+    const packer = makeFakePacker();
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      selectedBundles: [bundle1, bundle2],
+      groupIntoVolume: true,
+      outDir,
+      adapter,
+      logger,
+    };
+
+    const result = await executeWalkthrough(opts, { downloader: makeFakeDownloader(), packer });
+
+    expect(result.failed).toBe(1);
+    // bundle 1 succeeded, its output survives the partial-group failure
+    expect(result.outputs).toHaveLength(1);
+    expect(result.outputs[0]).toContain("naruto-chapter-001.cbz");
+    // pack step is gated on failed === 0 — must not run
+    expect((packer.packVolume as ReturnType<typeof mock>).mock.calls.length).toBe(0);
+    // pack was skipped -> deletion of the surviving per-chapter file must also be skipped
+    expect((packer.deleteIndividualFiles as ReturnType<typeof mock>).mock.calls.length).toBe(0);
+  });
+
+  // #183 — product decision: after a successful group pack, delete the loose
+  // per-chapter .cbz files so only the volume remains on disk.
+  test("groupIntoVolume=true success → deletes exactly the packed per-chapter files, keeps the volume", async () => {
+    const bundle1 = { label: "Chapter 1", id: "ch-1", num: "1" };
+    const bundle2 = { label: "Chapter 2", id: "ch-2", num: "2" };
+
+    const adapter = makeFakeAdapter({
+      fetchChapterInput: async (id, num) => ({ ...fakeChapterInput, id, num: Number(num ?? "0") }),
+    });
+    const packer = makeFakePacker();
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      selectedBundles: [bundle1, bundle2],
+      groupIntoVolume: true,
+      outDir,
+      adapter,
+      logger,
+    };
+
+    const result = await executeWalkthrough(opts, { downloader: makeFakeDownloader(), packer });
+
+    expect(result.failed).toBe(0);
+
+    const deleteMock = packer.deleteIndividualFiles as ReturnType<typeof mock>;
+    expect(deleteMock.mock.calls.length).toBe(1);
+    const [deletedChapters] = deleteMock.mock.calls[0] as [{ num: string; outputPath: string }[]];
+    expect(deletedChapters.map((c) => c.num)).toEqual(["1", "2"]);
+    expect(deletedChapters.every((c) => c.outputPath.endsWith(".cbz"))).toBe(true);
+
+    // outputs reflects the final on-disk artifacts: only the volume survives
+    expect(result.outputs).toHaveLength(1);
+    expect(result.outputs[0]).toContain("packed-volume.cbz");
+  });
+
+  test("groupIntoVolume=false → deleteIndividualFiles never called", async () => {
+    const packer = makeFakePacker();
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      groupIntoVolume: false,
+      outDir,
+      adapter: makeFakeAdapter(),
+      logger,
+    };
+
+    const result = await executeWalkthrough(opts, { downloader: makeFakeDownloader(), packer });
+
+    expect(result.failed).toBe(0);
+    expect((packer.deleteIndividualFiles as ReturnType<typeof mock>).mock.calls.length).toBe(0);
+    expect((packer.packVolume as ReturnType<typeof mock>).mock.calls.length).toBe(0);
+  });
+
+  test("groupIntoVolume=true, deletion of one file fails → run still succeeds, volume intact, surviving file stays in outputs", async () => {
+    const bundle1 = { label: "Chapter 1", id: "ch-1", num: "1" };
+    const bundle2 = { label: "Chapter 2", id: "ch-2", num: "2" };
+
+    const chapter1Path = join(outDir, "naruto", "naruto-chapter-001.cbz");
+    const chapter2Path = join(outDir, "naruto", "naruto-chapter-002.cbz");
+
+    const downloader = makeFakeDownloader({
+      downloadBundle: mock(async (input) => {
+        const bundleNum = (input as { bundleNumber: string }).bundleNumber;
+        return {
+          chapterIds: [bundleNum === "1" ? "ch-1" : "ch-2"],
+          outputPath: bundleNum === "1" ? chapter1Path : chapter2Path,
+          byteSize: 100,
+        };
+      }),
+    });
+
+    const adapter = makeFakeAdapter({
+      fetchChapterInput: async (id, num) => ({ ...fakeChapterInput, id, num: Number(num ?? "0") }),
+    });
+
+    const warnEvents: Array<{ event?: string; [k: string]: unknown }> = [];
+    const capturingLogger = createLogger({ level: "info", format: "human", write: noop });
+    const origWarn = capturingLogger.warn.bind(capturingLogger);
+    capturingLogger.warn = (obj: Record<string, unknown>, msg: string) => {
+      if (typeof obj === "object" && obj !== null && "event" in obj) {
+        warnEvents.push({ ...obj });
+      }
+      return origWarn(obj, msg);
+    };
+
+    // deleteIndividualFiles graceful-failure behavior is exercised at the pack.ts
+    // unit-test level; here we assert the walkthrough layer doesn't fail the run
+    // even if the underlying call rejects unexpectedly, and that any path NOT
+    // reported as deleted stays in outputs (it still exists on disk).
+    const packer = makeFakePacker({
+      deleteIndividualFiles: mock(async () => {
+        capturingLogger.warn(
+          { event: "pack.delete_failed", context: "pack", path: chapter2Path },
+          `failed to delete ${chapter2Path}`,
+        );
+        return [chapter1Path];
+      }),
+    });
+
+    const opts: ExecuteWalkthroughInput = {
+      ...plan,
+      selectedBundles: [bundle1, bundle2],
+      groupIntoVolume: true,
+      outDir,
+      adapter,
+      logger: capturingLogger,
+    };
+
+    const result = await executeWalkthrough(opts, { downloader, packer });
+
+    expect(result.failed).toBe(0);
+    // volume + the surviving (undeleted) chapter2 file
+    expect(result.outputs).toHaveLength(2);
+    expect(result.outputs.some((o) => o.includes("packed-volume.cbz"))).toBe(true);
+    expect(result.outputs).toContain(chapter2Path);
+    expect(result.outputs).not.toContain(chapter1Path);
+    expect(warnEvents.some((e) => e.event === "pack.delete_failed")).toBe(true);
   });
 });

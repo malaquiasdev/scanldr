@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChapterInput } from "@integrations/_shared/media.ts";
 import { CloudflareError } from "../integrations/fallback-http/types.ts";
+import type { PackedChapter } from "../pack/index.ts";
 import type { Config } from "../plugins/config/index.ts";
 import { createLogger } from "../plugins/logger/index.ts";
 import type { SourceAdapter } from "../sources/adapters/index.ts";
-import type { ChapterListing, Downloader, SearchHit } from "./types.ts";
+import type { ChapterListing, Downloader, Packer, SearchHit } from "./types.ts";
 import { WalkthroughError } from "./types.ts";
 
 const noop = () => {};
@@ -64,6 +65,18 @@ function makeFakeDownloader(): Downloader {
   };
 }
 
+function makeFakePacker(): Packer {
+  return {
+    packVolume: mock(async (input) => ({
+      outputPath: join(outDir, input.slug, "packed-volume.cbz"),
+      byteSize: 200,
+    })),
+    deleteIndividualFiles: mock(async (chapters: PackedChapter[]) =>
+      chapters.map((c) => c.outputPath),
+    ),
+  };
+}
+
 const fakeAdapterFactory = (_sourceId: string, _opts: unknown): SourceAdapter => makeFakeAdapter();
 
 describe("runWalkthrough — full happy path", () => {
@@ -90,7 +103,7 @@ describe("runWalkthrough — full happy path", () => {
       probeClientFactory: null,
       outDir,
       adapterFactory: fakeAdapterFactory,
-      executeDeps: { downloader: fakeDownloader },
+      executeDeps: { downloader: fakeDownloader, packer: makeFakePacker() },
     });
     if ("cancelled" in result) throw new Error("Unexpected cancellation");
     if ("ok" in result) throw new Error(`Unexpected failure: ${result.reason}`);
@@ -198,7 +211,7 @@ describe("runWalkthrough — full happy path", () => {
       refreshFn: async () => {
         refreshCallCount++;
       },
-      executeDeps: { downloader: fakeDownloader },
+      executeDeps: { downloader: fakeDownloader, packer: makeFakePacker() },
     });
 
     if ("cancelled" in result) throw new Error("Unexpected cancellation");
@@ -276,7 +289,7 @@ describe("runWalkthrough — full happy path", () => {
       refreshFn: async () => {
         refreshCallCount++;
       },
-      executeDeps: { downloader: fakeDownloader },
+      executeDeps: { downloader: fakeDownloader, packer: makeFakePacker() },
     });
 
     if ("cancelled" in result) throw new Error("Unexpected cancellation");
@@ -321,7 +334,7 @@ describe("runWalkthrough — full happy path", () => {
       refreshFn: async () => {
         refreshCallCount++;
       },
-      executeDeps: { downloader: fakeDownloader },
+      executeDeps: { downloader: fakeDownloader, packer: makeFakePacker() },
     });
 
     if ("cancelled" in result) throw new Error("Unexpected cancellation");
@@ -441,7 +454,7 @@ describe("runWalkthrough — post-download loop", () => {
       probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
-      executeDeps: { downloader: fakeDownloader },
+      executeDeps: { downloader: fakeDownloader, packer: makeFakePacker() },
     });
 
     if ("cancelled" in result) throw new Error("Unexpected cancellation");
@@ -499,7 +512,7 @@ describe("runWalkthrough — post-download loop", () => {
         expect(factoryOpts).toBeDefined();
         return fakeAdapter;
       },
-      executeDeps: { downloader: fakeDownloader },
+      executeDeps: { downloader: fakeDownloader, packer: makeFakePacker() },
     });
 
     if ("cancelled" in result) throw new Error("Unexpected cancellation");
@@ -535,7 +548,7 @@ describe("runWalkthrough — post-download loop", () => {
       probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
-      executeDeps: { downloader: fakeDownloader },
+      executeDeps: { downloader: fakeDownloader, packer: makeFakePacker() },
     });
 
     if ("cancelled" in result) throw new Error("Unexpected cancellation");
@@ -569,7 +582,7 @@ describe("runWalkthrough — post-download loop", () => {
       probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
-      executeDeps: { downloader: fakeDownloader },
+      executeDeps: { downloader: fakeDownloader, packer: makeFakePacker() },
     });
 
     expect(result).toEqual({ cancelled: true });
@@ -606,7 +619,7 @@ describe("runWalkthrough — post-download loop", () => {
       probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
-      executeDeps: { downloader: fakeDownloader },
+      executeDeps: { downloader: fakeDownloader, packer: makeFakePacker() },
     });
 
     if ("cancelled" in result) throw new Error("Unexpected cancellation");
@@ -656,7 +669,7 @@ describe("runWalkthrough — post-download loop", () => {
       probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
-      executeDeps: { downloader: fakeDownloader },
+      executeDeps: { downloader: fakeDownloader, packer: makeFakePacker() },
     });
 
     if ("cancelled" in result) throw new Error("Unexpected cancellation");
@@ -696,11 +709,136 @@ describe("runWalkthrough — post-download loop", () => {
       probeClientFactory: null,
       outDir,
       adapterFactory: () => fakeAdapter,
-      executeDeps: { downloader: fakeDownloader },
+      executeDeps: { downloader: fakeDownloader, packer: makeFakePacker() },
     });
 
     if ("cancelled" in result) throw new Error("Unexpected cancellation");
     if ("ok" in result) throw new Error(`Unexpected failure: ${result.reason}`);
     expect(result.selectedBundles.length).toBeGreaterThan(0);
+  });
+});
+
+describe("runWalkthrough — chapter→volume grouping (#183)", () => {
+  test("group=yes → downloader runs per-chapter, then packer.packVolume packs one volume cbz", async () => {
+    let selectCall = 0;
+    mock.module("./prompts.ts", () => ({
+      input: async (opts: { default?: string }) => opts.default ?? "Naruto",
+      select: async () => {
+        selectCall++;
+        if (selectCall === 1) return "mock-1"; // search result
+        return "quit"; // next-action
+      },
+      checkbox: async () => ["mock-1-ch-1", "mock-1-ch-2"],
+      confirm: async () => true, // group into volume: yes
+      editor: async () => "",
+    }));
+
+    selectCall = 0;
+    const fakeAdapter = makeFakeAdapter();
+    const fakeDownloader = makeFakeDownloader();
+    const fakePacker = makeFakePacker();
+    const { runWalkthrough } = await import("./index.ts");
+    const result = await runWalkthrough({
+      logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
+      outDir,
+      adapterFactory: () => fakeAdapter,
+      executeDeps: { downloader: fakeDownloader, packer: fakePacker },
+    });
+
+    if ("cancelled" in result) throw new Error("Unexpected cancellation");
+    if ("ok" in result) throw new Error(`Unexpected failure: ${result.reason}`);
+    expect(result.groupIntoVolume).toBe(true);
+    // one downloadBundle call per selected chapter
+    expect((fakeDownloader.downloadBundle as ReturnType<typeof mock>).mock.calls.length).toBe(2);
+    // exactly one packVolume call producing the single volume cbz
+    expect((fakePacker.packVolume as ReturnType<typeof mock>).mock.calls.length).toBe(1);
+  });
+
+  test("group=no → per-chapter cbz only, packer never invoked", async () => {
+    let selectCall = 0;
+    mock.module("./prompts.ts", () => ({
+      input: async () => "Naruto",
+      select: async () => {
+        selectCall++;
+        if (selectCall === 1) return "mock-1";
+        return "quit";
+      },
+      checkbox: async () => ["mock-1-ch-1", "mock-1-ch-2"],
+      confirm: async () => false, // group into volume: no
+      editor: async () => "",
+    }));
+
+    selectCall = 0;
+    const fakeAdapter = makeFakeAdapter();
+    const fakeDownloader = makeFakeDownloader();
+    const fakePacker = makeFakePacker();
+    const { runWalkthrough } = await import("./index.ts");
+    const result = await runWalkthrough({
+      logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
+      outDir,
+      adapterFactory: () => fakeAdapter,
+      executeDeps: { downloader: fakeDownloader, packer: fakePacker },
+    });
+
+    if ("cancelled" in result) throw new Error("Unexpected cancellation");
+    if ("ok" in result) throw new Error(`Unexpected failure: ${result.reason}`);
+    expect(result.groupIntoVolume).toBe(false);
+    expect((fakeDownloader.downloadBundle as ReturnType<typeof mock>).mock.calls.length).toBe(2);
+    expect((fakePacker.packVolume as ReturnType<typeof mock>).mock.calls.length).toBe(0);
+  });
+
+  // P1 (#183 QA gap) — group=yes WITH a cover URL supplied: assert the fetched
+  // cover bytes are threaded end-to-end into packer.packVolume({ cover }).
+  test("group=yes with cover URL → fetched cover bytes reach packer.packVolume", async () => {
+    const fakeCoverBytes = new Uint8Array([9, 8, 7, 6]);
+    mock.module("../pack/cover.ts", () => ({
+      fetchCover: mock(async () => ({ bytes: fakeCoverBytes, ext: ".png" })),
+    }));
+
+    let selectCall = 0;
+    mock.module("./prompts.ts", () => ({
+      input: async (opts: { message: string; default?: string }) => {
+        if (opts.message.includes("Cover image URL")) return "https://example.com/cover.png";
+        return opts.default ?? "Naruto";
+      },
+      select: async () => {
+        selectCall++;
+        if (selectCall === 1) return "mock-1"; // search result
+        return "quit"; // next-action
+      },
+      checkbox: async () => ["mock-1-ch-1", "mock-1-ch-2"],
+      confirm: async () => true, // group into volume: yes
+      editor: async () => "",
+    }));
+
+    selectCall = 0;
+    const fakeAdapter = makeFakeAdapter();
+    const fakeDownloader = makeFakeDownloader();
+    const fakePacker = makeFakePacker();
+    const { runWalkthrough } = await import("./index.ts");
+    const result = await runWalkthrough({
+      logger,
+      dataHome: makeAuthedDataHome(),
+      probeClientFactory: null,
+      outDir,
+      adapterFactory: () => fakeAdapter,
+      executeDeps: { downloader: fakeDownloader, packer: fakePacker },
+    });
+
+    if ("cancelled" in result) throw new Error("Unexpected cancellation");
+    if ("ok" in result) throw new Error(`Unexpected failure: ${result.reason}`);
+    expect(result.groupIntoVolume).toBe(true);
+
+    const packCalls = (fakePacker.packVolume as ReturnType<typeof mock>).mock.calls;
+    expect(packCalls.length).toBe(1);
+    const packInput = packCalls[0]?.[0] as { cover?: { bytes: Uint8Array; ext: string } };
+    expect(packInput.cover).toBeDefined();
+    expect(packInput.cover?.bytes.byteLength).toBeGreaterThan(0);
+    expect(packInput.cover?.bytes).toEqual(fakeCoverBytes);
+    expect(packInput.cover?.ext).toBe(".png");
   });
 });

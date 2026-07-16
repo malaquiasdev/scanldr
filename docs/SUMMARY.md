@@ -14,7 +14,8 @@ This document is the central index of all technical documentation for **scanldr*
 - [ADR-006: Trace store as state, with TTL retention](adr/006-trace-store-as-state-with-ttl.md)
 - [ADR-007: Reassemble CDN vertically-tiled mangakakalot pages](adr/007-reassemble-cdn-tiled-pages.md) _(accepted)_
 - [ADR-008: Retire the MangaDex source (mangakakalot sole source)](adr/008-retire-mangadex-source.md)
-- [ADR-009: Retire volume download mode (chapter-only)](adr/009-retire-volume-mode.md)
+- [ADR-009: Retire volume download mode (chapter-only)](adr/009-retire-volume-mode.md) _(amended by ADR-010: chapter→volume grouping restored)_
+- [ADR-010: Restore chapter→volume grouping (pack + cover), keep download-by-volume retired](adr/010-restore-chapter-volume-grouping.md)
 
 ## Historical Flows (pre-epic #116)
 
@@ -47,7 +48,7 @@ This document is the central index of all technical documentation for **scanldr*
 - **Language:** TypeScript
 - **Auth:** manual cURL paste from the user's real browser via DevTools (`parseCurl` in `src/plugins/auth-path/`)
 - **Metadata source:** mangakakalot.gg (scraped)
-- **Output formats:** CBZ / ZIP, one archive per chapter (chapter-only since ADR-009; no packing/cover-injection)
+- **Output formats:** CBZ / ZIP, one archive per chapter by default, or one packed volume `.cbz` with optional cover when the user opts to group chapters (ADR-009 chapter-only base + ADR-010 restored grouping)
 - **Persistent state:** SQLite `traces` table only — 3-day TTL, one row per log event (`src/plugins/trace/`)
 - **CLI entrypoint:** `bun start` → single one-shot walkthrough (`src/walkthrough/`)
 - **Supported sources:** mangakakalot.gg (sole source since ADR-008; MangaDex retired)
