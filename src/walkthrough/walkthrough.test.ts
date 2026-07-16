@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChapterInput } from "@integrations/_shared/media.ts";
 import { CloudflareError } from "../integrations/fallback-http/types.ts";
-import type { PackedChapter } from "../pack/index.ts";
+import type { PackVolumeInput } from "../pack/types.ts";
 import type { Config } from "../plugins/config/index.ts";
 import { createLogger } from "../plugins/logger/index.ts";
 import type { SourceAdapter } from "../sources/adapters/index.ts";
@@ -67,13 +67,10 @@ function makeFakeDownloader(): Downloader {
 
 function makeFakePacker(): Packer {
   return {
-    packVolume: mock(async (input) => ({
-      outputPath: join(outDir, input.slug, "packed-volume.cbz"),
-      byteSize: 200,
+    packVolumeReplacingSources: mock(async (input: PackVolumeInput) => ({
+      volume: { outputPath: join(outDir, input.slug, "packed-volume.cbz"), byteSize: 200 },
+      deleted: input.chapters.map((c) => c.outputPath),
     })),
-    deleteIndividualFiles: mock(async (chapters: PackedChapter[]) =>
-      chapters.map((c) => c.outputPath),
-    ),
   };
 }
 
@@ -719,7 +716,7 @@ describe("runWalkthrough — post-download loop", () => {
 });
 
 describe("runWalkthrough — chapter→volume grouping (#183)", () => {
-  test("group=yes → downloader runs per-chapter, then packer.packVolume packs one volume cbz", async () => {
+  test("group=yes → downloader runs per-chapter, then packer.packVolumeReplacingSources packs one volume cbz", async () => {
     let selectCall = 0;
     mock.module("./prompts.ts", () => ({
       input: async (opts: { default?: string }) => opts.default ?? "Naruto",
@@ -752,8 +749,10 @@ describe("runWalkthrough — chapter→volume grouping (#183)", () => {
     expect(result.groupIntoVolume).toBe(true);
     // one downloadBundle call per selected chapter
     expect((fakeDownloader.downloadBundle as ReturnType<typeof mock>).mock.calls.length).toBe(2);
-    // exactly one packVolume call producing the single volume cbz
-    expect((fakePacker.packVolume as ReturnType<typeof mock>).mock.calls.length).toBe(1);
+    // exactly one packVolumeReplacingSources call producing the single volume cbz
+    expect(
+      (fakePacker.packVolumeReplacingSources as ReturnType<typeof mock>).mock.calls.length,
+    ).toBe(1);
   });
 
   test("group=no → per-chapter cbz only, packer never invoked", async () => {
@@ -788,12 +787,14 @@ describe("runWalkthrough — chapter→volume grouping (#183)", () => {
     if ("ok" in result) throw new Error(`Unexpected failure: ${result.reason}`);
     expect(result.groupIntoVolume).toBe(false);
     expect((fakeDownloader.downloadBundle as ReturnType<typeof mock>).mock.calls.length).toBe(2);
-    expect((fakePacker.packVolume as ReturnType<typeof mock>).mock.calls.length).toBe(0);
+    expect(
+      (fakePacker.packVolumeReplacingSources as ReturnType<typeof mock>).mock.calls.length,
+    ).toBe(0);
   });
 
   // P1 (#183 QA gap) — group=yes WITH a cover URL supplied: assert the fetched
-  // cover bytes are threaded end-to-end into packer.packVolume({ cover }).
-  test("group=yes with cover URL → fetched cover bytes reach packer.packVolume", async () => {
+  // cover bytes are threaded end-to-end into packer.packVolumeReplacingSources({ cover }).
+  test("group=yes with cover URL → fetched cover bytes reach packer.packVolumeReplacingSources", async () => {
     const fakeCoverBytes = new Uint8Array([9, 8, 7, 6]);
     mock.module("../pack/cover.ts", () => ({
       fetchCover: mock(async () => ({ bytes: fakeCoverBytes, ext: ".png" })),
@@ -833,7 +834,7 @@ describe("runWalkthrough — chapter→volume grouping (#183)", () => {
     if ("ok" in result) throw new Error(`Unexpected failure: ${result.reason}`);
     expect(result.groupIntoVolume).toBe(true);
 
-    const packCalls = (fakePacker.packVolume as ReturnType<typeof mock>).mock.calls;
+    const packCalls = (fakePacker.packVolumeReplacingSources as ReturnType<typeof mock>).mock.calls;
     expect(packCalls.length).toBe(1);
     const packInput = packCalls[0]?.[0] as { cover?: { bytes: Uint8Array; ext: string } };
     expect(packInput.cover).toBeDefined();

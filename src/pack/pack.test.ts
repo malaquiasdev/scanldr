@@ -7,8 +7,8 @@ import { zipSync } from "fflate";
 import {
   buildVolumeFilename,
   defaultVolumeName,
-  deleteIndividualFiles,
   packVolume,
+  packVolumeReplacingSources,
 } from "./pack.ts";
 
 const TMP = join(import.meta.dir, "__pack_test_tmp__");
@@ -398,22 +398,115 @@ describe("packVolume", () => {
 
     await rm(dir, { recursive: true, force: true });
   });
+});
 
-  test("deleteIndividualFiles removes chapter files", async () => {
-    const { dir, chapters } = await setup();
+// ---------------------------------------------------------------------------
+// packVolumeReplacingSources — atomic pack-then-delete
+// ---------------------------------------------------------------------------
 
-    // Ensure files exist before deletion
+describe("packVolumeReplacingSources", () => {
+  test("writes the volume then removes the sources", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const slug = "dandadan";
+    const slug_dir = join(dir, slug);
+
+    const ch103 = await makeChapterCbz(slug_dir, slug, "103", 10);
+    const ch104 = await makeChapterCbz(slug_dir, slug, "104", 8);
+    const chapters = [
+      { num: "103", outputPath: ch103 },
+      { num: "104", outputPath: ch104 },
+    ];
+
     for (const ch of chapters) {
       expect(await Bun.file(ch.outputPath).exists()).toBe(true);
     }
 
-    await deleteIndividualFiles(chapters, logger);
+    const result = await packVolumeReplacingSources({ slug, outDir: dir, chapters, logger });
 
+    expect(await Bun.file(result.volume.outputPath).exists()).toBe(true);
+    expect(result.deleted.sort()).toEqual([ch103, ch104].sort());
     for (const ch of chapters) {
       expect(await Bun.file(ch.outputPath).exists()).toBe(false);
     }
 
     await rm(dir, { recursive: true, force: true });
+  });
+
+  test("sources are kept when the volume write throws", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const slug = "dandadan";
+    const slug_dir = join(dir, slug);
+    const ch1 = await makeChapterCbz(slug_dir, slug, "1", 2);
+
+    // Make the output dir read-only so writeFile on .tmp throws before any delete.
+    const { chmod } = await import("node:fs/promises");
+    await chmod(slug_dir, 0o555);
+
+    try {
+      await expect(
+        packVolumeReplacingSources({
+          slug,
+          outDir: dir,
+          chapters: [{ num: "1", outputPath: ch1 }],
+          logger,
+        }),
+      ).rejects.toThrow();
+
+      // chmod back so we can inspect/clean up, then verify the source survived.
+      await chmod(slug_dir, 0o755);
+      expect(await Bun.file(ch1).exists()).toBe(true);
+    } finally {
+      await chmod(slug_dir, 0o755);
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a source that fails to delete stays reported", async () => {
+    const dir = join(TMP, String(Math.random()));
+    const slug = "dandadan";
+    const slug_dir = join(dir, slug);
+    // Chapter 2's file lives in its own directory that gets locked read-only
+    // AFTER packing reads it — so packVolume still succeeds (read only needs
+    // r-x on the dir) but its later unlink fails (needs w on the dir).
+    const readonlyDir = join(dir, "readonly");
+
+    const ch1 = await makeChapterCbz(slug_dir, slug, "1", 1);
+    const ch2 = await makeChapterCbz(readonlyDir, slug, "2", 1);
+    const chapters = [
+      { num: "1", outputPath: ch1 },
+      { num: "2", outputPath: ch2 },
+    ];
+
+    const { chmod } = await import("node:fs/promises");
+    await chmod(readonlyDir, 0o555);
+
+    const warnEvents: string[] = [];
+    const spyLogger = {
+      info: () => {},
+      warn: (obj: unknown) => {
+        if (typeof obj === "object" && obj !== null && "event" in obj) {
+          warnEvents.push((obj as Record<string, unknown>).event as string);
+        }
+      },
+      error: () => {},
+    };
+
+    try {
+      const result = await packVolumeReplacingSources({
+        slug,
+        outDir: dir,
+        chapters,
+        logger: spyLogger,
+      });
+
+      expect(await Bun.file(result.volume.outputPath).exists()).toBe(true);
+      expect(result.deleted).toEqual([ch1]);
+      expect(result.deleted).not.toContain(ch2);
+      expect(warnEvents).toContain("pack.delete_failed");
+    } finally {
+      await chmod(readonlyDir, 0o755);
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -530,24 +623,26 @@ describe("packVolume — .tmp cleanup on write failure", () => {
 // deleteIndividualFiles — partial unlink failure (P2.2)
 // ---------------------------------------------------------------------------
 
-describe("deleteIndividualFiles — partial unlink failure", () => {
+describe("packVolumeReplacingSources — partial unlink failure", () => {
   test("unlink failure on middle file is logged as warn and does not throw", async () => {
     const dir = join(TMP, String(Math.random()));
     const slug = "dandadan";
     const slug_dir = join(dir, slug);
-    await mkdir(slug_dir, { recursive: true });
+    // Chapter 2's file lives in its own directory that gets locked read-only
+    // AFTER packing reads it, so packVolume still succeeds but its unlink fails.
+    const readonlyDir = join(dir, "readonly");
 
-    // Create 3 real files
-    const paths = await Promise.all([
-      makeChapterCbz(slug_dir, slug, "1", 1),
-      makeChapterCbz(slug_dir, slug, "2", 1),
-      makeChapterCbz(slug_dir, slug, "3", 1),
-    ]);
+    const ch1 = await makeChapterCbz(slug_dir, slug, "1", 1);
+    const ch2 = await makeChapterCbz(readonlyDir, slug, "2", 1);
+    const ch3 = await makeChapterCbz(slug_dir, slug, "3", 1);
+    const chapters = [
+      { num: "1", outputPath: ch1 },
+      { num: "2", outputPath: ch2 },
+      { num: "3", outputPath: ch3 },
+    ];
 
-    const chapters = paths.map((p, i) => ({ num: String(i + 1), outputPath: p }));
-
-    // Delete the middle file first so unlink will fail on it
-    await rm(paths[1] as string, { force: true });
+    const { chmod } = await import("node:fs/promises");
+    await chmod(readonlyDir, 0o555);
 
     const warnEvents: string[] = [];
     const spyLogger = {
@@ -560,19 +655,28 @@ describe("deleteIndividualFiles — partial unlink failure", () => {
       error: () => {},
     };
 
-    // Should not throw even though middle file is missing, and the returned
-    // list must exclude the path that failed to delete.
-    const deleted = await deleteIndividualFiles(chapters, spyLogger);
-    expect(deleted).toEqual([paths[0], paths[2]]);
-    expect(deleted).not.toContain(paths[1]);
+    try {
+      // Should not throw even though the middle file's dir is locked, and the returned
+      // list must exclude the path that failed to delete.
+      const result = await packVolumeReplacingSources({
+        slug,
+        outDir: dir,
+        chapters,
+        logger: spyLogger,
+      });
+      expect(result.deleted).toEqual([ch1, ch3]);
+      expect(result.deleted).not.toContain(ch2);
 
-    // Outer files should be gone
-    expect(await Bun.file(paths[0] as string).exists()).toBe(false);
-    expect(await Bun.file(paths[2] as string).exists()).toBe(false);
+      // Outer files should be gone; the locked middle file survives.
+      expect(await Bun.file(ch1).exists()).toBe(false);
+      expect(await Bun.file(ch3).exists()).toBe(false);
+      expect(await Bun.file(ch2).exists()).toBe(true);
 
-    // Warn fired for the missing middle file
-    expect(warnEvents).toContain("pack.delete_failed");
-
-    await rm(dir, { recursive: true, force: true });
+      // Warn fired for the locked middle file
+      expect(warnEvents).toContain("pack.delete_failed");
+    } finally {
+      await chmod(readonlyDir, 0o755);
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

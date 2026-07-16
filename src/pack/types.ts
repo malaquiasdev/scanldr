@@ -28,3 +28,9 @@ export interface PackVolumeResult {
   outputPath: string;
   byteSize: number;
 }
+
+export interface PackVolumeReplacingSourcesResult {
+  volume: PackVolumeResult;
+  /** Per-chapter source paths actually deleted (best-effort; failures are omitted, never thrown). */
+  deleted: string[];
+}
