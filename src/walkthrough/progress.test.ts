@@ -67,7 +67,7 @@ describe("createProgress — enabled/disabled gating", () => {
 });
 
 describe("createProgress — finish() flushes the true final frame", () => {
-  test("finish() forces a final render reflecting the true final page/percent even when the last updatePage was throttle-dropped", () => {
+  test("finish() flushes the final state even when the last updatePage was throttled", () => {
     const sink = makeSink();
     const clock = makeClock();
     const progress = createProgress({
@@ -140,6 +140,47 @@ describe("createProgress — throttling (~5 updates/sec)", () => {
 
     expect(sink.chunks.length).toBe(1);
     expect(sink.chunks[0]).toContain("page 2/100");
+  });
+});
+
+describe("createProgress — updatePage advances currentPage per call", () => {
+  test("updatePage advances currentPage by one per call", () => {
+    const sink = makeSink();
+    const clock = makeClock();
+    const progress = createProgress({
+      enabled: true,
+      totalChapters: 1,
+      write: sink.write,
+      now: clock.now,
+    });
+
+    progress.updateChapter(1, 3, "Chapter 1");
+
+    const renderedPages: number[] = [];
+    const captureFrame = () => {
+      const line = sink.chunks[sink.chunks.length - 1] ?? "";
+      const match = line.match(/page (\d+)\/3/);
+      if (match?.[1]) renderedPages.push(Number(match[1]));
+    };
+
+    // updatePage() has no order/index parameter — it just increments currentPage per call.
+    // This test only pins that increment-per-call behavior at this layer; the
+    // completion-not-dispatch-order guarantee is enforced by the caller (see progress.ts
+    // updatePage() note) and is exercised in downloader/service.test.ts and
+    // walkthrough/steps/execute.test.ts.
+    clock.advance(300);
+    progress.updatePage(); // call #1
+    captureFrame();
+
+    clock.advance(300);
+    progress.updatePage(); // call #2
+    captureFrame();
+
+    clock.advance(300);
+    progress.updatePage(); // call #3
+    captureFrame();
+
+    expect(renderedPages).toEqual([1, 2, 3]);
   });
 });
 

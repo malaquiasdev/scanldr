@@ -143,7 +143,6 @@ export async function executeWalkthrough(
 
           progress?.updateChapter(bundleIndex, totalPages, bundle.label);
 
-          // pagesCompleted: resolution order, not dispatch order (pages resolve concurrently).
           let pagesCompleted = 0;
           const result = await downloader.downloadBundle({
             outDir,
@@ -156,7 +155,7 @@ export async function executeWalkthrough(
             delayMs: 0,
             dryRun: false,
             logger,
-            onPageProgress: () => {
+            onPageCompleted: () => {
               progress?.updatePage();
               pagesCompleted++;
               // Fallback feedback when the progress bar doesn't own stderr.

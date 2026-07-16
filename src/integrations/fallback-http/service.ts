@@ -171,19 +171,9 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
         // credentials, the next attempt automatically picks them up.
         const { cookieHeader, userAgent } = await resolveAuth();
 
-        // Build base headers; merge caller extras on top (caller wins on conflict).
-        const headers: Record<string, string> = { "user-agent": userAgent };
-        if (withCookie && cookieHeader !== undefined) headers.cookie = cookieHeader;
-        // Caller-supplied headers are merged AFTER base headers so they take precedence,
-        // EXCEPT we always re-enforce cookie and user-agent (security invariant).
-        if (extraHeaders) {
-          for (const [k, v] of Object.entries(extraHeaders)) {
-            const key = k.toLowerCase();
-            // Prevent callers from dropping the auth headers.
-            if (key === "cookie" || key === "user-agent") continue;
-            headers[key] = v;
-          }
-        }
+        const baseHeaders: Record<string, string> = { "user-agent": userAgent };
+        if (withCookie && cookieHeader !== undefined) baseHeaders.cookie = cookieHeader;
+        const headers = mergeHeadersPreservingAuth(baseHeaders, extraHeaders);
         res = await fetchFn(url, { headers });
       } catch (err) {
         fetchError = err;
@@ -212,11 +202,7 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
       // 200 with CF challenge HTML — treat symmetrically with 403.
       if (res && res.status >= 200 && res.status < 300) {
         const contentType = res.headers.get("content-type") ?? "";
-        // CF challenge pages are HTML. Binary responses (images, etc.) must never
-        // be decoded as text — doing so corrupts bytes not valid in UTF-8.
-        const isTextual =
-          /^(text\/|application\/(json|xml|xhtml\+xml))/i.test(contentType) || contentType === "";
-        if (!isTextual) {
+        if (!isTextualContentType(contentType)) {
           return res;
         }
         const body = await peekCfBody(res);
@@ -289,6 +275,27 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/** Merges caller headers onto base, but cookie/user-agent are always re-enforced from base. */
+function mergeHeadersPreservingAuth(
+  base: Record<string, string>,
+  extra: Record<string, string> | undefined,
+): Record<string, string> {
+  const headers: Record<string, string> = { ...base };
+  if (extra) {
+    for (const [k, v] of Object.entries(extra)) {
+      const key = k.toLowerCase();
+      if (key === "cookie" || key === "user-agent") continue;
+      headers[key] = v;
+    }
+  }
+  return headers;
+}
+
+/** True for content-types safe to decode as text (binary bodies corrupt bytes if decoded). */
+function isTextualContentType(contentType: string): boolean {
+  return /^(text\/|application\/(json|xml|xhtml\+xml))/i.test(contentType) || contentType === "";
+}
 
 /** Returns the mtime (ms) of the given file path, or -1 if the file is missing. */
 async function statMtime(filePath: string): Promise<number> {

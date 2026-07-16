@@ -152,9 +152,7 @@ export async function reassembleChapterPages(
     try {
       out.push(await stitch(tiles, tileDims));
     } catch (err) {
-      // Degrade gracefully: a tile that passes metadata() but fails mid-stitch (corrupt
-      // body, truncated data, unexpected channels) must never abort the whole bundle.
-      // Fall back to the group's original, unmerged tiles (today's byte-verbatim behavior).
+      // Degrade: stitch failure falls back to the group's tiles unmerged, bundle continues.
       logger?.warn(
         {
           event: "downloader.tiles_stitch_failed",

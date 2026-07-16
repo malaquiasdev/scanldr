@@ -211,6 +211,45 @@ describe("checkAuth", () => {
     expect(written.cookies).toHaveProperty("cf_clearance", "abc");
   });
 
+  test("refresh does not delete auth.json before a successful paste", async () => {
+    const dir = join(tmpdir(), `scanldr-refresh-no-upfront-unlink-${Date.now()}`);
+    const authDir = join(dir, "scanldr");
+    mkdirSync(authDir, { recursive: true });
+    const authJsonPath = join(authDir, "auth.json");
+    writeFileSync(
+      authJsonPath,
+      JSON.stringify({ cookies: { cf_clearance: "old" }, userAgent: "ua", savedAt: Date.now() }),
+    );
+
+    // Confirms the file is still present when the editor prompt runs — i.e. no upfront
+    // unlink before the paste succeeds (persistSession overwrites atomically instead).
+    let existedAtPromptTime = false;
+    mock.module("../prompts.ts", () => ({
+      editor: async () => {
+        existedAtPromptTime = existsSync(authJsonPath);
+        return VALID_CURL;
+      },
+      input: async () => "",
+      select: async () => "",
+      checkbox: async () => [],
+      confirm: async () => false,
+    }));
+
+    const probeClientFactory = fakeProbeSequence([cfRejectionResponse, okResponse]);
+
+    const { checkAuth } = await import("./auth-check.ts");
+    const result = await checkAuth({
+      requiresAuth: true,
+      logger,
+      dataHome: dir,
+      probeClientFactory,
+    });
+
+    expect(existedAtPromptTime).toBe(true);
+    expect(result).toEqual({ ok: true, skipped: false, refreshed: true });
+    expect(existsSync(authJsonPath)).toBe(true);
+  });
+
   test("probe stale → re-prompt → re-probe stale again → throws WalkthroughError", async () => {
     const dir = join(tmpdir(), `scanldr-probe-stale-twice-${Date.now()}`);
     const authDir = join(dir, "scanldr");

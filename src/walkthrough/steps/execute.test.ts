@@ -421,13 +421,13 @@ describe("executeWalkthrough", () => {
       },
     };
 
-    // Fake downloader that fires onPageProgress OUT of dispatch order (highest index first),
+    // Fake downloader that fires onPageCompleted OUT of dispatch order (highest index first),
     // simulating real concurrent fetches where completion order != dispatch order.
     const fakeDownloader: Downloader = {
       downloadBundle: async (input) => {
         const totalPages = input.chapters.reduce((sum, c) => sum + c.pages.length, 0);
         for (let i = totalPages; i >= 1; i--) {
-          input.onPageProgress?.(totalPages);
+          input.onPageCompleted?.(totalPages);
         }
         return {
           chapterIds: input.chapters.map((c) => c.id),
@@ -480,7 +480,7 @@ describe("executeWalkthrough", () => {
         downloadBundle: async (input) => {
           const totalPages = input.chapters.reduce((sum, c) => sum + c.pages.length, 0);
           for (let i = 0; i < totalPages; i++) {
-            input.onPageProgress?.(totalPages);
+            input.onPageCompleted?.(totalPages);
           }
           return {
             chapterIds: input.chapters.map((c) => c.id),
