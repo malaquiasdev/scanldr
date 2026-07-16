@@ -19,7 +19,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
     "@types/bun": "latest",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.4.3",
