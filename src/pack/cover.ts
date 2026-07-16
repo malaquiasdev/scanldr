@@ -82,7 +82,6 @@ async function loadAuthHeaders(authPath: string): Promise<Record<string, string>
  * @throws Error with a user-friendly message on any validation failure.
  */
 export async function fetchCover(url: string, opts: FetchCoverOptions = {}): Promise<CoverImage> {
-  // Validate scheme
   let parsed: URL;
   try {
     parsed = new URL(url);
