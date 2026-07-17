@@ -8,7 +8,7 @@ import type { PackVolumeInput } from "../pack/types.ts";
 import type { Config } from "../plugins/config/index.ts";
 import { createLogger } from "../plugins/logger/index.ts";
 import type { SourceAdapter } from "../sources/adapters/index.ts";
-import type { ChapterListing, Downloader, Packer, SearchHit } from "./types.ts";
+import type { BrowserCaptureDeps, ChapterListing, Downloader, Packer, SearchHit } from "./types.ts";
 import { WalkthroughError } from "./types.ts";
 
 const noop = () => {};
@@ -361,6 +361,95 @@ describe("runWalkthrough — full happy path", () => {
     expect("ok" in result && result.ok === false).toBe(true);
     if ("ok" in result) {
       expect(result.reason).toMatch(/No results found/);
+    }
+  });
+});
+
+describe("runWalkthrough — browser-capture launch-once guard (issue #208 P2)", () => {
+  test("browser launches at most once across multiple session-retry refreshes in one run", async () => {
+    let selectCall = 0;
+    mock.module("./prompts.ts", () => ({
+      input: async () => "Naruto",
+      select: async () => {
+        selectCall++;
+        if (selectCall === 1) return "mock-1";
+        return "quit";
+      },
+      checkbox: async () => ["mock-1-ch-1"],
+      confirm: async () => false,
+      editor: async () => "curl 'https://example.com' -H 'cookie: cf_clearance=manual-token'",
+    }));
+
+    let launchCount = 0;
+    const browserCapture: BrowserCaptureDeps = {
+      launcherDeps: {
+        launch: async () => {
+          launchCount++;
+          return {
+            goto: async () => {},
+            waitForChallengeCleared: async () => {},
+            cookies: async () => [{ name: "cf_clearance", value: "captured-token" }],
+            userAgent: async () => "Mozilla/5.0 captured",
+            close: async () => {},
+          };
+        },
+      },
+    };
+
+    // Every probe (initial checkAuth + post-refresh re-probes) returns a clean 200.
+    const probeClientFactory = async () => ({
+      get: async () => new Response("<html><body>ok</body></html>", { status: 200 }),
+    });
+
+    // The captured-session candidate probe (inside tryCaptureViaBrowser) uses
+    // globalThis.fetch directly — stub it to validate the first capture.
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response("<html><body>ok</body></html>", {
+        status: 200,
+      })) as unknown as typeof globalThis.fetch;
+
+    let searchCallCount = 0;
+    let listChaptersCallCount = 0;
+    const cfError = new CloudflareError("https://example.com/cf-rejected");
+    const fakeAdapter = makeFakeAdapter({
+      search: async () => {
+        searchCallCount++;
+        if (searchCallCount === 1) throw cfError;
+        return fakeHits;
+      },
+      listChapters: async () => {
+        listChaptersCallCount++;
+        if (listChaptersCallCount === 1) throw cfError;
+        return fakeChapters;
+      },
+    });
+
+    try {
+      const { runWalkthrough } = await import("./index.ts");
+      const result = await runWalkthrough({
+        logger,
+        dataHome: makeAuthedDataHome(),
+        probeClientFactory,
+        browserCapture,
+        // Disable the auto-extract fallback so the second refresh (guarded browser
+        // capture returning undefined) deterministically falls through to manual
+        // paste instead of hitting a real macOS browser/keychain lookup.
+        browserAutoExtract: null,
+        outDir,
+        adapterFactory: () => fakeAdapter,
+        executeDeps: { downloader: makeFakeDownloader(), packer: makeFakePacker() },
+      });
+
+      if ("cancelled" in result) throw new Error("Unexpected cancellation");
+      if ("ok" in result) throw new Error(`Unexpected failure: ${result.reason}`);
+      // Two independent stale-session refreshes happened (search, then listChapters)...
+      expect(searchCallCount).toBe(2);
+      expect(listChaptersCallCount).toBe(2);
+      // ...but the browser launcher only ever fired once across both (#208 P2).
+      expect(launchCount).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
     }
   });
 });

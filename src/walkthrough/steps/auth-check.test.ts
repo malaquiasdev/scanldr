@@ -6,6 +6,7 @@ import { CloudflareError } from "../../integrations/fallback-http/types.ts";
 import { createLogger } from "../../plugins/logger/index.ts";
 import type {
   BrowserAutoExtractDeps,
+  BrowserCaptureDeps,
   SessionProbeClient,
   SessionProbeClientFactory,
 } from "../types.ts";
@@ -800,6 +801,173 @@ describe("checkAuth", () => {
         cookies: Record<string, string>;
       };
       expect(authJson.cookies.cf_clearance).toBe("abc");
+    });
+  });
+
+  describe("browser capture JIT", () => {
+    function fakeBrowserCapture(overrides: Partial<BrowserCaptureDeps> = {}) {
+      const calls = { launch: 0 };
+      const deps: BrowserCaptureDeps = {
+        launcherDeps: {
+          launch: async () => {
+            calls.launch++;
+            return {
+              goto: async () => {},
+              waitForChallengeCleared: async () => {},
+              cookies: async () => [
+                { name: "cf_clearance", value: "captured-cf-token" },
+                { name: "other", value: "captured-other" },
+              ],
+              userAgent: async () => "Mozilla/5.0 captured-ua",
+              close: async () => {},
+            };
+          },
+        },
+        ...overrides,
+      };
+      return { deps, calls };
+    }
+
+    test("browser capture succeeds and probe validates → persists WITHOUT prompting for manual paste", async () => {
+      const dir = join(tmpdir(), `scanldr-capture-ok-${Date.now()}`);
+      let editorCalled = false;
+      mock.module("../prompts.ts", () => ({
+        editor: async () => {
+          editorCalled = true;
+          return VALID_CURL;
+        },
+        input: async () => "",
+        select: async () => "",
+        checkbox: async () => [],
+        confirm: async () => false,
+      }));
+
+      // Initial valid auth.json present, but stale (needs refresh)
+      mkdirSync(join(dir, "scanldr"), { recursive: true });
+      writeFileSync(
+        join(dir, "scanldr", "auth.json"),
+        JSON.stringify({ cookies: { cf_clearance: "old" }, userAgent: "old-ua" }),
+      );
+
+      const { deps, calls } = fakeBrowserCapture();
+      const candidateFetch = async () => new Response("ok", { status: 200 });
+
+      const { checkAuth } = await import("./auth-check.ts");
+      const result = await checkAuth({
+        requiresAuth: true,
+        logger,
+        dataHome: dir,
+        // First probe yields stale, re-probe after capture yields ok
+        probeClientFactory: fakeProbeSequence([cfRejectionResponse, okResponse]),
+        browserCapture: deps,
+        fetch: candidateFetch,
+      });
+
+      expect(editorCalled).toBe(false);
+      expect(result.ok).toBe(true);
+      expect(result.refreshed).toBe(true);
+      // Regression guard (issue #208 P2): capture must happen EXACTLY once per
+      // stale-session refresh — no duplicate explicit-capture + refreshSession launch.
+      expect(calls.launch).toBe(1);
+
+      const authJson = JSON.parse(readFileSync(join(dir, "scanldr", "auth.json"), "utf-8")) as {
+        cookies: Record<string, string>;
+        userAgent: string;
+      };
+      expect(authJson.cookies.cf_clearance).toBe("captured-cf-token");
+      expect(authJson.userAgent).toBe("Mozilla/5.0 captured-ua");
+    });
+
+    test("browser capture's inner probe rejects the captured session → falls back to manual paste WITHOUT launching the browser a second time", async () => {
+      const dir = join(tmpdir(), `scanldr-capture-single-solve-${Date.now()}`);
+      let editorCalled = false;
+      mock.module("../prompts.ts", () => ({
+        editor: async () => {
+          editorCalled = true;
+          return VALID_CURL;
+        },
+        input: async () => "",
+        select: async () => "",
+        checkbox: async () => [],
+        confirm: async () => false,
+      }));
+
+      mkdirSync(join(dir, "scanldr"), { recursive: true });
+      writeFileSync(
+        join(dir, "scanldr", "auth.json"),
+        JSON.stringify({ cookies: { cf_clearance: "old" }, userAgent: "old-ua" }),
+      );
+
+      const { deps, calls } = fakeBrowserCapture();
+      // Candidate probe (inside tryCaptureViaBrowser) rejects the captured session —
+      // capture is discarded and promptAndParseSession falls through to manual paste
+      // WITHOUT ever launching the browser a second time (regression guard for #208 P2).
+      const candidateFetch = async () => new Response("forbidden", { status: 403 });
+
+      const { checkAuth } = await import("./auth-check.ts");
+      const result = await checkAuth({
+        requiresAuth: true,
+        logger,
+        dataHome: dir,
+        probeClientFactory: fakeProbeSequence([cfRejectionResponse, okResponse]),
+        browserCapture: deps,
+        fetch: candidateFetch,
+      });
+
+      expect(calls.launch).toBe(1);
+      expect(editorCalled).toBe(true);
+      expect(result.ok).toBe(true);
+
+      const authJson = JSON.parse(readFileSync(join(dir, "scanldr", "auth.json"), "utf-8")) as {
+        cookies: Record<string, string>;
+      };
+      expect(authJson.cookies.cf_clearance).toBe("abc");
+    });
+
+    test("browser capture fails or probe fails → falls back to manual paste", async () => {
+      const dir = join(tmpdir(), `scanldr-capture-fail-${Date.now()}`);
+      let editorCalled = false;
+      mock.module("../prompts.ts", () => ({
+        editor: async () => {
+          editorCalled = true;
+          return VALID_CURL;
+        },
+        input: async () => "",
+        select: async () => "",
+        checkbox: async () => [],
+        confirm: async () => false,
+      }));
+
+      // Initial valid auth.json present, but stale (needs refresh)
+      mkdirSync(join(dir, "scanldr"), { recursive: true });
+      writeFileSync(
+        join(dir, "scanldr", "auth.json"),
+        JSON.stringify({ cookies: { cf_clearance: "old" }, userAgent: "old-ua" }),
+      );
+
+      // launcher returns undefined (e.g. Chrome not installed)
+      const deps: BrowserCaptureDeps = {
+        launcherDeps: {
+          launch: async () => undefined,
+        },
+      };
+
+      const { checkAuth } = await import("./auth-check.ts");
+      const result = await checkAuth({
+        requiresAuth: true,
+        logger,
+        dataHome: dir,
+        probeClientFactory: fakeProbeSequence([cfRejectionResponse, okResponse]),
+        browserCapture: deps,
+      });
+
+      expect(editorCalled).toBe(true);
+      expect(result.ok).toBe(true);
+
+      const authJson = JSON.parse(readFileSync(join(dir, "scanldr", "auth.json"), "utf-8")) as {
+        cookies: Record<string, string>;
+      };
+      expect(authJson.cookies.cf_clearance).toBe("abc"); // VALID_CURL's clearance
     });
   });
 });

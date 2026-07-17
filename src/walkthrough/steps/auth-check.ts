@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { CloudflareError } from "../../integrations/fallback-http/types.ts";
+import { captureSessionViaBrowser } from "../../integrations/mangakakalot/auth/browser-capture/index.ts";
 import { parseCurl } from "../../integrations/mangakakalot/auth/curl-parser.ts";
 import type { AuthSession } from "../../integrations/mangakakalot/auth/types.ts";
 import { resolveAuthPath } from "../../plugins/auth-path/index.ts";
@@ -10,10 +11,12 @@ import { editor } from "../prompts.ts";
 import type {
   AuthResult,
   BrowserAutoExtractDeps,
+  BrowserCaptureDeps,
   SessionProbeClient,
   SessionProbeClientFactory,
 } from "../types.ts";
 import { WalkthroughError } from "../types.ts";
+import { hasCloudflareChallengeMarkers } from "./cloudflare-markers.ts";
 
 export interface AuthCheckOptions {
   requiresAuth: boolean;
@@ -33,6 +36,15 @@ export interface AuthCheckOptions {
    * Injected in tests; production callers provide via runWalkthrough options.
    */
   browserAutoExtract?: BrowserAutoExtractDeps;
+  /**
+   * Browser capture seam (patchright-based undetected browser, issue #208).
+   * When present and the probe detects a stale session, offered as the primary
+   * re-auth path (fetch fresh cf_clearance from the live browser); falls back
+   * to manual cURL paste on any failure (browser not found, capture error, or
+   * probe validation failure). Injected in tests; production callers provide
+   * via runWalkthrough options.
+   */
+  browserCapture?: BrowserCaptureDeps;
   /** Override fetch used to validate an auto-extracted session. Tests only. */
   fetch?: (url: string, init?: RequestInit) => Promise<Response>;
 }
@@ -136,14 +148,7 @@ async function probeSession(client: SessionProbeClient, logger: Logger): Promise
   if (res.status >= 200 && res.status < 300) {
     try {
       const text = await res.text();
-      // Cloudflare challenge pages always include these markers
-      if (
-        text.includes("cf-browser-verification") ||
-        text.includes("challenge-platform") ||
-        text.includes("cdn-cgi/challenge-platform") ||
-        text.includes("jschl-answer") ||
-        (text.includes("cloudflare") && text.includes("cf_clearance") && text.length < 20000)
-      ) {
+      if (hasCloudflareChallengeMarkers(text)) {
         logger.warn(
           { event: "walkthrough.auth_probe_stale", context: "walkthrough", url: PROBE_URL },
           "session probe: CF challenge in 200 body — session is stale",
@@ -190,6 +195,57 @@ function buildCandidateProbeClient(
       return res;
     },
   };
+}
+
+/**
+ * Attempts the browser capture path via patchright: launches Chrome, lets the
+ * user solve Cloudflare, harvests cookies and UA, and validates them via probe
+ * before returning. Returns undefined on any failure.
+ */
+async function tryCaptureViaBrowser(
+  deps: BrowserCaptureDeps,
+  logger: Logger,
+  fetchFn: (url: string, init?: RequestInit) => Promise<Response>,
+): Promise<AuthSession | undefined> {
+  try {
+    const captured = await captureSessionViaBrowser(deps.launcherDeps, BROWSER_AUTH_URL, logger);
+    if (!captured) {
+      logger.warn(
+        { event: "walkthrough.auth_capture_failed", context: "walkthrough" },
+        "browser capture failed or returned no session — falling back to manual paste",
+      );
+      return undefined;
+    }
+
+    const candidate: AuthSession = {
+      cookies: captured.cookies,
+      userAgent: captured.userAgent,
+      savedAt: Date.now(),
+    };
+
+    const client = buildCandidateProbeClient(candidate, fetchFn);
+    const outcome = await probeSession(client, logger);
+    if (outcome.kind !== "ok") {
+      logger.warn(
+        { event: "walkthrough.auth_capture_probe_failed", context: "walkthrough" },
+        "captured session failed probe validation — falling back to manual paste",
+      );
+      return undefined;
+    }
+
+    logger.info(
+      { event: "walkthrough.auth_capture_ok", context: "walkthrough" },
+      "browser capture succeeded and validated",
+    );
+    return candidate;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    logger.error(
+      { event: "walkthrough.auth_capture_error", context: "walkthrough", message },
+      "unexpected error during browser capture — falling back to manual paste",
+    );
+    return undefined;
+  }
 }
 
 /**
@@ -285,6 +341,7 @@ async function tryBrowserAutoExtract(
 async function promptAndParseSession(
   logger: Logger,
   browserAutoExtract?: BrowserAutoExtractDeps,
+  browserCapture?: BrowserCaptureDeps,
   // Defaults to globalThis.fetch; the candidate-probe path (buildCandidateProbeClient)
   // deliberately re-implements the 403->CloudflareError contract so probeSession's
   // stale-detection applies to the not-yet-persisted extracted session (parallel to
@@ -292,6 +349,11 @@ async function promptAndParseSession(
   fetchFn: (url: string, init?: RequestInit) => Promise<Response> = (...args) =>
     globalThis.fetch(...args),
 ): Promise<AuthSession> {
+  if (browserCapture) {
+    const auto = await tryCaptureViaBrowser(browserCapture, logger, fetchFn);
+    if (auto) return auto;
+  }
+
   if (browserAutoExtract) {
     const auto = await tryBrowserAutoExtract(browserAutoExtract, logger, fetchFn);
     if (auto) return auto;
@@ -342,6 +404,7 @@ export interface RefreshSessionOptions {
   logger: Logger;
   /** See AuthCheckOptions.browserAutoExtract. */
   browserAutoExtract?: BrowserAutoExtractDeps;
+  browserCapture?: BrowserCaptureDeps;
   fetch?: (url: string, init?: RequestInit) => Promise<Response>;
 }
 
@@ -356,8 +419,8 @@ export async function refreshSession(opts: RefreshSessionOptions): Promise<AuthR
 
   // No upfront unlink — persistSession overwrites atomically, so a Ctrl+C mid-paste can't lose credentials.
   const session = opts.fetch
-    ? await promptAndParseSession(logger, opts.browserAutoExtract, opts.fetch)
-    : await promptAndParseSession(logger, opts.browserAutoExtract);
+    ? await promptAndParseSession(logger, opts.browserAutoExtract, opts.browserCapture, opts.fetch)
+    : await promptAndParseSession(logger, opts.browserAutoExtract, opts.browserCapture);
   await persistSession(session, authPath);
   logger.info(
     { event: "walkthrough.auth_refresh_persisted", context: "walkthrough", path: authPath },
@@ -383,8 +446,13 @@ async function checkAuthFilePresenceOnly(
   }
 
   const session = opts.fetch
-    ? await promptAndParseSession(opts.logger, opts.browserAutoExtract, opts.fetch)
-    : await promptAndParseSession(opts.logger, opts.browserAutoExtract);
+    ? await promptAndParseSession(
+        opts.logger,
+        opts.browserAutoExtract,
+        opts.browserCapture,
+        opts.fetch,
+      )
+    : await promptAndParseSession(opts.logger, opts.browserAutoExtract, opts.browserCapture);
   await persistSession(session, authPath);
   opts.logger.info(
     { event: "walkthrough.auth_persisted", context: "walkthrough", path: authPath },
@@ -398,19 +466,26 @@ async function checkAuthWithProbe(
   opts: AuthCheckOptions & { probeClientFactory: SessionProbeClientFactory },
   authPath: string,
 ): Promise<AuthResult> {
+  const logger = opts.logger;
+  const fetchFn = opts.fetch ?? globalThis.fetch;
+
   if (isValidAuthFile(authPath)) {
     const client = await opts.probeClientFactory();
-    const outcome = await probeSession(client, opts.logger);
+    const outcome = await probeSession(client, logger);
 
     if (outcome.kind === "ok") {
       return { ok: true, skipped: false };
     }
 
     if (outcome.kind === "stale") {
+      // Single capture attempt lives inside refreshSession -> promptAndParseSession ->
+      // tryCaptureViaBrowser. Do NOT duplicate the capture here — that would launch
+      // the browser and prompt the human to solve Cloudflare twice on one stale probe.
       return refreshSession({
         authPath,
         probeClientFactory: opts.probeClientFactory,
-        logger: opts.logger,
+        logger,
+        browserCapture: opts.browserCapture, // NEW: pass down
         browserAutoExtract: opts.browserAutoExtract,
         fetch: opts.fetch,
       });
@@ -429,17 +504,17 @@ async function checkAuthWithProbe(
   }
 
   const session = opts.fetch
-    ? await promptAndParseSession(opts.logger, opts.browserAutoExtract, opts.fetch)
-    : await promptAndParseSession(opts.logger, opts.browserAutoExtract);
+    ? await promptAndParseSession(logger, opts.browserAutoExtract, opts.browserCapture, fetchFn)
+    : await promptAndParseSession(logger, opts.browserAutoExtract, opts.browserCapture);
   await persistSession(session, authPath);
-  opts.logger.info(
+  logger.info(
     { event: "walkthrough.auth_persisted", context: "walkthrough", path: authPath },
     "auth session saved",
   );
 
   // Re-reads the file we just wrote.
   const freshClient = await opts.probeClientFactory();
-  const outcome = await probeSession(freshClient, opts.logger);
+  const outcome = await probeSession(freshClient, logger);
   if (outcome.kind === "ok") {
     return { ok: true, skipped: false, justAuthenticated: true };
   }
