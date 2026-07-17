@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CloudflareError } from "../../integrations/fallback-http/types.ts";
 import { createLogger } from "../../plugins/logger/index.ts";
-import type { SessionProbeClient, SessionProbeClientFactory } from "../types.ts";
+import type {
+  BrowserAutoExtractDeps,
+  SessionProbeClient,
+  SessionProbeClientFactory,
+} from "../types.ts";
 
 const noop = () => {};
 const logger = createLogger({ level: "info", format: "human", write: noop });
@@ -386,5 +390,238 @@ describe("checkAuth", () => {
     await checkAuth({ requiresAuth: true, logger, dataHome: dir, probeClientFactory });
 
     expect(capturedUrl).toContain("/search/story/");
+  });
+
+  // --- Browser auto-extract tests (issue #202) ---
+
+  describe("browser auto-extract fallback", () => {
+    function fakeBrowserAutoExtract(overrides: Partial<BrowserAutoExtractDeps> = {}) {
+      const calls = { opened: false, waited: false };
+      const deps: BrowserAutoExtractDeps = {
+        detectInstalledBrowser: () => "opera",
+        openBrowser: () => {
+          calls.opened = true;
+        },
+        waitForContinue: async () => {
+          calls.waited = true;
+        },
+        extractSession: async () => ({
+          cookies: { cf_clearance: "auto-extracted-token" },
+          userAgent: "Mozilla/5.0 fake-ua",
+          savedAt: Date.now(),
+        }),
+        ...overrides,
+      };
+      return { deps, calls };
+    }
+
+    test("cookie-store-not-found / no cf_clearance → falls back to manual paste", async () => {
+      const dir = join(tmpdir(), `scanldr-auto-empty-${Date.now()}`);
+      let editorCalled = false;
+      mock.module("../prompts.ts", () => ({
+        editor: async () => {
+          editorCalled = true;
+          return VALID_CURL;
+        },
+        input: async () => "",
+        select: async () => "",
+        checkbox: async () => [],
+        confirm: async () => false,
+      }));
+
+      const { deps, calls } = fakeBrowserAutoExtract({ extractSession: async () => undefined });
+
+      const { checkAuth } = await import("./auth-check.ts");
+      const result = await checkAuth({
+        requiresAuth: true,
+        logger,
+        dataHome: dir,
+        probeClientFactory: fakeProbeSequence([okResponse]),
+        browserAutoExtract: deps,
+      });
+
+      expect(calls.opened).toBe(true);
+      expect(calls.waited).toBe(true);
+      expect(editorCalled).toBe(true);
+      expect(result.ok).toBe(true);
+      expect(result.justAuthenticated).toBe(true);
+    });
+
+    test("no browser installed → falls back to manual paste without opening anything", async () => {
+      const dir = join(tmpdir(), `scanldr-auto-nobrowser-${Date.now()}`);
+      mock.module("../prompts.ts", () => ({
+        editor: async () => VALID_CURL,
+        input: async () => "",
+        select: async () => "",
+        checkbox: async () => [],
+        confirm: async () => false,
+      }));
+
+      const { deps, calls } = fakeBrowserAutoExtract({ detectInstalledBrowser: () => undefined });
+
+      const { checkAuth } = await import("./auth-check.ts");
+      const result = await checkAuth({
+        requiresAuth: true,
+        logger,
+        dataHome: dir,
+        probeClientFactory: fakeProbeSequence([okResponse]),
+        browserAutoExtract: deps,
+      });
+
+      expect(calls.opened).toBe(false);
+      expect(result.ok).toBe(true);
+    });
+
+    test("extraction throws (e.g. Keychain denied) → falls back to manual paste", async () => {
+      const dir = join(tmpdir(), `scanldr-auto-throws-${Date.now()}`);
+      mock.module("../prompts.ts", () => ({
+        editor: async () => VALID_CURL,
+        input: async () => "",
+        select: async () => "",
+        checkbox: async () => [],
+        confirm: async () => false,
+      }));
+
+      const { deps } = fakeBrowserAutoExtract({
+        extractSession: async () => {
+          throw new Error("Keychain access denied");
+        },
+      });
+
+      const { checkAuth } = await import("./auth-check.ts");
+      const result = await checkAuth({
+        requiresAuth: true,
+        logger,
+        dataHome: dir,
+        probeClientFactory: fakeProbeSequence([okResponse]),
+        browserAutoExtract: deps,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.justAuthenticated).toBe(true);
+    });
+
+    test("probe rejects the auto-extracted session (403) → falls back to manual paste", async () => {
+      const dir = join(tmpdir(), `scanldr-auto-probefail-${Date.now()}`);
+      mock.module("../prompts.ts", () => ({
+        editor: async () => VALID_CURL,
+        input: async () => "",
+        select: async () => "",
+        checkbox: async () => [],
+        confirm: async () => false,
+      }));
+
+      const { deps } = fakeBrowserAutoExtract();
+
+      // The candidate-probe fetch (built directly from the extracted session) rejects with 403;
+      // the outer probeClientFactory (used after the manual paste is persisted) succeeds.
+      const candidateFetch = async () => new Response("forbidden", { status: 403 });
+
+      const { checkAuth } = await import("./auth-check.ts");
+      const result = await checkAuth({
+        requiresAuth: true,
+        logger,
+        dataHome: dir,
+        probeClientFactory: fakeProbeSequence([okResponse]),
+        browserAutoExtract: deps,
+        fetch: candidateFetch,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.justAuthenticated).toBe(true);
+    });
+
+    test("wrong Keychain password → garbled (non-UTF8) but truthy cf_clearance → probe rejects → falls back to manual paste WITHOUT persisting the garbage session", async () => {
+      const dir = join(tmpdir(), `scanldr-auto-garbled-${Date.now()}`);
+      mock.module("../prompts.ts", () => ({
+        editor: async () => VALID_CURL,
+        input: async () => "",
+        select: async () => "",
+        checkbox: async () => [],
+        confirm: async () => false,
+      }));
+
+      // Simulates the wrong-password decrypt path: AES-CBC with an incorrect key still produces
+      // *some* bytes — garbage, non-UTF8-clean, but truthy — so it slips past the `!cookies.cf_clearance`
+      // structural gate in extractSession/tryBrowserAutoExtract. Validation must be the thing that catches it.
+      const garbledCfClearance = "�� garbled-non-utf8-��";
+      const { deps } = fakeBrowserAutoExtract({
+        extractSession: async () => ({
+          cookies: { cf_clearance: garbledCfClearance },
+          userAgent: "Mozilla/5.0 fake-ua",
+          savedAt: Date.now(),
+        }),
+      });
+
+      // The candidate-probe fetch (built from the garbled session) rejects — Cloudflare/origin
+      // never accepts the garbage cookie. The outer probeClientFactory (used after the manual
+      // paste is persisted) succeeds, proving the fallback path completes end-to-end.
+      let candidateProbeCalled = false;
+      const candidateFetch = async () => {
+        candidateProbeCalled = true;
+        return new Response("forbidden", { status: 403 });
+      };
+
+      const { checkAuth } = await import("./auth-check.ts");
+      const result = await checkAuth({
+        requiresAuth: true,
+        logger,
+        dataHome: dir,
+        probeClientFactory: fakeProbeSequence([okResponse]),
+        browserAutoExtract: deps,
+        fetch: candidateFetch,
+      });
+
+      expect(candidateProbeCalled).toBe(true);
+      expect(result.ok).toBe(true);
+      expect(result.justAuthenticated).toBe(true);
+
+      // The persisted session must be the manually-pasted one, never the rejected garbled candidate.
+      const authJson = JSON.parse(readFileSync(join(dir, "scanldr", "auth.json"), "utf-8")) as {
+        cookies: Record<string, string>;
+      };
+      expect(authJson.cookies.cf_clearance).toBe("abc");
+      expect(authJson.cookies.cf_clearance).not.toBe(garbledCfClearance);
+    });
+
+    test("auto-extract succeeds and probe validates → persists WITHOUT prompting for manual paste", async () => {
+      const dir = join(tmpdir(), `scanldr-auto-success-${Date.now()}`);
+      let editorCalled = false;
+      mock.module("../prompts.ts", () => ({
+        editor: async () => {
+          editorCalled = true;
+          return VALID_CURL;
+        },
+        input: async () => "",
+        select: async () => "",
+        checkbox: async () => [],
+        confirm: async () => false,
+      }));
+
+      const { deps } = fakeBrowserAutoExtract();
+      const candidateFetch = async () =>
+        new Response("<html><body>Manga list</body></html>", { status: 200 });
+
+      const { checkAuth } = await import("./auth-check.ts");
+      const result = await checkAuth({
+        requiresAuth: true,
+        logger,
+        dataHome: dir,
+        // Consulted twice: once by auto-extract's own candidate probe (via `fetch` below,
+        // not this factory), once more by checkAuthWithProbe's standard post-persist re-probe.
+        probeClientFactory: fakeProbeSequence([okResponse]),
+        browserAutoExtract: deps,
+        fetch: candidateFetch,
+      });
+
+      expect(editorCalled).toBe(false);
+      expect(result.ok).toBe(true);
+      expect(result.justAuthenticated).toBe(true);
+
+      const authJson = JSON.parse(readFileSync(join(dir, "scanldr", "auth.json"), "utf-8")) as {
+        cookies: Record<string, string>;
+      };
+      expect(authJson.cookies.cf_clearance).toBe("auto-extracted-token");
+    });
   });
 });
