@@ -10,7 +10,6 @@ import type { Logger } from "../../plugins/logger/index.ts";
 import { editor } from "../prompts.ts";
 import type {
   AuthResult,
-  BrowserAutoExtractDeps,
   BrowserCaptureDeps,
   SessionProbeClient,
   SessionProbeClientFactory,
@@ -29,13 +28,6 @@ export interface AuthCheckOptions {
    * Injected in tests; production callers provide via runWalkthrough options.
    */
   probeClientFactory?: SessionProbeClientFactory;
-  /**
-   * Browser-cookie auto-extract seams (issue #202). When present, offered as a
-   * lower-friction alternative to manual cURL paste; falls back to paste on any
-   * failure (browser not found, no cf_clearance, or probe validation failure).
-   * Injected in tests; production callers provide via runWalkthrough options.
-   */
-  browserAutoExtract?: BrowserAutoExtractDeps;
   /**
    * Browser capture seam (patchright-based undetected browser, issue #208).
    * When present and the probe detects a stale session, offered as the primary
@@ -248,99 +240,9 @@ async function tryCaptureViaBrowser(
   }
 }
 
-/**
- * Attempts the browser-cookie auto-extract path: opens the browser, waits for the
- * human to solve Cloudflare, extracts + decrypts the session, and validates it via
- * the probe BEFORE returning it. Returns undefined on any failure — callers must
- * fall back to manual cURL paste; a broken session is never surfaced as success.
- */
-async function tryBrowserAutoExtract(
-  deps: BrowserAutoExtractDeps,
-  logger: Logger,
-  fetchFn: (url: string, init?: RequestInit) => Promise<Response>,
-): Promise<AuthSession | undefined> {
-  const browser = deps.detectInstalledBrowser();
-  if (!browser) {
-    logger.info(
-      { event: "walkthrough.auth_auto_extract_no_browser", context: "walkthrough" },
-      "no supported browser found for auto-extract — falling back to manual paste",
-    );
-    return undefined;
-  }
-
-  deps.openBrowser(browser, BROWSER_AUTH_URL);
-  await deps.waitForContinue(
-    "A browser window opened. Solve the Cloudflare check, then press Enter to continue.",
-  );
-
-  let extracted: { cookies: Record<string, string>; userAgent: string | undefined } | undefined;
-  try {
-    extracted = await deps.extractSession(browser);
-  } catch (err) {
-    // Never log the raw cookie value — same redaction posture as the paste flow.
-    const message = err instanceof Error ? err.message : "unknown error";
-    logger.warn(
-      { event: "walkthrough.auth_auto_extract_failed", context: "walkthrough", browser, message },
-      "browser auto-extract failed — falling back to manual paste",
-    );
-    return undefined;
-  }
-
-  if (!extracted) {
-    logger.warn(
-      { event: "walkthrough.auth_auto_extract_empty", context: "walkthrough", browser },
-      "no cf_clearance found in browser cookie store — falling back to manual paste",
-    );
-    return undefined;
-  }
-
-  // Chrome: exact UA already derived (its app version IS the Chromium version). Non-Chrome:
-  // no derivation is trustworthy (issue #205) — ask the human to paste their exact UA.
-  let userAgent = extracted.userAgent;
-  if (!userAgent) {
-    const pasted = await deps.promptUserAgent();
-    const trimmed = pasted.trim();
-    if (!trimmed) {
-      logger.warn(
-        {
-          event: "walkthrough.auth_auto_extract_no_ua",
-          context: "walkthrough",
-          browser,
-        },
-        "no user-agent provided — falling back to manual paste",
-      );
-      return undefined;
-    }
-    userAgent = trimmed;
-  }
-
-  const candidate: AuthSession = {
-    cookies: extracted.cookies,
-    userAgent,
-    savedAt: Date.now(),
-  };
-
-  const client = buildCandidateProbeClient(candidate, fetchFn);
-  const outcome = await probeSession(client, logger);
-  if (outcome.kind !== "ok") {
-    logger.warn(
-      { event: "walkthrough.auth_auto_extract_probe_failed", context: "walkthrough", browser },
-      "auto-extracted session failed probe validation — falling back to manual paste",
-    );
-    return undefined;
-  }
-
-  logger.info(
-    { event: "walkthrough.auth_auto_extract_ok", context: "walkthrough", browser },
-    "browser auto-extract succeeded and validated",
-  );
-  return candidate;
-}
-
 /** Prompt cURL paste loop — returns a parsed AuthSession or throws WalkthroughError. */
 async function promptAndParseSession(
   logger: Logger,
-  browserAutoExtract?: BrowserAutoExtractDeps,
   browserCapture?: BrowserCaptureDeps,
   // Defaults to globalThis.fetch; the candidate-probe path (buildCandidateProbeClient)
   // deliberately re-implements the 403->CloudflareError contract so probeSession's
@@ -351,11 +253,6 @@ async function promptAndParseSession(
 ): Promise<AuthSession> {
   if (browserCapture) {
     const auto = await tryCaptureViaBrowser(browserCapture, logger, fetchFn);
-    if (auto) return auto;
-  }
-
-  if (browserAutoExtract) {
-    const auto = await tryBrowserAutoExtract(browserAutoExtract, logger, fetchFn);
     if (auto) return auto;
   }
 
@@ -402,8 +299,6 @@ export interface RefreshSessionOptions {
   authPath: string;
   probeClientFactory: SessionProbeClientFactory;
   logger: Logger;
-  /** See AuthCheckOptions.browserAutoExtract. */
-  browserAutoExtract?: BrowserAutoExtractDeps;
   browserCapture?: BrowserCaptureDeps;
   fetch?: (url: string, init?: RequestInit) => Promise<Response>;
 }
@@ -419,8 +314,8 @@ export async function refreshSession(opts: RefreshSessionOptions): Promise<AuthR
 
   // No upfront unlink — persistSession overwrites atomically, so a Ctrl+C mid-paste can't lose credentials.
   const session = opts.fetch
-    ? await promptAndParseSession(logger, opts.browserAutoExtract, opts.browserCapture, opts.fetch)
-    : await promptAndParseSession(logger, opts.browserAutoExtract, opts.browserCapture);
+    ? await promptAndParseSession(logger, opts.browserCapture, opts.fetch)
+    : await promptAndParseSession(logger, opts.browserCapture);
   await persistSession(session, authPath);
   logger.info(
     { event: "walkthrough.auth_refresh_persisted", context: "walkthrough", path: authPath },
@@ -446,13 +341,8 @@ async function checkAuthFilePresenceOnly(
   }
 
   const session = opts.fetch
-    ? await promptAndParseSession(
-        opts.logger,
-        opts.browserAutoExtract,
-        opts.browserCapture,
-        opts.fetch,
-      )
-    : await promptAndParseSession(opts.logger, opts.browserAutoExtract, opts.browserCapture);
+    ? await promptAndParseSession(opts.logger, opts.browserCapture, opts.fetch)
+    : await promptAndParseSession(opts.logger, opts.browserCapture);
   await persistSession(session, authPath);
   opts.logger.info(
     { event: "walkthrough.auth_persisted", context: "walkthrough", path: authPath },
@@ -486,7 +376,6 @@ async function checkAuthWithProbe(
         probeClientFactory: opts.probeClientFactory,
         logger,
         browserCapture: opts.browserCapture, // NEW: pass down
-        browserAutoExtract: opts.browserAutoExtract,
         fetch: opts.fetch,
       });
     }
@@ -504,8 +393,8 @@ async function checkAuthWithProbe(
   }
 
   const session = opts.fetch
-    ? await promptAndParseSession(logger, opts.browserAutoExtract, opts.browserCapture, fetchFn)
-    : await promptAndParseSession(logger, opts.browserAutoExtract, opts.browserCapture);
+    ? await promptAndParseSession(logger, opts.browserCapture, fetchFn)
+    : await promptAndParseSession(logger, opts.browserCapture);
   await persistSession(session, authPath);
   logger.info(
     { event: "walkthrough.auth_persisted", context: "walkthrough", path: authPath },

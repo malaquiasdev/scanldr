@@ -1,5 +1,4 @@
 import type { BrowserLauncherDeps } from "@integrations/mangakakalot/auth/browser-capture/index.ts";
-import type { ChromiumBrowserId } from "@integrations/mangakakalot/auth/browser-cookie/index.ts";
 import type { DownloadBundleInput, DownloadBundleResult } from "../downloader/types.ts";
 import type { PackVolumeInput, PackVolumeReplacingSourcesResult } from "../pack/types.ts";
 import type { SourceDescriptor } from "../sources/types.ts";
@@ -48,32 +47,6 @@ export interface BundleItem {
   id: string;
   /** Chapter number */
   num: string;
-}
-
-/**
- * Seams for the browser-cookie auto-extract auth path (issue #202). All injected so
- * tests never shell out to `open`/Keychain or read real browser profiles.
- */
-export interface BrowserAutoExtractDeps {
-  /** Picks the first installed supported Chromium browser, or undefined if none found. */
-  detectInstalledBrowser: () => ChromiumBrowserId | undefined;
-  /** Opens the given URL in the given browser (e.g. via `open -a <app> <url>` on macOS). */
-  openBrowser: (browser: ChromiumBrowserId, url: string) => void;
-  /** Prompts the user and waits for confirmation that CF has been solved. */
-  waitForContinue: (message: string) => Promise<void>;
-  /**
-   * Extracts + decrypts the cookies for the given browser. Undefined = no usable session
-   * found. `userAgent` is undefined for non-Chrome browsers (issue #205) — the orchestrator
-   * must then call `promptUserAgent` to get the exact UA from the human.
-   */
-  extractSession: (
-    browser: ChromiumBrowserId,
-  ) => Promise<{ cookies: Record<string, string>; userAgent: string | undefined } | undefined>;
-  /**
-   * Prompts the human to paste their exact User-Agent (one line) when it can't be derived
-   * (non-Chrome browsers). Returns the raw input; caller trims and treats blank as failure.
-   */
-  promptUserAgent: () => Promise<string>;
 }
 
 export interface BrowserCaptureDeps {
