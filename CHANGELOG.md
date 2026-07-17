@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/malaquiasdev/scanldr/compare/v1.1.0...v1.2.0) (2026-07-17)
+
+
+### Features
+
+* **auth:** auto-extract cf_clearance from the local browser (macOS/Chromium) ([#203](https://github.com/malaquiasdev/scanldr/issues/203)) ([07216ac](https://github.com/malaquiasdev/scanldr/commit/07216acd9f70635c0d1107ca03fe5da632a82336))
+* **auth:** capture a fresh cf_clearance via an undetected browser (patchright) ([#209](https://github.com/malaquiasdev/scanldr/issues/209)) ([35125b5](https://github.com/malaquiasdev/scanldr/commit/35125b5da61f75ef4eb8db0eccb4e6c911404fb8))
+
+
+### Bug Fixes
+
+* **auth:** non-Chrome UA prompt + open the CF-triggering URL (not home) ([#206](https://github.com/malaquiasdev/scanldr/issues/206)) ([b98ef91](https://github.com/malaquiasdev/scanldr/commit/b98ef9195f244a0913f61097c314936c41f94bc0))
+
 ## [1.1.0](https://github.com/malaquiasdev/scanldr/compare/v1.0.0...v1.1.0) (2026-07-16)
 
 
