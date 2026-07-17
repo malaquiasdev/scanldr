@@ -48,6 +48,15 @@ No Playwright dependency, no headful browser process. The `playwright` package i
 
 `checkAuth`'s session-validity probe (`walkthrough/steps/auth-check.ts`) targets the search endpoint (`/search/story/…`), not the homepage. As established above, the homepage never triggers a Cloudflare challenge and returns 200 regardless of session validity — probing it would give a false positive. The search endpoint enforces the same stricter CF rules the walkthrough hits in step 4, so a benign query returning a "no results" page confirms the session is genuinely valid, while a CF challenge confirms it is stale.
 
-## Addendum (2026-07-16): browser cookie auto-extraction (Option B)
+## Addendum (2026-07-16): browser cookie auto-extraction (Option B) — accepted for macOS/Chromium
 
-The manual cURL-paste decision above stands as the baseline/fallback. A live spike (see [`docs/discovery/cf-cookie-autoextract-feasibility.md`](../discovery/cf-cookie-autoextract-feasibility.md)) showed a lower-friction path is feasible: open the site in the user's own browser, let the human solve Cloudflare, then auto-read + decrypt the domain-wide `cf_clearance` from the browser's cookie store. This keeps the same human-solves-CF, cookie-replay security posture without the browser-automation weight this ADR rejected. Open question: user-agent capture, since the UA is not stored alongside the cookie in the browser's cookie database. Status: proposed follow-up, not yet implemented.
+The manual cURL-paste decision above stands as the baseline/fallback. A live spike (see [`docs/discovery/cf-cookie-autoextract-feasibility.md`](../discovery/cf-cookie-autoextract-feasibility.md)) showed a lower-friction path is feasible: open the site in the user's own browser, let the human solve Cloudflare, then auto-read + decrypt the domain-wide `cf_clearance` from the browser's cookie store. This keeps the same human-solves-CF, cookie-replay security posture without the browser-automation weight this ADR rejected.
+
+**Status (issue #202): implemented for macOS + Chromium browsers (Chrome, Opera, Brave, Edge).** Offered as the primary walkthrough auth option; manual cURL paste remains the fallback (used automatically on any auto-extract failure — browser not found, no `cf_clearance`, or failed probe validation).
+
+Implementation notes:
+- Cookie DB located per browser under `~/Library/Application Support/...`, copied to a temp file (the live DB may be locked), queried via `bun:sqlite`, then the temp copy is deleted.
+- `v10`-scheme values decrypted with `node:crypto` (PBKDF2 + AES-128-CBC), keyed by the browser's "`<Browser> Safe Storage`" macOS Keychain item (`security find-generic-password`). No Playwright, no new dependency.
+- Multi-profile handling: the profile with the freshest `cf_clearance` (by `creation_utc`) wins.
+- **User-agent**, the open question above, is resolved as a best-effort derivation from the browser's own app version (`CFBundleShortVersionString`) — see `src/integrations/mangakakalot/auth/browser-cookie/ua.ts`. This is the fragile part, which is why the extracted session is **always validated via the existing session probe before being persisted**; any validation failure (stale, wrong UA, CF rejection) falls back to manual paste rather than silently persisting a broken session.
+- Firefox, Safari, Windows (DPAPI), and Linux (libsecret/kwallet) are explicit out-of-scope follow-ups.
