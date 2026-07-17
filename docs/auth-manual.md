@@ -1,8 +1,21 @@
 # Manual Auth — Capturing a Cloudflare Session
 
-Capturing your real-browser Cloudflare session lets the downloader (mangakakalot.gg) bypass the bot protection. This happens either via the standalone `scanldr auth` command (historical, pre-epic #116) or inline during the interactive walkthrough (`bun start`), which prompts for the same cURL paste when Mangakakalot is selected and no valid session exists.
+Capturing your real-browser Cloudflare session lets the downloader (mangakakalot.gg) bypass the bot protection. This happens either via the standalone `scanldr auth` command (historical, pre-epic #116) or inline during the interactive walkthrough (`bun start`), which prompts for a session when Mangakakalot is selected and no valid session exists.
 
-## Quick version (walkthrough prompt)
+## Browser auto-extract (macOS + Chrome/Opera/Brave/Edge) — issue #202
+
+On macOS, when a supported Chromium browser (Chrome, Opera, Brave, or Edge) is installed, the walkthrough tries this lower-friction path first:
+
+1. scanldr opens `https://www.mangakakalot.gg/` in your browser (`open -a <Browser>`).
+2. Solve the Cloudflare challenge if one appears, then press Enter in the terminal.
+3. scanldr locates your browser's cookie store, decrypts the domain-wide `cf_clearance` (macOS Keychain + the standard Chromium `v10` AES scheme — no new dependency, no automation), and derives a matching user-agent from your browser's version.
+4. The extracted session is validated with a real request **before** anything is persisted. If validation fails for any reason (no `cf_clearance` found, Keychain access denied, stale/mismatched UA), scanldr automatically falls back to the manual cURL paste below — you'll never end up with a silently broken session.
+
+This only reads cookies from your own browser, on your own machine; the raw token is never logged (same redaction as the manual flow). Multiple browser profiles are handled automatically — the profile with the most recently solved challenge wins.
+
+Firefox, Safari, and non-macOS platforms don't have this path yet (see ADR-002 addendum) — the manual paste flow below is the fallback/only option there.
+
+## Quick version (walkthrough prompt, manual paste fallback)
 
 1. Open the target manga page in your browser.
 2. Open DevTools (F12) and go to the **Network** tab.

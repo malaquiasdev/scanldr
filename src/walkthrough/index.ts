@@ -6,6 +6,7 @@ import { getAdapter } from "../sources/adapters/index.ts";
 import type { SourceDescriptor } from "../sources/types.ts";
 import { createProgress } from "./progress.ts";
 import { checkAuth, refreshSession } from "./steps/auth-check.ts";
+import { buildBrowserAutoExtractDeps } from "./steps/browser-auth-deps.ts";
 import { promptCoverUrl } from "./steps/cover-prompt.ts";
 import type { ExecuteDeps } from "./steps/execute.ts";
 import { executeWalkthrough } from "./steps/execute.ts";
@@ -17,6 +18,7 @@ import { pickSource } from "./steps/source-picker.ts";
 import { promptTitle } from "./steps/title-prompt.ts";
 import { promptVolumeName } from "./steps/volume-name-prompt.ts";
 import type {
+  BrowserAutoExtractDeps,
   ChapterListing,
   SearchHit,
   SessionProbeClientFactory,
@@ -53,6 +55,12 @@ export interface RunWalkthroughOptions extends WalkthroughInput {
    * Pass null to disable probing (file-presence check only).
    */
   probeClientFactory?: SessionProbeClientFactory | null;
+  /**
+   * Override the browser-cookie auto-extract seams (tests inject fakes).
+   * Production default: real macOS/Chromium extraction (issue #202).
+   * Pass null to disable the auto-extract option entirely (manual paste only).
+   */
+  browserAutoExtract?: BrowserAutoExtractDeps | null;
   /**
    * Override the refresh function for tests.
    * When provided, this is used instead of the real refreshSession for retry logic.
@@ -101,6 +109,14 @@ function resolveProbeClientFactory(
   return opts.probeClientFactory ?? (() => createFallbackHttp({ logger: opts.logger }));
 }
 
+/** Resolves browser auto-extract deps: explicit override, opt-out (null), or the real default. */
+function resolveBrowserAutoExtract(
+  opts: RunWalkthroughOptions,
+): BrowserAutoExtractDeps | undefined {
+  if (opts.browserAutoExtract === null) return undefined;
+  return opts.browserAutoExtract ?? buildBrowserAutoExtractDeps();
+}
+
 /** Builds the session-refresh closure reused by all adapter-call retry wrappers. */
 function buildRefreshFn(
   opts: RunWalkthroughOptions,
@@ -117,7 +133,12 @@ function buildRefreshFn(
   return async () => {
     const { resolveAuthPath } = await import("../plugins/auth-path/index.ts");
     const authPath = resolveAuthPath();
-    await refreshSession({ authPath, probeClientFactory, logger: opts.logger });
+    await refreshSession({
+      authPath,
+      probeClientFactory,
+      logger: opts.logger,
+      browserAutoExtract: resolveBrowserAutoExtract(opts),
+    });
   };
 }
 
@@ -183,6 +204,7 @@ export async function runWalkthrough(
       logger: opts.logger,
       probeClientFactory,
       dataHome: opts.dataHome,
+      browserAutoExtract: resolveBrowserAutoExtract(opts),
     });
 
     const doRefresh = buildRefreshFn(opts, probeClientFactory);
