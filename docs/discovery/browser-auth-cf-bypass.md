@@ -68,5 +68,5 @@ Adopt patchright (Bun-native) as the auth-capture: launch the real Chrome headed
 - [`docs/adr/002-manual-cookie-paste.md`](../adr/002-manual-cookie-paste.md)
 - [`docs/adr/001-cookie-replay-strategy.md`](../adr/001-cookie-replay-strategy.md)
 - Shared HTTP client: [`src/integrations/fallback-http/service.ts`](../../src/integrations/fallback-http/service.ts) (uses `globalThis.fetch`)
-- Superseded #202 extract: [`src/integrations/mangakakalot/auth/browser-cookie/`](../../src/integrations/mangakakalot/auth/browser-cookie/)
+- Superseded #202 extract: `src/integrations/mangakakalot/auth/browser-cookie/` (removed in #210)
 - Tools: [nodriver](https://github.com/ultrafunkamsterdam/nodriver), [patchright](https://www.npmjs.com/package/patchright) (npm), [curl_cffi](https://github.com/yifeikong/curl_cffi)
