@@ -60,3 +60,26 @@ Implementation notes:
 - Multi-profile handling: the profile with the freshest `cf_clearance` (by `creation_utc`) wins.
 - **User-agent**, the open question above, is resolved as a best-effort derivation from the browser's own app version (`CFBundleShortVersionString`) — see `src/integrations/mangakakalot/auth/browser-cookie/ua.ts`. This is the fragile part, which is why the extracted session is **always validated via the existing session probe before being persisted**; any validation failure (stale, wrong UA, CF rejection) falls back to manual paste rather than silently persisting a broken session.
 - Firefox, Safari, Windows (DPAPI), and Linux (libsecret/kwallet) are explicit out-of-scope follow-ups.
+
+## Addendum (2026-07-16): undetected-browser capture via patchright (Option C) — accepted as the primary auth path
+
+A follow-up spike (see [`docs/discovery/browser-auth-cf-bypass.md`](../discovery/browser-auth-cf-bypass.md)) demonstrated that `patchright` (a drop-in Playwright fork that patches the automation-detection leaks) can launch a real Chrome undetected, allowing the user to solve Cloudflare interactively in a headed browser window. This combines the best of both prior approaches:
+- **vs. ADR-001 (Playwright):** No automation detection; the browser is real, not headless.
+- **vs. ADR-002 addendum (disk-extract):** Fresh `cf_clearance` directly from the live browser, not stale from disk.
+- **vs. manual paste:** Same human-solves-CF UX, but zero manual copy-paste friction — `cf_clearance` is auto-harvested from the browser context once solved.
+
+**Status (issue #208): implemented and integrated as the primary walkthrough auth path.** When a session probe detects staleness, the walkthrough now:
+1. Attempts to launch Chrome via patchright, open the probe URL, and wait for the human to solve Cloudflare.
+2. Harvests the fresh `cf_clearance` + exact user-agent from the browser context.
+3. Validates the captured session via the existing probe.
+4. Persists to `auth.json` on probe success.
+5. Falls back to manual cURL paste on any failure (no Chrome, user cancels, capture error, or probe validation failure).
+
+Implementation notes:
+- `patchright` is a Playwright fork with patched automation-detection leaks; it drives the user's installed Chrome (`channel: "chrome"`, uses local executable).
+- Opens the same probe-target URL (search endpoint) that the walkthrough uses to validate sessions — this ensures a fresh `cf_clearance` covers all operations.
+- Targets the live browser context (user may solve a Turnstile in the window); no disk-read, no decryption, no UAderivation fragility — just read what the real browser captured.
+- The browser launcher is seamed for testability — tests mock the seam and never launch a real Chrome.
+- Manual cURL paste remains the fallback (used automatically on capture failure, no user configuration needed).
+- `browser-cookie/` (#202 disk-extract) is superseded for new sessions but NOT removed in this change (that removal is a separate refactoring task).
+

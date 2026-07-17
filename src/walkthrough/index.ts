@@ -7,6 +7,7 @@ import type { SourceDescriptor } from "../sources/types.ts";
 import { createProgress } from "./progress.ts";
 import { checkAuth, refreshSession } from "./steps/auth-check.ts";
 import { buildBrowserAutoExtractDeps } from "./steps/browser-auth-deps.ts";
+import { buildBrowserCaptureDeps } from "./steps/browser-capture-deps.ts";
 import { promptCoverUrl } from "./steps/cover-prompt.ts";
 import type { ExecuteDeps } from "./steps/execute.ts";
 import { executeWalkthrough } from "./steps/execute.ts";
@@ -19,6 +20,7 @@ import { promptTitle } from "./steps/title-prompt.ts";
 import { promptVolumeName } from "./steps/volume-name-prompt.ts";
 import type {
   BrowserAutoExtractDeps,
+  BrowserCaptureDeps,
   ChapterListing,
   SearchHit,
   SessionProbeClientFactory,
@@ -61,6 +63,12 @@ export interface RunWalkthroughOptions extends WalkthroughInput {
    * Pass null to disable the auto-extract option entirely (manual paste only).
    */
   browserAutoExtract?: BrowserAutoExtractDeps | null;
+  /**
+   * Override the browser capture seams (tests inject fakes).
+   * Production default: real patchright capture (issue #208).
+   * Pass null to disable the capture option entirely.
+   */
+  browserCapture?: BrowserCaptureDeps | null;
   /**
    * Override the refresh function for tests.
    * When provided, this is used instead of the real refreshSession for retry logic.
@@ -117,6 +125,12 @@ function resolveBrowserAutoExtract(
   return opts.browserAutoExtract ?? buildBrowserAutoExtractDeps();
 }
 
+/** Resolves browser capture deps: explicit override, opt-out (null), or the real default. */
+function resolveBrowserCapture(opts: RunWalkthroughOptions): BrowserCaptureDeps | undefined {
+  if (opts.browserCapture === null) return undefined;
+  return opts.browserCapture ?? buildBrowserCaptureDeps();
+}
+
 /** Builds the session-refresh closure reused by all adapter-call retry wrappers. */
 function buildRefreshFn(
   opts: RunWalkthroughOptions,
@@ -138,6 +152,7 @@ function buildRefreshFn(
       probeClientFactory,
       logger: opts.logger,
       browserAutoExtract: resolveBrowserAutoExtract(opts),
+      browserCapture: resolveBrowserCapture(opts),
     });
   };
 }
@@ -205,6 +220,7 @@ export async function runWalkthrough(
       probeClientFactory,
       dataHome: opts.dataHome,
       browserAutoExtract: resolveBrowserAutoExtract(opts),
+      browserCapture: resolveBrowserCapture(opts),
     });
 
     const doRefresh = buildRefreshFn(opts, probeClientFactory);

@@ -25,6 +25,7 @@
     "@inquirer/prompts": "^8.4.3",
     "cheerio": "^1.2.0",
     "fflate": "^0.8.2",
+    "patchright": "^1.61.1",
     "sharp": "^0.35.3"
   }
 }

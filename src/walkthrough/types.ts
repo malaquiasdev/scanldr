@@ -1,3 +1,4 @@
+import type { BrowserLauncherDeps } from "@integrations/mangakakalot/auth/browser-capture/index.ts";
 import type { ChromiumBrowserId } from "@integrations/mangakakalot/auth/browser-cookie/index.ts";
 import type { DownloadBundleInput, DownloadBundleResult } from "../downloader/types.ts";
 import type { PackVolumeInput, PackVolumeReplacingSourcesResult } from "../pack/types.ts";
@@ -73,6 +74,11 @@ export interface BrowserAutoExtractDeps {
    * (non-Chrome browsers). Returns the raw input; caller trims and treats blank as failure.
    */
   promptUserAgent: () => Promise<string>;
+}
+
+export interface BrowserCaptureDeps {
+  // Minimal launcher seam (patchright in production, mocked in tests)
+  launcherDeps: BrowserLauncherDeps;
 }
 
 export interface AuthResult {
