@@ -52,14 +52,7 @@ No Playwright dependency, no headful browser process. The `playwright` package i
 
 The manual cURL-paste decision above stands as the baseline/fallback. A live spike (see [`docs/discovery/cf-cookie-autoextract-feasibility.md`](../discovery/cf-cookie-autoextract-feasibility.md)) showed a lower-friction path is feasible: open the site in the user's own browser, let the human solve Cloudflare, then auto-read + decrypt the domain-wide `cf_clearance` from the browser's cookie store. This keeps the same human-solves-CF, cookie-replay security posture without the browser-automation weight this ADR rejected.
 
-**Status (issue #202): implemented for macOS + Chromium browsers (Chrome, Opera, Brave, Edge).** Offered as the primary walkthrough auth option; manual cURL paste remains the fallback (used automatically on any auto-extract failure — browser not found, no `cf_clearance`, or failed probe validation).
-
-Implementation notes:
-- Cookie DB located per browser under `~/Library/Application Support/...`, copied to a temp file (the live DB may be locked), queried via `bun:sqlite`, then the temp copy is deleted.
-- `v10`-scheme values decrypted with `node:crypto` (PBKDF2 + AES-128-CBC), keyed by the browser's "`<Browser> Safe Storage`" macOS Keychain item (`security find-generic-password`). No Playwright, no new dependency.
-- Multi-profile handling: the profile with the freshest `cf_clearance` (by `creation_utc`) wins.
-- **User-agent**, the open question above, is resolved as a best-effort derivation from the browser's own app version (`CFBundleShortVersionString`) — see `src/integrations/mangakakalot/auth/browser-cookie/ua.ts`. This is the fragile part, which is why the extracted session is **always validated via the existing session probe before being persisted**; any validation failure (stale, wrong UA, CF rejection) falls back to manual paste rather than silently persisting a broken session.
-- Firefox, Safari, Windows (DPAPI), and Linux (libsecret/kwallet) are explicit out-of-scope follow-ups.
+**Status (issue #210): REMOVED.** This disk cookie-extract path never worked reliably in practice (`cf_clearance` staleness / Chrome flush-lag to the on-disk cookie DB — see [`docs/discovery/browser-auth-cf-bypass.md`](../discovery/browser-auth-cf-bypass.md)) and was superseded by the patchright browser-capture path below (issue #209), which reads cookies live from the browser context instead of a possibly-stale on-disk copy. The `browser-cookie/` integration and its walkthrough wiring have been deleted; patchright browser-capture is now the primary auth path, with manual cURL paste as the fallback.
 
 ## Addendum (2026-07-16): undetected-browser capture via patchright (Option C) — accepted as the primary auth path
 
@@ -81,5 +74,5 @@ Implementation notes:
 - Targets the live browser context (user may solve a Turnstile in the window); no disk-read, no decryption, no UAderivation fragility — just read what the real browser captured.
 - The browser launcher is seamed for testability — tests mock the seam and never launch a real Chrome.
 - Manual cURL paste remains the fallback (used automatically on capture failure, no user configuration needed).
-- `browser-cookie/` (#202 disk-extract) is superseded for new sessions but NOT removed in this change (that removal is a separate refactoring task).
+- `browser-cookie/` (#202 disk-extract) was removed in issue #210 — see the addendum above.
 

@@ -24,3 +24,6 @@ coverage/
 # Claude worktrees
 .claude/worktrees/
 pr*.patch
+
+# Antigravity lane scratch dir
+.patches/

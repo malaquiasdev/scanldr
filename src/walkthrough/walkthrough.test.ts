@@ -432,10 +432,6 @@ describe("runWalkthrough — browser-capture launch-once guard (issue #208 P2)",
         dataHome: makeAuthedDataHome(),
         probeClientFactory,
         browserCapture,
-        // Disable the auto-extract fallback so the second refresh (guarded browser
-        // capture returning undefined) deterministically falls through to manual
-        // paste instead of hitting a real macOS browser/keychain lookup.
-        browserAutoExtract: null,
         outDir,
         adapterFactory: () => fakeAdapter,
         executeDeps: { downloader: makeFakeDownloader(), packer: makeFakePacker() },

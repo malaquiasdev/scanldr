@@ -6,7 +6,6 @@ import { getAdapter } from "../sources/adapters/index.ts";
 import type { SourceDescriptor } from "../sources/types.ts";
 import { createProgress } from "./progress.ts";
 import { checkAuth, refreshSession } from "./steps/auth-check.ts";
-import { buildBrowserAutoExtractDeps } from "./steps/browser-auth-deps.ts";
 import { buildBrowserCaptureDeps } from "./steps/browser-capture-deps.ts";
 import { withCaptureOnce } from "./steps/capture-once.ts";
 import { promptCoverUrl } from "./steps/cover-prompt.ts";
@@ -20,7 +19,6 @@ import { pickSource } from "./steps/source-picker.ts";
 import { promptTitle } from "./steps/title-prompt.ts";
 import { promptVolumeName } from "./steps/volume-name-prompt.ts";
 import type {
-  BrowserAutoExtractDeps,
   BrowserCaptureDeps,
   ChapterListing,
   SearchHit,
@@ -58,12 +56,6 @@ export interface RunWalkthroughOptions extends WalkthroughInput {
    * Pass null to disable probing (file-presence check only).
    */
   probeClientFactory?: SessionProbeClientFactory | null;
-  /**
-   * Override the browser-cookie auto-extract seams (tests inject fakes).
-   * Production default: real macOS/Chromium extraction (issue #202).
-   * Pass null to disable the auto-extract option entirely (manual paste only).
-   */
-  browserAutoExtract?: BrowserAutoExtractDeps | null;
   /**
    * Override the browser capture seams (tests inject fakes).
    * Production default: real patchright capture (issue #208).
@@ -118,14 +110,6 @@ function resolveProbeClientFactory(
   return opts.probeClientFactory ?? (() => createFallbackHttp({ logger: opts.logger }));
 }
 
-/** Resolves browser auto-extract deps: explicit override, opt-out (null), or the real default. */
-function resolveBrowserAutoExtract(
-  opts: RunWalkthroughOptions,
-): BrowserAutoExtractDeps | undefined {
-  if (opts.browserAutoExtract === null) return undefined;
-  return opts.browserAutoExtract ?? buildBrowserAutoExtractDeps();
-}
-
 /** Resolves browser capture deps: explicit override, opt-out (null), or the real default. */
 function resolveBrowserCapture(opts: RunWalkthroughOptions): BrowserCaptureDeps | undefined {
   if (opts.browserCapture === null) return undefined;
@@ -158,7 +142,6 @@ function buildRefreshFn(
       authPath,
       probeClientFactory,
       logger: opts.logger,
-      browserAutoExtract: resolveBrowserAutoExtract(opts),
       browserCapture,
     });
   };
@@ -234,7 +217,6 @@ export async function runWalkthrough(
       logger: opts.logger,
       probeClientFactory,
       dataHome: opts.dataHome,
-      browserAutoExtract: resolveBrowserAutoExtract(opts),
       browserCapture,
     });
 
