@@ -8,6 +8,7 @@ import { createProgress } from "./progress.ts";
 import { checkAuth, refreshSession } from "./steps/auth-check.ts";
 import { buildBrowserAutoExtractDeps } from "./steps/browser-auth-deps.ts";
 import { buildBrowserCaptureDeps } from "./steps/browser-capture-deps.ts";
+import { withCaptureOnce } from "./steps/capture-once.ts";
 import { promptCoverUrl } from "./steps/cover-prompt.ts";
 import type { ExecuteDeps } from "./steps/execute.ts";
 import { executeWalkthrough } from "./steps/execute.ts";
@@ -131,10 +132,16 @@ function resolveBrowserCapture(opts: RunWalkthroughOptions): BrowserCaptureDeps 
   return opts.browserCapture ?? buildBrowserCaptureDeps();
 }
 
-/** Builds the session-refresh closure reused by all adapter-call retry wrappers. */
+/**
+ * Builds the session-refresh closure reused by all adapter-call retry wrappers.
+ * `browserCapture` must be the SAME instance used for the initial checkAuth call
+ * (wrapped once via withCaptureOnce at the top of runWalkthrough) — otherwise every
+ * retry would resolve a fresh browser-capture instance and relaunch Chrome (#208 P2).
+ */
 function buildRefreshFn(
   opts: RunWalkthroughOptions,
   probeClientFactory: SessionProbeClientFactory | undefined,
+  browserCapture: BrowserCaptureDeps | undefined,
 ): () => Promise<void> {
   if (opts.refreshFn) return opts.refreshFn;
   if (!probeClientFactory) {
@@ -152,7 +159,7 @@ function buildRefreshFn(
       probeClientFactory,
       logger: opts.logger,
       browserAutoExtract: resolveBrowserAutoExtract(opts),
-      browserCapture: resolveBrowserCapture(opts),
+      browserCapture,
     });
   };
 }
@@ -214,16 +221,24 @@ export async function runWalkthrough(
     const source = await pickSource();
 
     const probeClientFactory = resolveProbeClientFactory(opts);
+    // Resolved ONCE per run and guarded so the launcher fires at most once
+    // (issue #208 P2) — shared across the initial checkAuth call and every
+    // subsequent doRefresh() invocation from withSessionRetry.
+    const resolvedBrowserCapture = resolveBrowserCapture(opts);
+    const browserCapture = resolvedBrowserCapture
+      ? withCaptureOnce(resolvedBrowserCapture)
+      : undefined;
+
     await checkAuth({
       requiresAuth: source.requiresAuth,
       logger: opts.logger,
       probeClientFactory,
       dataHome: opts.dataHome,
       browserAutoExtract: resolveBrowserAutoExtract(opts),
-      browserCapture: resolveBrowserCapture(opts),
+      browserCapture,
     });
 
-    const doRefresh = buildRefreshFn(opts, probeClientFactory);
+    const doRefresh = buildRefreshFn(opts, probeClientFactory, browserCapture);
 
     // Resolve adapter after auth check so a freshly-persisted session is available to it.
     const adapter = resolveAdapter(source.id, { logger: opts.logger, config: opts.config });

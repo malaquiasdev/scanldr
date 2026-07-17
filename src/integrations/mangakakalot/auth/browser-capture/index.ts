@@ -67,8 +67,8 @@ export async function captureSessionViaBrowser(
   } finally {
     if (browser) {
       try {
-        // Non-persistent context launched with no userDataDir — Playwright allocates
-        // a temp profile dir and removes it automatically once browser.close() resolves.
+        // close() is the launcher seam's sole cleanup hook — each implementation
+        // owns its own browser/context teardown and temp-dir removal.
         await browser.close();
       } catch (err) {
         const message = err instanceof Error ? err.message : "unknown error";
