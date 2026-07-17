@@ -4,12 +4,12 @@
 
 # scanldr
 
-Single-walkthrough CLI to download manga from Mangakakalot, one chapter per CBZ archive.
+Single-walkthrough CLI to download manga from Mangakakalot, one chapter per CBZ archive by default, with optional grouping into a single volume CBZ.
 
 ## Features
 
 - Single interactive walkthrough — `bun start`.
-- Single source: Mangakakalot (cURL paste for Cloudflare bypass) — every run requires auth.
+- Single source: Mangakakalot — Cloudflare bypass via an undetected browser (patchright) capture, with a manual cURL-paste fallback — every run requires auth.
 - Visual pickers for search results and chapter range — no flag-based syntax.
 - Automatic reassembly of CDN vertically-tiled pages into single, unsplit pages.
 - Coordinated stderr progress bar showing the current chapter (e.g. `Chapter 33 [3/5]`).
@@ -39,7 +39,7 @@ bun start --help           # show usage
 bun start --version        # show version
 ```
 
-The walkthrough guides you through title search, Cloudflare auth (Mangakakalot cURL paste), chapter range picking, and download, then loops back to let you queue another download without restarting. See [docs/flows/download_flow.md](docs/flows/download_flow.md) for the full step-by-step and sequence diagram, and [docs/auth-manual.md](docs/auth-manual.md) for how to capture a Mangakakalot cURL session.
+The walkthrough guides you through title search, Cloudflare auth (undetected-browser capture via patchright, with a manual cURL-paste fallback), chapter range picking, and download, then loops back to let you queue another download without restarting. See [docs/flows/download_flow.md](docs/flows/download_flow.md) for the full step-by-step and sequence diagram, and [docs/auth-manual.md](docs/auth-manual.md) for how the Mangakakalot session is captured.
 
 ## Development
 

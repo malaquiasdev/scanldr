@@ -1,3 +1,9 @@
+> **Superseded.** Option B (disk cookie-extract) was implemented in #202 and removed in #210
+> (`cf_clearance` staleness / Chrome flush-lag to the on-disk cookie DB). See
+> [`browser-auth-cf-bypass.md`](browser-auth-cf-bypass.md) and the ADR-002 addenda for the
+> patchright undetected-browser-capture outcome that replaced it. Body below kept as the dated
+> record.
+
 # cf_clearance Auto-Extraction Feasibility — Discovery Report
 
 **Date:** 2026-07-16
