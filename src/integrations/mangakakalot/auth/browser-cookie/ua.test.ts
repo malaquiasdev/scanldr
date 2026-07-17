@@ -9,20 +9,18 @@ describe("deriveUserAgent", () => {
     expect(ua).not.toMatch(/OPR|Edg/);
   });
 
-  test("opera: appends OPR/<version> after a fallback Chromium engine token", () => {
+  test("opera: no trustworthy Chromium engine version can be derived — returns undefined (issue #205)", () => {
     const ua = deriveUserAgent(CHROMIUM_BROWSERS.opera, "94.0.4606.65");
-    expect(ua).toContain("Chrome/");
-    expect(ua).toContain("OPR/94.0.4606.65");
+    expect(ua).toBeUndefined();
   });
 
-  test("brave: no product token appended, stays Chrome-shaped", () => {
+  test("brave: returns undefined (issue #205)", () => {
     const ua = deriveUserAgent(CHROMIUM_BROWSERS.brave, "1.65.126");
-    expect(ua).not.toMatch(/Brave/);
-    expect(ua).toContain("Chrome/");
+    expect(ua).toBeUndefined();
   });
 
-  test("edge: appends Edg/<version>", () => {
+  test("edge: returns undefined (issue #205)", () => {
     const ua = deriveUserAgent(CHROMIUM_BROWSERS.edge, "126.0.2592.68");
-    expect(ua).toContain("Edg/126.0.2592.68");
+    expect(ua).toBeUndefined();
   });
 });

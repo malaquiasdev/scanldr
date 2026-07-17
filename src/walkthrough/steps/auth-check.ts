@@ -42,8 +42,14 @@ const MAX_PASTE_RETRIES = 2;
 const PROBE_URL = "https://www.mangakakalot.gg/search/story/__scanldr_probe__";
 /** Probe timeout in ms. */
 const PROBE_TIMEOUT_MS = 5000;
-/** cf_clearance is domain-wide — any page works; the human just needs to solve CF once. */
-const MANGAKAKALOT_BASE_URL = "https://www.mangakakalot.gg/";
+/**
+ * cf_clearance is domain-wide, but the homepage has weaker CF rules than the search
+ * endpoint and often doesn't present a challenge at all — leaving the human with
+ * nothing to solve and no cf_clearance issued. Open the same URL the probe hits
+ * (PROBE_URL) so the challenge reliably appears and the solved cookie covers the
+ * whole domain (search/detail/chapter). See ADR-002.
+ */
+const BROWSER_AUTH_URL = PROBE_URL;
 
 function isValidAuthFile(path: string): boolean {
   if (!existsSync(path)) return false;
@@ -206,14 +212,14 @@ async function tryBrowserAutoExtract(
     return undefined;
   }
 
-  deps.openBrowser(browser, MANGAKAKALOT_BASE_URL);
+  deps.openBrowser(browser, BROWSER_AUTH_URL);
   await deps.waitForContinue(
     "A browser window opened. Solve the Cloudflare check, then press Enter to continue.",
   );
 
-  let candidate: AuthSession | undefined;
+  let extracted: { cookies: Record<string, string>; userAgent: string | undefined } | undefined;
   try {
-    candidate = await deps.extractSession(browser);
+    extracted = await deps.extractSession(browser);
   } catch (err) {
     // Never log the raw cookie value — same redaction posture as the paste flow.
     const message = err instanceof Error ? err.message : "unknown error";
@@ -224,13 +230,39 @@ async function tryBrowserAutoExtract(
     return undefined;
   }
 
-  if (!candidate) {
+  if (!extracted) {
     logger.warn(
       { event: "walkthrough.auth_auto_extract_empty", context: "walkthrough", browser },
       "no cf_clearance found in browser cookie store — falling back to manual paste",
     );
     return undefined;
   }
+
+  // Chrome: exact UA already derived (its app version IS the Chromium version). Non-Chrome:
+  // no derivation is trustworthy (issue #205) — ask the human to paste their exact UA.
+  let userAgent = extracted.userAgent;
+  if (!userAgent) {
+    const pasted = await deps.promptUserAgent();
+    const trimmed = pasted.trim();
+    if (!trimmed) {
+      logger.warn(
+        {
+          event: "walkthrough.auth_auto_extract_no_ua",
+          context: "walkthrough",
+          browser,
+        },
+        "no user-agent provided — falling back to manual paste",
+      );
+      return undefined;
+    }
+    userAgent = trimmed;
+  }
+
+  const candidate: AuthSession = {
+    cookies: extracted.cookies,
+    userAgent,
+    savedAt: Date.now(),
+  };
 
   const client = buildCandidateProbeClient(candidate, fetchFn);
   const outcome = await probeSession(client, logger);

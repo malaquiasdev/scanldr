@@ -16,7 +16,6 @@ import {
   removeTempFile,
 } from "../../integrations/mangakakalot/auth/browser-cookie/index.ts";
 import { readKeychainPassword } from "../../integrations/mangakakalot/auth/browser-cookie/keychain.ts";
-import type { AuthSession } from "../../integrations/mangakakalot/auth/types.ts";
 import { input } from "../prompts.ts";
 import type { BrowserAutoExtractDeps } from "../types.ts";
 
@@ -40,7 +39,7 @@ export function buildBrowserAutoExtractDeps(): BrowserAutoExtractDeps {
     waitForContinue: async (message) => {
       await input({ message });
     },
-    extractSession: async (browser): Promise<AuthSession | undefined> => {
+    extractSession: async (browser) => {
       const def = CHROMIUM_BROWSERS[browser];
       const result = await extractBrowserSession(
         {
@@ -62,8 +61,13 @@ export function buildBrowserAutoExtractDeps(): BrowserAutoExtractDeps {
       return {
         cookies: result.cookies,
         userAgent: result.userAgent,
-        savedAt: Date.now(),
       };
     },
+    promptUserAgent: async () =>
+      input({
+        message:
+          "Couldn't auto-detect your browser's exact User-Agent. Paste it here " +
+          "(get it from the browser console via `navigator.userAgent`, or opera://about / about:version):",
+      }),
   };
 }
