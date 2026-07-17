@@ -47,3 +47,7 @@ No Playwright dependency, no headful browser process. The `playwright` package i
 ## Implementation Detail: Session Probe Target
 
 `checkAuth`'s session-validity probe (`walkthrough/steps/auth-check.ts`) targets the search endpoint (`/search/story/…`), not the homepage. As established above, the homepage never triggers a Cloudflare challenge and returns 200 regardless of session validity — probing it would give a false positive. The search endpoint enforces the same stricter CF rules the walkthrough hits in step 4, so a benign query returning a "no results" page confirms the session is genuinely valid, while a CF challenge confirms it is stale.
+
+## Addendum (2026-07-16): browser cookie auto-extraction (Option B)
+
+The manual cURL-paste decision above stands as the baseline/fallback. A live spike (see [`docs/discovery/cf-cookie-autoextract-feasibility.md`](../discovery/cf-cookie-autoextract-feasibility.md)) showed a lower-friction path is feasible: open the site in the user's own browser, let the human solve Cloudflare, then auto-read + decrypt the domain-wide `cf_clearance` from the browser's cookie store. This keeps the same human-solves-CF, cookie-replay security posture without the browser-automation weight this ADR rejected. Open question: user-agent capture, since the UA is not stored alongside the cookie in the browser's cookie database. Status: proposed follow-up, not yet implemented.
