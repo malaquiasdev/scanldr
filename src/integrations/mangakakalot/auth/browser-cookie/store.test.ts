@@ -156,7 +156,6 @@ describe("isBrowserInstalled", () => {
       appBundlePath: "/nonexistent/Foo.app",
       supportDirName: "x",
       keychainService: "x",
-      uaProductToken: null,
     };
     expect(isBrowserInstalled(def)).toBe(false);
   });

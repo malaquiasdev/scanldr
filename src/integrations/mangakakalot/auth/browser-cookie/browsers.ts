@@ -11,7 +11,6 @@ export const CHROMIUM_BROWSERS: Record<ChromiumBrowserId, ChromiumBrowserDef> = 
     appBundlePath: "/Applications/Google Chrome.app",
     supportDirName: "Google/Chrome",
     keychainService: "Chrome Safe Storage",
-    uaProductToken: null, // Chrome's own UA needs no extra product token.
   },
   opera: {
     id: "opera",
@@ -20,7 +19,6 @@ export const CHROMIUM_BROWSERS: Record<ChromiumBrowserId, ChromiumBrowserDef> = 
     appBundlePath: "/Applications/Opera.app",
     supportDirName: "com.operasoftware.Opera",
     keychainService: "Opera Safe Storage",
-    uaProductToken: "OPR",
   },
   brave: {
     id: "brave",
@@ -29,7 +27,6 @@ export const CHROMIUM_BROWSERS: Record<ChromiumBrowserId, ChromiumBrowserDef> = 
     appBundlePath: "/Applications/Brave Browser.app",
     supportDirName: "BraveSoftware/Brave-Browser",
     keychainService: "Brave Safe Storage",
-    uaProductToken: null, // Brave deliberately keeps a Chrome-shaped UA (no Brave token).
   },
   edge: {
     id: "edge",
@@ -38,7 +35,6 @@ export const CHROMIUM_BROWSERS: Record<ChromiumBrowserId, ChromiumBrowserDef> = 
     appBundlePath: "/Applications/Microsoft Edge.app",
     supportDirName: "Microsoft Edge",
     keychainService: "Microsoft Edge Safe Storage",
-    uaProductToken: "Edg",
   },
 };
 

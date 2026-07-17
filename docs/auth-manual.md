@@ -2,14 +2,20 @@
 
 Capturing your real-browser Cloudflare session lets the downloader (mangakakalot.gg) bypass the bot protection. This happens either via the standalone `scanldr auth` command (historical, pre-epic #116) or inline during the interactive walkthrough (`bun start`), which prompts for a session when Mangakakalot is selected and no valid session exists.
 
-## Browser auto-extract (macOS + Chrome/Opera/Brave/Edge) — issue #202
+## Browser auto-extract (macOS + Chrome/Opera/Brave/Edge) — issue #202 (UA fix: #205)
 
 On macOS, when a supported Chromium browser (Chrome, Opera, Brave, or Edge) is installed, the walkthrough tries this lower-friction path first:
 
 1. scanldr opens `https://www.mangakakalot.gg/` in your browser (`open -a <Browser>`).
 2. Solve the Cloudflare challenge if one appears, then press Enter in the terminal.
-3. scanldr locates your browser's cookie store, decrypts the domain-wide `cf_clearance` (macOS Keychain + the standard Chromium `v10` AES scheme — no new dependency, no automation), and derives a matching user-agent from your browser's version.
-4. The extracted session is validated with a real request **before** anything is persisted. If validation fails for any reason (no `cf_clearance` found, Keychain access denied, stale/mismatched UA), scanldr automatically falls back to the manual cURL paste below — you'll never end up with a silently broken session.
+3. macOS will prompt a Keychain dialog the first time (`<Browser> Safe Storage` wants to access your keychain). Click **"Always Allow"** — not "Allow". "Allow" only authorizes this one process invocation and macOS will ask again on the very next run; "Always Allow" remembers the decision so this step is skipped on future runs. This prompt only recurs when a genuine re-authentication happens (the persisted session went stale) — it does not appear on every run once a valid session is stored in `auth.json`.
+4. scanldr locates your browser's cookie store and decrypts the domain-wide `cf_clearance` (macOS Keychain + the standard Chromium `v10` AES scheme — no new dependency, no automation).
+5. **User-agent**: `cf_clearance` is bound to the exact User-Agent string the browser sent when it solved the challenge.
+   - **Chrome**: scanldr derives the exact UA automatically — Chrome's own app version IS its Chromium engine version, so no prompt is needed.
+   - **Opera / Brave / Edge**: these ship their own version numbers that don't map 1:1 to the underlying Chromium release, so scanldr cannot safely fabricate a UA (a wrong UA makes the probe fail every time — see #205). Instead, scanldr prompts you to paste your browser's exact User-Agent, one line, no editor needed. Get it from either:
+     - the browser's DevTools console: type `navigator.userAgent` and press Enter, or
+     - `opera://about` (Opera) / `about:version` (Brave, Edge) — look for the "User Agent" field.
+6. The extracted session (cookie + UA) is validated with a real request **before** anything is persisted. If validation fails for any reason (no `cf_clearance` found, Keychain access denied, blank/wrong pasted UA), scanldr automatically falls back to the manual cURL paste below — you'll never end up with a silently broken session.
 
 This only reads cookies from your own browser, on your own machine; the raw token is never logged (same redaction as the manual flow). Multiple browser profiles are handled automatically — the profile with the most recently solved challenge wins.
 

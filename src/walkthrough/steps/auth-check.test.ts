@@ -396,7 +396,7 @@ describe("checkAuth", () => {
 
   describe("browser auto-extract fallback", () => {
     function fakeBrowserAutoExtract(overrides: Partial<BrowserAutoExtractDeps> = {}) {
-      const calls = { opened: false, waited: false };
+      const calls = { opened: false, waited: false, promptedForUa: false };
       const deps: BrowserAutoExtractDeps = {
         detectInstalledBrowser: () => "opera",
         openBrowser: () => {
@@ -408,8 +408,11 @@ describe("checkAuth", () => {
         extractSession: async () => ({
           cookies: { cf_clearance: "auto-extracted-token" },
           userAgent: "Mozilla/5.0 fake-ua",
-          savedAt: Date.now(),
         }),
+        promptUserAgent: async () => {
+          calls.promptedForUa = true;
+          return "Mozilla/5.0 pasted-ua";
+        },
         ...overrides,
       };
       return { deps, calls };
@@ -549,7 +552,6 @@ describe("checkAuth", () => {
         extractSession: async () => ({
           cookies: { cf_clearance: garbledCfClearance },
           userAgent: "Mozilla/5.0 fake-ua",
-          savedAt: Date.now(),
         }),
       });
 
@@ -622,6 +624,182 @@ describe("checkAuth", () => {
         cookies: Record<string, string>;
       };
       expect(authJson.cookies.cf_clearance).toBe("auto-extracted-token");
+    });
+
+    // --- UA-prompt tests (issue #205) ---
+
+    test("non-Chrome: no derived UA → prompts for exact UA → probe ok → persists with pasted UA", async () => {
+      const dir = join(tmpdir(), `scanldr-auto-ua-prompt-${Date.now()}`);
+      let editorCalled = false;
+      mock.module("../prompts.ts", () => ({
+        editor: async () => {
+          editorCalled = true;
+          return VALID_CURL;
+        },
+        input: async () => "",
+        select: async () => "",
+        checkbox: async () => [],
+        confirm: async () => false,
+      }));
+
+      const { deps, calls } = fakeBrowserAutoExtract({
+        extractSession: async () => ({
+          cookies: { cf_clearance: "auto-extracted-token" },
+          userAgent: undefined,
+        }),
+        promptUserAgent: async () => {
+          calls.promptedForUa = true;
+          return "Mozilla/5.0 exact-pasted-ua";
+        },
+      });
+      const candidateFetch = async () =>
+        new Response("<html><body>Manga list</body></html>", { status: 200 });
+
+      const { checkAuth } = await import("./auth-check.ts");
+      const result = await checkAuth({
+        requiresAuth: true,
+        logger,
+        dataHome: dir,
+        probeClientFactory: fakeProbeSequence([okResponse]),
+        browserAutoExtract: deps,
+        fetch: candidateFetch,
+      });
+
+      expect(calls.promptedForUa).toBe(true);
+      expect(editorCalled).toBe(false);
+      expect(result.ok).toBe(true);
+      expect(result.justAuthenticated).toBe(true);
+
+      const authJson = JSON.parse(readFileSync(join(dir, "scanldr", "auth.json"), "utf-8")) as {
+        cookies: Record<string, string>;
+        userAgent: string;
+      };
+      expect(authJson.cookies.cf_clearance).toBe("auto-extracted-token");
+      expect(authJson.userAgent).toBe("Mozilla/5.0 exact-pasted-ua");
+    });
+
+    test("Chrome: UA auto-derived → promptUserAgent NOT called → persists", async () => {
+      const dir = join(tmpdir(), `scanldr-auto-ua-chrome-${Date.now()}`);
+      mock.module("../prompts.ts", () => ({
+        editor: async () => VALID_CURL,
+        input: async () => "",
+        select: async () => "",
+        checkbox: async () => [],
+        confirm: async () => false,
+      }));
+
+      const { deps, calls } = fakeBrowserAutoExtract({
+        detectInstalledBrowser: () => "chrome",
+        extractSession: async () => ({
+          cookies: { cf_clearance: "auto-extracted-token" },
+          userAgent: "Mozilla/5.0 exact-chrome-ua",
+        }),
+      });
+      const candidateFetch = async () =>
+        new Response("<html><body>Manga list</body></html>", { status: 200 });
+
+      const { checkAuth } = await import("./auth-check.ts");
+      const result = await checkAuth({
+        requiresAuth: true,
+        logger,
+        dataHome: dir,
+        probeClientFactory: fakeProbeSequence([okResponse]),
+        browserAutoExtract: deps,
+        fetch: candidateFetch,
+      });
+
+      expect(calls.promptedForUa).toBe(false);
+      expect(result.ok).toBe(true);
+      expect(result.justAuthenticated).toBe(true);
+
+      const authJson = JSON.parse(readFileSync(join(dir, "scanldr", "auth.json"), "utf-8")) as {
+        userAgent: string;
+      };
+      expect(authJson.userAgent).toBe("Mozilla/5.0 exact-chrome-ua");
+    });
+
+    test("non-Chrome, empty/blank pasted UA → falls back to manual paste (no persist of auto session)", async () => {
+      const dir = join(tmpdir(), `scanldr-auto-ua-blank-${Date.now()}`);
+      let editorCalled = false;
+      mock.module("../prompts.ts", () => ({
+        editor: async () => {
+          editorCalled = true;
+          return VALID_CURL;
+        },
+        input: async () => "",
+        select: async () => "",
+        checkbox: async () => [],
+        confirm: async () => false,
+      }));
+
+      const { deps } = fakeBrowserAutoExtract({
+        extractSession: async () => ({
+          cookies: { cf_clearance: "auto-extracted-token" },
+          userAgent: undefined,
+        }),
+        promptUserAgent: async () => "   ",
+      });
+
+      const { checkAuth } = await import("./auth-check.ts");
+      const result = await checkAuth({
+        requiresAuth: true,
+        logger,
+        dataHome: dir,
+        probeClientFactory: fakeProbeSequence([okResponse]),
+        browserAutoExtract: deps,
+      });
+
+      expect(editorCalled).toBe(true);
+      expect(result.ok).toBe(true);
+      expect(result.justAuthenticated).toBe(true);
+
+      const authJson = JSON.parse(readFileSync(join(dir, "scanldr", "auth.json"), "utf-8")) as {
+        cookies: Record<string, string>;
+      };
+      // Persisted session must be the manual paste, never the auto-extracted candidate.
+      expect(authJson.cookies.cf_clearance).toBe("abc");
+    });
+
+    test("non-Chrome, probe fails with pasted UA → falls back to manual paste", async () => {
+      const dir = join(tmpdir(), `scanldr-auto-ua-probefail-${Date.now()}`);
+      let editorCalled = false;
+      mock.module("../prompts.ts", () => ({
+        editor: async () => {
+          editorCalled = true;
+          return VALID_CURL;
+        },
+        input: async () => "",
+        select: async () => "",
+        checkbox: async () => [],
+        confirm: async () => false,
+      }));
+
+      const { deps, calls } = fakeBrowserAutoExtract({
+        extractSession: async () => ({
+          cookies: { cf_clearance: "auto-extracted-token" },
+          userAgent: undefined,
+        }),
+      });
+      const candidateFetch = async () => new Response("forbidden", { status: 403 });
+
+      const { checkAuth } = await import("./auth-check.ts");
+      const result = await checkAuth({
+        requiresAuth: true,
+        logger,
+        dataHome: dir,
+        probeClientFactory: fakeProbeSequence([okResponse]),
+        browserAutoExtract: deps,
+        fetch: candidateFetch,
+      });
+
+      expect(calls.promptedForUa).toBe(true);
+      expect(editorCalled).toBe(true);
+      expect(result.ok).toBe(true);
+
+      const authJson = JSON.parse(readFileSync(join(dir, "scanldr", "auth.json"), "utf-8")) as {
+        cookies: Record<string, string>;
+      };
+      expect(authJson.cookies.cf_clearance).toBe("abc");
     });
   });
 });

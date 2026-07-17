@@ -17,8 +17,6 @@ export interface ChromiumBrowserDef {
   supportDirName: string;
   /** macOS Keychain service name for the Safe Storage password ("security find-generic-password -s"). */
   keychainService: string;
-  /** Token used when building the Chromium-based UA string, e.g. "Chrome", "OPR", "Brave", "Edg". */
-  uaProductToken: string | null;
 }
 
 /** One row read from a Chromium `Cookies` SQLite database. */
@@ -68,7 +66,12 @@ export interface ExtractBrowserSessionOptions {
 export interface ExtractedBrowserSession {
   /** All cf_* cookies found for the domain, decrypted. Always includes cf_clearance when present. */
   cookies: Record<string, string>;
-  userAgent: string;
+  /**
+   * Exact UA derived from the browser (Chrome only — its app version IS the Chromium
+   * version). Undefined for non-Chrome browsers (issue #205) — the caller must prompt
+   * the human to paste their exact UA in that case.
+   */
+  userAgent: string | undefined;
   browser: ChromiumBrowserId;
   profile: string;
 }
