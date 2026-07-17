@@ -23,6 +23,21 @@ Single-walkthrough CLI to download manga from Mangakakalot, one chapter per CBZ 
 
 ## Installation
 
+### Stable (recommended)
+
+Clone the repo and check out the latest release tag (see [releases](https://github.com/malaquiasdev/scanldr/releases), tagged as `vX.Y.Z`, e.g. `v1.2.0`):
+
+```bash
+git clone https://github.com/malaquiasdev/scanldr.git
+cd scanldr
+git checkout "$(git tag --sort=-v:refname | head -n1)"   # latest stable release
+bun install
+```
+
+### Development (bleeding edge)
+
+Staying on `main` gives you the latest unreleased changes, but it may be unstable:
+
 ```bash
 git clone https://github.com/malaquiasdev/scanldr.git
 cd scanldr
