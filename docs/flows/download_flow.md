@@ -8,7 +8,7 @@ The current single-walkthrough CLI (post-epic #116, chapter-selection-only since
 
 1. **Title prompt** — free-text input ("Manga title:").
 2. **Source picker** — auto-selects Mangakakalot, the sole registered source (see [ADR-008](../adr/008-retire-mangadex-source.md); MangaDex was retired).
-3. **Auth check** — Mangakakalot requires auth, so every run prompts for a cURL paste when no valid session exists.
+3. **Auth check** — Mangakakalot requires auth, so every run validates the stored session. On a stale/absent session, the walkthrough launches an undetected browser (patchright) to capture a fresh session while the user solves any Cloudflare challenge, falling back to a manual cURL-paste prompt if the browser capture is unavailable or fails.
 4. **Search results** — visual numbered picker, single select.
 5. **Range picker** — visual multi-select list of available chapters; no range-string parser, no mode choice (chapter is the only *discovery* mode — see ADR-009).
 6. **Pack prompt** — "Group these chapters into a single volume?" (yes/no). This is the

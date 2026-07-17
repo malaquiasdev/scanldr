@@ -46,7 +46,7 @@ This document is the central index of all technical documentation for **scanldr*
 ## Technical Standards
 - **Runtime:** Bun
 - **Language:** TypeScript
-- **Auth:** manual cURL paste from the user's real browser via DevTools (`parseCurl` in `src/plugins/auth-path/`)
+- **Auth:** undetected-browser capture via patchright (primary) + manual cURL-paste fallback — `src/integrations/mangakakalot/auth/browser-capture/` + `curl-parser.ts`
 - **Metadata source:** mangakakalot.gg (scraped)
 - **Output formats:** CBZ / ZIP, one archive per chapter by default, or one packed volume `.cbz` with optional cover when the user opts to group chapters (ADR-009 chapter-only base + ADR-010 restored grouping)
 - **Persistent state:** SQLite `traces` table only — 3-day TTL, one row per log event (`src/plugins/trace/`)
