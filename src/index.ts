@@ -9,9 +9,10 @@ import { CliError } from "@plugins/errors/index.ts";
 import { createLogger, type LogFormat, type LogLevel } from "@plugins/logger/index.ts";
 import { createStderrController } from "@plugins/terminal/index.ts";
 import { createTraceStore } from "@plugins/trace/index.ts";
+import pkg from "../package.json" with { type: "json" };
 import { runWalkthrough } from "./walkthrough/index.ts";
 
-const VERSION = "0.0.0";
+const VERSION = pkg.version;
 
 const USAGE = `scanldr — offline downloader for manga, HQ, manhwa, and webtoon
 
