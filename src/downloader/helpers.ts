@@ -4,32 +4,10 @@ export function pad(n: number, width: number): string {
 
 export function detectExtFromBytes(bytes: Uint8Array): string | null {
   if (bytes.length < 4) return null;
-  // PNG: 89 50 4E 47
-  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
-    return ".png";
-  }
-  // JPEG: FF D8 FF
-  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return ".jpg";
-  }
-  // WebP: RIFF (bytes 0-3) + WEBP (bytes 8-11)
-  if (
-    bytes.length >= 12 &&
-    bytes[0] === 0x52 &&
-    bytes[1] === 0x49 &&
-    bytes[2] === 0x46 &&
-    bytes[3] === 0x46 &&
-    bytes[8] === 0x57 &&
-    bytes[9] === 0x45 &&
-    bytes[10] === 0x42 &&
-    bytes[11] === 0x50
-  ) {
-    return ".webp";
-  }
-  // GIF: 47 49 46 38 (GIF8)
-  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) {
-    return ".gif";
-  }
+  if (isPngSignature(bytes)) return ".png";
+  if (isJpegSignature(bytes)) return ".jpg";
+  if (isWebpSignature(bytes)) return ".webp";
+  if (isGifSignature(bytes)) return ".gif";
   return null;
 }
 
@@ -73,4 +51,30 @@ export function padBundleNumber(value: string, width: number): string {
   const n = Number(intPart);
   if (Number.isNaN(n)) return value;
   return String(n).padStart(width, "0") + decPart;
+}
+
+function isPngSignature(bytes: Uint8Array): boolean {
+  return bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+}
+
+function isJpegSignature(bytes: Uint8Array): boolean {
+  return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+}
+
+function isWebpSignature(bytes: Uint8Array): boolean {
+  return (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  );
+}
+
+function isGifSignature(bytes: Uint8Array): boolean {
+  return bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38;
 }
