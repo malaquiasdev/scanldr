@@ -1,6 +1,3 @@
-// Pure cURL parser — no shell exec, no external deps.
-// Supports Chrome (Unix/Windows ^-escapes), Firefox, and Safari "Copy as cURL" formats.
-
 import type { ParsedCurl } from "./types.ts";
 import { AuthError } from "./types.ts";
 
@@ -13,9 +10,7 @@ import { AuthError } from "./types.ts";
  * - Bare tokens (split on whitespace)
  */
 export function tokenizeCurl(input: string): string[] {
-  const src = input
-    .replace(/\^\r?\n\s*/g, " ") // cmd.exe ^ continuation
-    .replace(/\\\r?\n\s*/g, " "); // bash \ continuation
+  const src = input.replace(/\^\r?\n\s*/g, " ").replace(/\\\r?\n\s*/g, " ");
 
   const tokens: string[] = [];
   let i = 0;
@@ -27,7 +22,6 @@ export function tokenizeCurl(input: string): string[] {
     const ch = src.charAt(i);
 
     if (ch === "'") {
-      // Unix single-quoted: literal until closing '
       i++;
       let tok = "";
       while (i < src.length && src.charAt(i) !== "'") {
@@ -36,7 +30,6 @@ export function tokenizeCurl(input: string): string[] {
       i++;
       tokens.push(tok);
     } else if (ch === '"') {
-      // Unix double-quoted: handle \" and \\ inside
       i++;
       let tok = "";
       while (i < src.length && src.charAt(i) !== '"') {
@@ -55,7 +48,6 @@ export function tokenizeCurl(input: string): string[] {
       i++;
       tokens.push(tok);
     } else {
-      // Bare token (ends at whitespace)
       let tok = "";
       while (i < src.length && !/\s/.test(src.charAt(i))) {
         tok += src.charAt(i++);
@@ -83,8 +75,11 @@ function parseCookieString(cookieStr: string): Record<string, string> {
 }
 
 /**
+ * Pure cURL parser — no shell exec, no external deps.
  * Parses a raw cURL command string into URL, cookies, and user-agent.
- * Handles Chrome (Unix/Windows), Firefox, and Safari "Copy as cURL" output.
+ * Handles Chrome (Unix/Windows ^-escapes), Firefox, and Safari "Copy as cURL" output.
+ * Extracts positional tokens as the URL while ignoring non-matching flags
+ * (e.g. --compressed, --insecure, -k, -s, -L, -v).
  *
  * Throws `AuthError` if the input is not a recognizable cURL command.
  */
@@ -152,13 +147,10 @@ Got: ${got}`);
       tok === "--max-time" ||
       tok === "--connect-timeout"
     ) {
-      // These flags take a value — skip it.
       idx++;
     } else if (!tok.startsWith("-")) {
-      // Positional: the URL (ignore --compressed, --insecure, -k, -s, -L, -v, etc.)
       url = tok;
     }
-    // Unknown flags / valueless flags: silently skip
 
     idx++;
   }
