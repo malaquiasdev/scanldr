@@ -1,5 +1,7 @@
-// Adapter wrapping createMangakakalotClient for the walkthrough SourceAdapter interface.
-// Does NOT modify the integration client — only maps types.
+/**
+ * Adapter wrapping createMangakakalotClient for the walkthrough SourceAdapter interface.
+ * Does NOT modify the integration client — only maps types.
+ */
 
 import type { ChapterInput, ImageRef } from "@integrations/_shared/media.ts";
 import type { FallbackHttpClient } from "@integrations/fallback-http/index.ts";
@@ -29,7 +31,9 @@ function buildChapterLabel(ref: FallbackChapterRef): string {
 export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): SourceAdapter {
   const { logger } = opts;
 
-  // Lazily-constructed clients — createFallbackHttp is async so we cache the promise
+  /**
+   * Lazily-constructed clients — createFallbackHttp is async so we cache the promise
+   */
   let _httpPromise: Promise<FallbackHttpClient> | undefined;
   function getHttpPromise(): Promise<FallbackHttpClient> {
     if (opts.http) return Promise.resolve(opts.http);
@@ -57,11 +61,13 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
     }));
   }
 
+  /**
+   * Null chapter numbers become the "none" sentinel (downloader/pack understand it);
+   * duplicates get disambiguating suffixes "none-1", "none-2" to avoid zip-prefix collisions (#122).
+   */
   async function listChapters(hitId: string): Promise<ChapterListing[]> {
     const client = await getClientPromise();
     const chapters = await client.getChapterList(hitId);
-    // Null chapter numbers become the "none" sentinel (downloader/pack understand it);
-    // duplicates get disambiguating suffixes "none-1", "none-2" to avoid zip-prefix collisions (#122).
     let noneIdx = 0;
     return chapters.map((ch) => {
       const num = ch.chapter !== null ? ch.chapter : `none-${++noneIdx}`;
@@ -79,10 +85,12 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
 
     const pages: ImageRef[] = imageRefs.map((ref, i) => ({ url: ref.url, page: i + 1 }));
 
+    /**
+     * Image CDN is a different Cloudflare zone with hotlink protection: must NOT forward the
+     * site cookie (cross-origin leak) and MUST send Referer, or the CDN rejects the request.
+     * getAnonymous throws (CloudflareError / short-circuit) before any log — no per-page log on this failure path.
+     */
     const imageFetcher = async (ref: ImageRef): Promise<Uint8Array> => {
-      // Image CDN is a different Cloudflare zone with hotlink protection: must NOT forward the
-      // site cookie (cross-origin leak) and MUST send Referer, or the CDN rejects the request.
-      // getAnonymous throws (CloudflareError / short-circuit) before any log — no per-page log on this failure path.
       const res = await http.getAnonymous(ref.url, {
         referer: "https://www.mangakakalot.gg/",
         accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
@@ -91,7 +99,6 @@ export function createMangakakalotAdapter(opts: MangakakalotAdapterOptions): Sou
         "sec-fetch-site": "cross-site",
       });
       const buf = await res.arrayBuffer();
-      // Per-page progress is owned by the execute/progress layer (#171), not logged here.
       return new Uint8Array(buf);
     };
 
