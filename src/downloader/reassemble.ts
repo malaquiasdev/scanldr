@@ -22,6 +22,13 @@ import type { PageDims, RawPage } from "./types.ts";
  *
  * Returns an array of index groups (each group is the list of original indices it merges),
  * covering every input index exactly once, in order.
+ *
+ * The same-width run's `end` (found by findSameWidthRunEnd) is guaranteed non-null-backed:
+ * it only extends while `dims[end]?.width === width`, which is never true for a null entry,
+ * so the sliced run can be safely cast to `PageDims[]`.
+ *
+ * Any tiles left in a run without a sub-cap closer stand alone as their own group
+ * (see ADR-007).
  */
 export function groupTiles(dims: Array<PageDims | null>): number[][] {
   const groups: number[][] = [];
@@ -36,34 +43,44 @@ export function groupTiles(dims: Array<PageDims | null>): number[][] {
     }
     const width = entry.width;
 
-    // Find the extent of the same-width run starting at i.
-    let end = i;
-    while (end < dims.length && dims[end]?.width === width) {
-      end++;
-    }
-    // Non-null by construction: the while loop above only extends `end` while
-    // dims[end]?.width === width, which is never true for a null entry.
+    const end = findSameWidthRunEnd(dims, i, width);
     const run = dims.slice(i, end) as PageDims[];
     const cap = Math.max(...run.map((d) => d.height));
 
-    // Walk the run, splitting it into groups per the cap rule.
-    let groupStart = i;
-    for (let j = i; j < end; j++) {
-      const height = dims[j]?.height;
-      if (height !== undefined && height < cap) {
-        // Closing tile (or standalone sub-cap tile) — close the group here.
-        groups.push(range(groupStart, j));
-        groupStart = j + 1;
-      }
-    }
-    // Any tiles left in the run without a sub-cap closer stand alone (see ADR-007).
-    for (let j = groupStart; j < end; j++) {
-      groups.push([j]);
-    }
+    groups.push(...splitRunByCap(dims, i, end, cap));
 
     i = end;
   }
 
+  return groups;
+}
+
+function findSameWidthRunEnd(dims: Array<PageDims | null>, start: number, width: number): number {
+  let end = start;
+  while (end < dims.length && dims[end]?.width === width) {
+    end++;
+  }
+  return end;
+}
+
+function splitRunByCap(
+  dims: Array<PageDims | null>,
+  start: number,
+  end: number,
+  cap: number,
+): number[][] {
+  const groups: number[][] = [];
+  let groupStart = start;
+  for (let j = start; j < end; j++) {
+    const height = dims[j]?.height;
+    if (height !== undefined && height < cap) {
+      groups.push(range(groupStart, j));
+      groupStart = j + 1;
+    }
+  }
+  for (let j = groupStart; j < end; j++) {
+    groups.push([j]);
+  }
   return groups;
 }
 
@@ -127,6 +144,9 @@ async function stitch(pages: RawPage[], dims: PageDims[]): Promise<RawPage> {
  * Detects and merges CDN-tiled pages within one chapter's ordered raw pages.
  * Non-tiled pages (group length 1) pass through byte-identical (no re-encode).
  * Tiled groups (length >= 2) are vertically stitched and re-encoded as webp.
+ *
+ * If stitching a tiled group fails, degrades by falling back to the group's tiles
+ * unmerged so the bundle continues rather than aborting the whole chapter.
  */
 export async function reassembleChapterPages(
   pages: RawPage[],
@@ -152,7 +172,6 @@ export async function reassembleChapterPages(
     try {
       out.push(await stitch(tiles, tileDims));
     } catch (err) {
-      // Degrade: stitch failure falls back to the group's tiles unmerged, bundle continues.
       logger?.warn(
         {
           event: "downloader.tiles_stitch_failed",
