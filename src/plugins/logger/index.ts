@@ -15,6 +15,9 @@ export function createLogger(options: LoggerOptions, traceStore?: TraceStore): L
   const write = options.write ?? ((line: string) => process.stderr.write(line));
   const now = options.now ?? (() => new Date().toISOString());
 
+  /**
+   * Emits logs in either JSON or human format. In human format, plain line without fields suffix — fields are captured in trace store only.
+   */
   function emit(level: LogLevel, fields: Record<string, unknown>, msg: string): void {
     if (LEVELS[level] > threshold) return;
     const ts = now();
@@ -32,7 +35,6 @@ export function createLogger(options: LoggerOptions, traceStore?: TraceStore): L
       write(`${JSON.stringify(payload)}\n`);
       return;
     }
-    // Human format: plain line, no fields suffix. Fields are captured in trace store only.
     write(`${ts} ${level} ${msg}\n`);
   }
 
