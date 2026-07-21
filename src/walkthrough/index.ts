@@ -101,12 +101,15 @@ interface ChapterListingCache {
   chapters: ChapterListing[] | null;
 }
 
-/** Resolves the session-probe client factory: explicit override, opt-out (null), or the real fallback-http client. */
+/**
+ * Resolves the session-probe client factory: explicit override, opt-out (null), or the
+ * real fallback-http client. Lazily wrapped so it reads the auth.json that was just
+ * written by the paste prompt.
+ */
 function resolveProbeClientFactory(
   opts: RunWalkthroughOptions,
 ): SessionProbeClientFactory | undefined {
   if (opts.probeClientFactory === null) return undefined;
-  // Lazily wrapped so it reads the auth.json that was just written by the paste prompt.
   return opts.probeClientFactory ?? (() => createFallbackHttp({ logger: opts.logger }));
 }
 
@@ -114,6 +117,16 @@ function resolveProbeClientFactory(
 function resolveBrowserCapture(opts: RunWalkthroughOptions): BrowserCaptureDeps | undefined {
   if (opts.browserCapture === null) return undefined;
   return opts.browserCapture ?? buildBrowserCaptureDeps();
+}
+
+/**
+ * Resolves browser capture deps and guards them so the launcher fires at most once
+ * per run (issue #208 P2) — shared across the initial checkAuth call and every
+ * subsequent doRefresh() invocation from withSessionRetry.
+ */
+function resolveGuardedBrowserCapture(opts: RunWalkthroughOptions): BrowserCaptureDeps | undefined {
+  const resolvedBrowserCapture = resolveBrowserCapture(opts);
+  return resolvedBrowserCapture ? withCaptureOnce(resolvedBrowserCapture) : undefined;
 }
 
 /**
@@ -189,6 +202,9 @@ async function runSameMangaIteration(
 
 /**
  * Composes all 9 walkthrough steps in order.
+ * The source is picked once per session and reused across "new manga" iterations.
+ * The adapter is resolved after the auth check so a freshly-persisted session is
+ * available to it.
  * Returns the assembled plan + execution result on success.
  * Returns `{ cancelled: true }` when the user hits Ctrl+C.
  * Returns `{ ok: false, reason }` on WalkthroughError.
@@ -200,17 +216,10 @@ export async function runWalkthrough(
   const outDir = opts.outDir ?? process.cwd();
 
   try {
-    // Picked once per session; reused across "new manga" iterations.
     const source = await pickSource();
 
     const probeClientFactory = resolveProbeClientFactory(opts);
-    // Resolved ONCE per run and guarded so the launcher fires at most once
-    // (issue #208 P2) — shared across the initial checkAuth call and every
-    // subsequent doRefresh() invocation from withSessionRetry.
-    const resolvedBrowserCapture = resolveBrowserCapture(opts);
-    const browserCapture = resolvedBrowserCapture
-      ? withCaptureOnce(resolvedBrowserCapture)
-      : undefined;
+    const browserCapture = resolveGuardedBrowserCapture(opts);
 
     await checkAuth({
       requiresAuth: source.requiresAuth,
@@ -222,7 +231,6 @@ export async function runWalkthrough(
 
     const doRefresh = buildRefreshFn(opts, probeClientFactory, browserCapture);
 
-    // Resolve adapter after auth check so a freshly-persisted session is available to it.
     const adapter = resolveAdapter(source.id, { logger: opts.logger, config: opts.config });
 
     const flowBase: Omit<DownloadFlowOptions, "title" | "hit" | "cache"> = {
@@ -276,8 +284,7 @@ export async function runWalkthrough(
     }
     return lastResult;
   } catch (err) {
-    // ExitPromptError is @inquirer/prompts' Ctrl+C signal, not a real failure.
-    if (err instanceof Error && err.name === "ExitPromptError") {
+    if (isUserCancellation(err)) {
       return { cancelled: true };
     }
     if (err instanceof WalkthroughError) {
@@ -309,7 +316,8 @@ interface DownloadFlowOptions {
 /**
  * Runs steps 6-9 (range → execute) for an already-resolved manga (hit). Reuses the
  * cached chapter listing when present so "same manga" iterations never re-call
- * adapter.search or adapter.listChapters.
+ * adapter.search or adapter.listChapters. Creates a fresh progress handle per
+ * iteration so the bar reflects this run's own bundle count.
  */
 async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<WalkthroughResult> {
   const {
@@ -357,7 +365,6 @@ async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<Walkthrou
     coverUrl,
   };
 
-  // Fresh progress handle per iteration so the bar reflects this run's own bundle count.
   const progress = createProgress({
     enabled: progressEnabled,
     totalChapters: selectedBundles.length,
@@ -382,18 +389,30 @@ async function runDownloadFlow(flowOpts: DownloadFlowOptions): Promise<Walkthrou
     executeDeps,
   );
 
-  // Resilient to partial failure: still return to the next-action prompt with a one-line summary.
+  warnPartialFailure(failed, selectedBundles.length, logger);
+
+  return result;
+}
+
+/**
+ * Resilient to partial failure: logs a one-line summary and still returns to the
+ * next-action prompt instead of aborting the walkthrough.
+ */
+function warnPartialFailure(failed: number, total: number, logger: Logger): void {
   if (failed > 0) {
     logger.warn(
       {
         event: "walkthrough.download_summary_failed",
         context: "walkthrough",
         failed,
-        total: selectedBundles.length,
+        total,
       },
       `${failed} chapter(s) failed to download`,
     );
   }
+}
 
-  return result;
+/** True when `err` is @inquirer/prompts' Ctrl+C signal, not a real failure. */
+function isUserCancellation(err: unknown): boolean {
+  return err instanceof Error && err.name === "ExitPromptError";
 }

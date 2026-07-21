@@ -16,7 +16,7 @@ export interface CoverPromptOptions {
   logger: Logger;
 }
 
-/** Step 8 (when packing): optionally provide a cover image URL. */
+/** Step 8 (when packing): optionally provide a cover image URL. Skips gracefully after max retries. */
 export async function promptCoverUrl(opts: CoverPromptOptions): Promise<string | null> {
   for (let attempt = 0; attempt < MAX_URL_RETRIES; attempt++) {
     const raw = await input({
@@ -44,6 +44,5 @@ export async function promptCoverUrl(opts: CoverPromptOptions): Promise<string |
     }
   }
 
-  // After max retries with invalid URL, skip gracefully
   return null;
 }

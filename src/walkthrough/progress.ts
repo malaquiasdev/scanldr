@@ -1,9 +1,10 @@
 import type { ProgressHandle, ProgressOptions, ProgressState } from "./types.ts";
 
 const BAR_WIDTH = 20;
-const THROTTLE_MS = 200; // ~5 updates/sec
+/** ~5 updates/sec */
+const THROTTLE_MS = 200;
 const MAX_SAMPLES = 20;
-// Line-width budget, not arbitrary: label + ~70 fixed chars (bar, counters, page, avg, ETA) must stay within ~80 cols.
+/** Line-width budget, not arbitrary: label + ~70 fixed chars (bar, counters, page, avg, ETA) must stay within ~80 cols. */
 const MAX_LABEL_LEN = 24;
 
 /** Defensive truncation: labels are short by design, but a wrapped line would defeat the in-place \r redraw. */
@@ -99,10 +100,10 @@ export function createProgress(opts: ProgressOptions): ProgressHandle {
     return Math.max(0, Math.min(100, raw));
   }
 
+  /** Best-effort: assumes remaining chapters have a similar page count to the current one. */
   function computeEtaMs(avgPageMs: number): number {
     const remainingPagesInChapter = Math.max(0, totalPages - currentPage);
     const remainingChapters = Math.max(0, totalChapters - currentChapter);
-    // Best-effort: assume remaining chapters have a similar page count to the current one.
     const remainingPages = remainingPagesInChapter + remainingChapters * totalPages;
     return remainingPages * avgPageMs;
   }
@@ -137,9 +138,11 @@ export function createProgress(opts: ProgressOptions): ProgressHandle {
       lastPageStartedAt = null;
       render(true);
     },
-    // One call per completed page (not per dispatch) is the caller's contract, enforced at
-    // the onPageCompleted callback boundary — see downloader/service.test.ts and
-    // walkthrough/steps/execute.test.ts.
+    /**
+     * One call per completed page (not per dispatch) is the caller's contract, enforced
+     * at the onPageCompleted callback boundary — see downloader/service.test.ts and
+     * walkthrough/steps/execute.test.ts.
+     */
     updatePage(): void {
       if (!enabled) return;
       const nowMs = now();
@@ -154,7 +157,7 @@ export function createProgress(opts: ProgressOptions): ProgressHandle {
     },
     finish(): void {
       if (!enabled) return;
-      render(true); // force final flush, bypassing throttle
+      render(true); // force a final flush, bypassing the throttle
       write("\n");
       endBar?.();
     },

@@ -70,7 +70,48 @@ function toSlug(title: string): string {
     .replace(/^-|-$/g, "");
 }
 
-/** Step 9: execute the assembled plan — download each chapter, optionally pack into one volume. */
+/** Drops only the paths actually deleted; failed deletions stay in outputs (still exist). */
+function removeDeletedFromOutputs(outputs: string[], deleted: string[]): void {
+  for (const path of deleted) {
+    const idx = outputs.indexOf(path);
+    if (idx !== -1) outputs.splice(idx, 1);
+  }
+}
+
+/** Fallback feedback (per-completed-page log) when the progress bar doesn't own stderr. */
+function logPageProgressFallback(args: {
+  progressEnabled: boolean;
+  logger: Logger;
+  pagesCompleted: number;
+  totalPages: number;
+  bundleId: string;
+  bundleLabel: string;
+}): void {
+  const { progressEnabled, logger, pagesCompleted, totalPages, bundleId, bundleLabel } = args;
+  if (progressEnabled) return;
+  logger.info(
+    {
+      event: "walkthrough.fetch_page",
+      context: "walkthrough",
+      completed: pagesCompleted,
+      total: totalPages,
+      bundle_id: bundleId,
+    },
+    `fetched ${pagesCompleted}/${totalPages} pages of ${bundleLabel}`,
+  );
+}
+
+/**
+ * Step 9: execute the assembled plan — download each chapter, optionally pack into one
+ * volume. The whole download loop runs inside a try/finally so `progress.finish()` (and
+ * `endBar()` teardown) always run, even if the loop re-throws (MangakakalotParseError /
+ * WalkthroughError) — otherwise a re-entrant iteration would inherit phantom stale bar
+ * state from this aborted run.
+ * Each bundle (fetch + download) is retried once on Cloudflare rejection when refreshFn
+ * is available. DOM drift (MangakakalotParseError) is systemic — every remaining bundle
+ * would fail the same way, so it aborts the loop immediately. Likewise, when CF survives
+ * a refresh (WalkthroughError), subsequent bundles would fail identically, so it aborts.
+ */
 export async function executeWalkthrough(
   opts: ExecuteWalkthroughInput,
   deps: ExecuteDeps = createDefaultExecuteDeps(),
@@ -110,9 +151,6 @@ export async function executeWalkthrough(
 
   const packedChapters: PackedChapter[] = [];
 
-  // try/finally guarantees progress.finish() (and endBar() teardown) runs even if this loop
-  // re-throws (MangakakalotParseError/WalkthroughError), so a re-entrant iteration never
-  // inherits phantom stale bar state from this aborted run.
   try {
     for (const bundle of selectedBundles) {
       bundleIndex++;
@@ -157,19 +195,14 @@ export async function executeWalkthrough(
             onPageCompleted: () => {
               progress?.updatePage();
               pagesCompleted++;
-              // Fallback feedback when the progress bar doesn't own stderr.
-              if (!progressEnabled) {
-                logger.info(
-                  {
-                    event: "walkthrough.fetch_page",
-                    context: "walkthrough",
-                    completed: pagesCompleted,
-                    total: totalPages,
-                    bundle_id: bundle.id,
-                  },
-                  `fetched ${pagesCompleted}/${totalPages} pages of ${bundle.label}`,
-                );
-              }
+              logPageProgressFallback({
+                progressEnabled,
+                logger,
+                pagesCompleted,
+                totalPages,
+                bundleId: bundle.id,
+                bundleLabel: bundle.label,
+              });
             },
           });
 
@@ -187,7 +220,6 @@ export async function executeWalkthrough(
           );
         };
 
-        // Retries the whole bundle (fetch + download) once on Cloudflare rejection when refreshFn is available.
         if (refreshFn) {
           await withSessionRetry(
             doBundle,
@@ -200,9 +232,7 @@ export async function executeWalkthrough(
           await doBundle();
         }
       } catch (err) {
-        // DOM drift is systemic — every remaining bundle would fail the same way; abort immediately.
         if (err instanceof MangakakalotParseError) throw err;
-        // CF survived refresh (WalkthroughError) — subsequent bundles would fail identically; abort.
         if (err instanceof WalkthroughError) throw err;
         failed++;
         logger.warn(
@@ -233,8 +263,9 @@ export async function executeWalkthrough(
 
         const customName = volumeName ? buildVolumeFilename(slug, volumeName) : undefined;
 
-        // Pack + delete-sources is one atomic call: deletion is only ever reachable
-        // after a successful write, and any deletion failure is best-effort (never fails the run).
+        // pack + delete-sources is one atomic call: source deletion is only reachable
+        // after a successful write, and any deletion failure is best-effort — it never
+        // fails the run.
         const { volume, deleted } = await packer.packVolumeReplacingSources({
           slug,
           outDir,
@@ -254,11 +285,7 @@ export async function executeWalkthrough(
           `packed volume: ${volume.outputPath}`,
         );
 
-        // Drop only the paths actually deleted; failed deletions stay in outputs (still exist).
-        for (const path of deleted) {
-          const idx = outputs.indexOf(path);
-          if (idx !== -1) outputs.splice(idx, 1);
-        }
+        removeDeletedFromOutputs(outputs, deleted);
         outputs.push(volume.outputPath);
       } catch (err) {
         failed++;

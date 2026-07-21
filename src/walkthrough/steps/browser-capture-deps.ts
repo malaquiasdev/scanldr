@@ -1,4 +1,3 @@
-// Builds production BrowserCaptureDeps using the real patchright launcher
 import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,6 +18,49 @@ function resolveChromeExecutablePath(): string | undefined {
   return existsSync(MACOS_CHROME_PATH) ? MACOS_CHROME_PATH : undefined;
 }
 
+type PersistentContext = Awaited<ReturnType<typeof patchright.chromium.launchPersistentContext>>;
+type ContextPage = ReturnType<PersistentContext["pages"]>[number];
+
+/** Wraps the patchright persistent context + page into the BrowserContext interface. */
+function buildBrowserContext(ctx: PersistentContext, page: ContextPage, userDataDir: string) {
+  return {
+    goto: async (url: string) => {
+      await page.goto(url);
+    },
+    /**
+     * Polls until challenge markers are gone AND cf_clearance is actually issued —
+     * markers can disappear a beat before the cookie is set.
+     */
+    waitForChallengeCleared: async (timeoutMs: number) => {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        const content = await page.content();
+        if (!hasCloudflareChallengeMarkers(content)) {
+          const cookies = await ctx.cookies();
+          if (cookies.some((c) => c.name === "cf_clearance")) {
+            return;
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      throw new Error("Challenge not cleared within timeout");
+    },
+    cookies: async () => await ctx.cookies(),
+    userAgent: async () => await page.evaluate(() => navigator.userAgent),
+    close: async () => {
+      try {
+        await ctx.close();
+      } finally {
+        // Best-effort cleanup: the temp profile dir is single-use, never reopened.
+        if (userDataDir) {
+          await rm(userDataDir, { recursive: true, force: true }).catch(() => {});
+        }
+      }
+    },
+  };
+}
+
+/** Builds production BrowserCaptureDeps using the real patchright launcher. */
 export function buildBrowserCaptureDeps(): BrowserCaptureDeps {
   const launcherDeps: BrowserLauncherDeps = {
     launch: async () => {
@@ -39,40 +81,7 @@ export function buildBrowserCaptureDeps(): BrowserCaptureDeps {
 
         const page = ctx.pages()[0] ?? (await ctx.newPage());
 
-        // Wrap in a context object matching BrowserContext interface
-        return {
-          goto: async (url) => {
-            await page.goto(url);
-          },
-          waitForChallengeCleared: async (timeoutMs) => {
-            // Poll until challenge markers are gone AND cf_clearance is actually
-            // issued — markers can disappear a beat before the cookie is set.
-            const start = Date.now();
-            while (Date.now() - start < timeoutMs) {
-              const content = await page.content();
-              if (!hasCloudflareChallengeMarkers(content)) {
-                const cookies = await ctx.cookies();
-                if (cookies.some((c) => c.name === "cf_clearance")) {
-                  return;
-                }
-              }
-              await new Promise((resolve) => setTimeout(resolve, 500));
-            }
-            throw new Error("Challenge not cleared within timeout");
-          },
-          cookies: async () => await ctx.cookies(),
-          userAgent: async () => await page.evaluate(() => navigator.userAgent),
-          close: async () => {
-            try {
-              await ctx.close();
-            } finally {
-              // Best-effort: the temp profile dir is single-use, never reopened.
-              if (userDataDir) {
-                await rm(userDataDir, { recursive: true, force: true }).catch(() => {});
-              }
-            }
-          },
-        };
+        return buildBrowserContext(ctx, page, userDataDir);
       } catch {
         // Launch failed before a context existed — clean up the temp dir if it was created.
         if (userDataDir) {
