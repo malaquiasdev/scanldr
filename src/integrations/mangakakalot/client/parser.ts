@@ -1,6 +1,3 @@
-// Pure HTML parsing functions for mangakakalot.gg.
-// All cheerio selectors live here as named constants — fix DOM drift in one place.
-
 import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 import type { ImageRef } from "@integrations/_shared/media.ts";
 import * as cheerio from "cheerio";
@@ -11,14 +8,13 @@ import {
 } from "./types.ts";
 
 const SELECTORS = {
-  // Search results page
   searchResultItem: ".story_item",
   searchResultLink: ".story_name a",
 
-  // Chapter reader page — confirmed against real HTML (2026-05-03)
+  /** Chapter reader page — confirmed against real HTML (2026-05-03) */
   chapterReaderImage: ".container-chapter-reader img",
 
-  // Structural site markers used to distinguish DOM drift from no-content pages
+  /** Structural site markers used to distinguish DOM drift from no-content pages */
   siteHeader: "header, .header, .navbar, body",
 } as const;
 
@@ -38,6 +34,9 @@ function slugFromUrl(url: string): string {
 }
 
 /**
+ * Pure HTML parsing functions for mangakakalot.gg.
+ * All cheerio selectors live here as named constants — fix DOM drift in one place.
+ *
  * Parses search results from a mangakakalot search page.
  *
  * Returns [] on a genuine "no results" page (search container present but empty).
@@ -114,6 +113,7 @@ function isMkChapterApiResponse(v: unknown): v is MkChapterApiResponse {
 /**
  * Parses the chapter list from the mangakakalot JSON API response.
  *
+ * Creates composite IDs (`mangaSlug/chapter_slug`) reconstructed by resolveChapterUrl (client/index.ts).
  * The API returns chapters newest-first in pages (limit 50 per page).
  * Output is sorted ascending by chapter_num.
  * Throws MangakakalotParseError when the JSON shape is invalid.
@@ -144,7 +144,6 @@ export function parseChapterListFromApi(
       );
     }
 
-    // composite id; resolveChapterUrl (client/index.ts) reconstructs SITE_ROOT/manga/<id>
     const id = `${mangaSlug}/${item.chapter_slug}`;
 
     const rawTitle = item.chapter_name.replace(/^chapter[\s\d.]+[:-]?\s*/i, "").trim();
@@ -162,7 +161,6 @@ export function parseChapterListFromApi(
     });
   }
 
-  // API returns newest-first; sort ascending by chapter_num for caller convenience.
   chapters.sort((a, b) => Number(a.chapter) - Number(b.chapter));
 
   const pagination = json.data.pagination;
@@ -172,7 +170,7 @@ export function parseChapterListFromApi(
   return { chapters, hasMore, limit };
 }
 
-// site's own hosts, not the external image CDN (e.g. *.2xstorage.com) real pages use
+/** Site's own hosts, not the external image CDN (e.g. *.2xstorage.com) real pages use. */
 const SITE_HOSTS = new Set(["mangakakalot.gg", "www.mangakakalot.gg"]);
 
 /**
@@ -201,6 +199,7 @@ export function isMangaPageImage(rawUrl: string): boolean {
 /**
  * Parses chapter image URLs from a mangakakalot reader page.
  *
+ * Prefers data-src (lazy-loaded canonical URL), falling back to src.
  * Filters out banner ads and non-CDN images via `isMangaPageImage`.
  * Page numbers are sequential starting at 1 based on the filtered list.
  *
@@ -213,7 +212,6 @@ export function parseChapterImages(html: string, url: string): ImageRef[] {
   let pageNum = 0;
 
   $(SELECTORS.chapterReaderImage).each((_, el) => {
-    // Prefer data-src (lazy-loaded canonical URL); fall back to src.
     const imgUrl = $(el).attr("data-src") ?? $(el).attr("src") ?? "";
     if (!imgUrl) return;
     const trimmed = imgUrl.trim();

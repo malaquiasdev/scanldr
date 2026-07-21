@@ -1,6 +1,3 @@
-// Mangakakalot site client. Wraps a FallbackHttpClient (caller-provided via
-// createFallbackHttp()) and returns parsed domain types.
-
 import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 import type { ImageRef } from "@integrations/_shared/media.ts";
 import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
@@ -56,13 +53,13 @@ export function createMangakakalotClient(opts: {
   }
 
   async function searchManga(title: string): Promise<MangaCandidate[]> {
-    // mangakakalot search slugs use underscores instead of spaces
-    const encoded = encodeURIComponent(title.toLowerCase().replace(/\s+/g, "_"));
+    const encoded = encodeURIComponent(toSearchSlug(title));
     const url = `${SEARCH_URL}/${encoded}`;
     const html = await fetchHtml(url);
     return runParser(url, () => parseSearchResults(html, url));
   }
 
+  /** Fetches chapter list for a manga slug, re-sorting ascending across page boundaries. */
   async function getChapterList(slug: string): Promise<ChapterRef[]> {
     let allChapters: ChapterRef[] = [];
     let offset = 0;
@@ -115,7 +112,6 @@ export function createMangakakalotClient(opts: {
       );
     }
 
-    // re-sort: concat of newest-first pages can be mis-sorted across page boundaries
     allChapters.sort((a, b) => Number(a.chapter) - Number(b.chapter));
 
     return allChapters;
@@ -143,4 +139,8 @@ function resolveChapterUrl(chapterIdOrUrl: string): string {
   return isLegacyChapterPath
     ? `${SITE_ROOT}/${chapterIdOrUrl}`
     : `${SITE_ROOT}/manga/${chapterIdOrUrl}`;
+}
+
+function toSearchSlug(title: string): string {
+  return title.toLowerCase().replace(/\s+/g, "_");
 }

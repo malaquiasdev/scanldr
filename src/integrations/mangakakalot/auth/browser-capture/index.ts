@@ -3,17 +3,22 @@ import type { BrowserLauncherDeps, CapturedSession } from "./types.ts";
 
 export type { BrowserContext, BrowserLauncherDeps, CapturedSession } from "./types.ts";
 
-// Launches Chrome via patchright, opens the probe URL, lets user solve CF,
-// harvests cookies + UA, and returns them. Returns undefined on any failure
-// (no Chrome, user cancels, capture error). Never validates or persists —
-// the caller (auth-check.ts) is responsible for probing before persisting.
-//
-// Failures are logged but never surfaced as errors — they are treated as
-// "try manual paste instead" signal by the caller.
-
+/**
+ * Launches Chrome via patchright, opens the probe URL, lets user solve CF,
+ * harvests cookies + UA, and returns them. Returns undefined on any failure
+ * (no Chrome, user cancels, capture error). Never validates or persists —
+ * the caller (auth-check.ts) is responsible for probing before persisting.
+ *
+ * Failures are logged but never surfaced as errors — they are treated as
+ * "try manual paste instead" signal by the caller.
+ * Uses `close()` as the launcher seam's sole cleanup hook where each implementation
+ * owns its own browser/context teardown and temp-dir removal.
+ *
+ * @param url The probe URL (same endpoint the session probe uses)
+ */
 export async function captureSessionViaBrowser(
   launcherDeps: BrowserLauncherDeps,
-  url: string, // The probe URL (same endpoint the session probe uses)
+  url: string,
   logger: Logger,
 ): Promise<CapturedSession | undefined> {
   logger.info(
@@ -33,7 +38,6 @@ export async function captureSessionViaBrowser(
     }
 
     await browser.goto(url);
-    // Timeout at 5 minutes (300,000 ms) to let user solve CF challenge if presented
     await browser.waitForChallengeCleared(300000);
 
     const cookiesList = await browser.cookies();
@@ -67,8 +71,6 @@ export async function captureSessionViaBrowser(
   } finally {
     if (browser) {
       try {
-        // close() is the launcher seam's sole cleanup hook — each implementation
-        // owns its own browser/context teardown and temp-dir removal.
         await browser.close();
       } catch (err) {
         const message = err instanceof Error ? err.message : "unknown error";

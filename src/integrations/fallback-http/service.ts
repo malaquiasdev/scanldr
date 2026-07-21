@@ -1,12 +1,11 @@
-// Fallback HTTP client factory — auth cache uses lazy mtime re-read; see ADR-001.
-
 import { readFile, stat } from "node:fs/promises";
 import type { AuthSession } from "@integrations/mangakakalot/auth/types.ts";
 import { resolveAuthPath } from "@plugins/auth-path/index.ts";
 import type { FallbackHttpClient, FallbackHttpOptions, FetchFn } from "./types.ts";
 import { CloudflareError, CrossOriginCloudflareError, MissingAuthError } from "./types.ts";
 
-const MAX_ATTEMPTS = 4; // 1 initial + 3 retries
+/** 1 initial + 3 retries */
+const MAX_ATTEMPTS = 4;
 const BASE_BACKOFF_MS = 500;
 const JITTER_MS = 200;
 
@@ -33,6 +32,11 @@ interface AuthCache {
   userAgent: string;
 }
 
+/**
+ * Fallback HTTP client factory — auth cache uses lazy mtime re-read; see ADR-001.
+ * Fails fast at construction; the cached value itself is populated lazily on first request.
+ * Serialized via promise chain so concurrent calls queue up (enforces 1 req/s globally).
+ */
 export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<FallbackHttpClient> {
   const { logger } = opts;
   const fetchFn: FetchFn = opts.fetch ?? globalThis.fetch.bind(globalThis);
@@ -41,26 +45,27 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
 
   const path = opts.authPath ?? resolveAuthPath();
 
-  // Fail fast at construction; the cached value itself is populated lazily on first request.
   await loadAuth(path, logger);
 
   let authCache: AuthCache | null = null;
 
-  // per-lane CF short-circuit; see ADR-001 / #137
   const siteLatch = createCfLatch();
   const anonLatch = createCfLatch();
 
-  // Serialized via promise chain so concurrent calls queue up (enforces 1 req/s globally).
   let lastRequestAt: number | null = null;
   let chain: Promise<void> = Promise.resolve();
 
+  /**
+   * Resolves auth credentials, returning cached value or loading from disk.
+   * Sets mtimeMs sentinel to -1 if deleted between checks (reload will throw MissingAuthError).
+   */
   async function resolveAuth(): Promise<{ cookieHeader: string | undefined; userAgent: string }> {
     let mtimeMs: number;
     try {
       const s = await stat(path);
       mtimeMs = s.mtimeMs;
     } catch {
-      mtimeMs = -1; // deleted between checks — reload will throw MissingAuthError below
+      mtimeMs = -1;
     }
 
     if (authCache !== null && authCache.mtimeMs === mtimeMs) {
@@ -107,6 +112,15 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
     }
   }
 
+  /**
+   * Dispatches an HTTP request with retries and throttling.
+   * `lastRequestAt` is marked per-attempt so retries stay throttle-conservative.
+   * Picks up freshly-written credentials if refreshSession ran since the last attempt.
+   * Treats a CF challenge disguised as 200 symmetrically with 403.
+   * 3xx/4xx status codes other than 403 do not trigger retries.
+   * Uses Math.random for backoff jitter (non-cryptographic).
+   * The CF short-circuit throw path does not re-log — the warning is emitted once when the latch is set in createCfLatch.
+   */
   async function dispatch(
     url: string,
     extraHeaders: Record<string, string> | undefined,
@@ -114,20 +128,18 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
   ): Promise<Response> {
     const latch = withCookie ? siteLatch : anonLatch;
     if (await latch.shouldShortCircuit(path)) {
-      // no re-log here — see createCfLatch
       throw withCookie ? new CloudflareError(url) : new CrossOriginCloudflareError(url);
     }
 
     await throttle();
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      lastRequestAt = now(); // marked per-attempt so retries stay throttle-conservative
+      lastRequestAt = now();
 
       let res: Response | undefined;
       let fetchError: unknown;
 
       try {
-        // picks up freshly-written credentials if refreshSession ran since the last attempt
         const { cookieHeader, userAgent } = await resolveAuth();
 
         const baseHeaders: Record<string, string> = { "user-agent": userAgent };
@@ -152,7 +164,6 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
         throw withCookie ? new CloudflareError(url) : new CrossOriginCloudflareError(url);
       }
 
-      // treat a CF challenge disguised as 200 symmetrically with 403
       if (res && res.status >= 200 && res.status < 300) {
         const contentType = res.headers.get("content-type") ?? "";
         if (!isTextualContentType(contentType)) {
@@ -176,7 +187,7 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
       }
 
       if (res && res.status < 500) {
-        return res; // 3xx/4xx other than 403 — caller's problem, no retry
+        return res;
       }
 
       const isLast = attempt === MAX_ATTEMPTS - 1;
@@ -190,7 +201,6 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
       }
 
       const status = res ? res.status : 0;
-      // Math.random is fine here — jitter only, no security relevance.
       const waitMs = BASE_BACKOFF_MS * 2 ** attempt + Math.floor(Math.random() * JITTER_MS);
 
       logger.warn(
@@ -216,10 +226,6 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
     getAnonymous: (url, headers) => getAnonymous(url, headers),
   };
 }
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
 
 /** Prevents unhandled rejection bleed between chained calls. */
 function swallowRejection(p: Promise<unknown>): Promise<void> {
@@ -265,7 +271,6 @@ function createCfLatch() {
       if (rejectedAtMtime === null) return false;
       const currentMtime = await statMtime(authPath);
       if (currentMtime === rejectedAtMtime) return true;
-      // mtime advanced → refreshSession wrote new credentials; clear the latch.
       rejectedAtMtime = null;
       return false;
     },
