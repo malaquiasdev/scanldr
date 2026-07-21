@@ -77,7 +77,7 @@ async function persistSession(session: AuthSession, authPath: string): Promise<v
     try {
       await unlink(tmpPath);
     } catch {
-      // best-effort cleanup — ignore unlink errors
+      // Best-effort cleanup, ignore unlink errors.
     }
     throw renameErr;
   }
@@ -92,6 +92,11 @@ type ProbeOutcome =
 /**
  * Probes the session against PROBE_URL with a 5s timeout.
  * Treats 403/503 with Cloudflare markers, and 200 with CF challenge HTML, as stale.
+ * A `CloudflareError` thrown by the client on 403 is treated as stale; other 4xx/5xx
+ * statuses (403 already handled above) are transient; 3xx redirects are treated as
+ * ok (the client follows redirects, or the server is simply live); and if the 200
+ * response body can't be read, we assume ok since the server responded with real
+ * content.
  */
 async function probeSession(client: SessionProbeClient, logger: Logger): Promise<ProbeOutcome> {
   logger.info(
@@ -106,7 +111,6 @@ async function probeSession(client: SessionProbeClient, logger: Logger): Promise
     );
     res = await Promise.race([client.get(PROBE_URL), timeout]);
   } catch (err) {
-    // CloudflareError is thrown by the client on 403 — treat as stale
     if (err instanceof Error && err.name === "CloudflareError") {
       logger.warn(
         { event: "walkthrough.auth_probe_stale", context: "walkthrough", url: PROBE_URL },
@@ -132,7 +136,6 @@ async function probeSession(client: SessionProbeClient, logger: Logger): Promise
     return { kind: "transient_error", status: res.status };
   }
 
-  // 403 is already caught above as CloudflareError; other 4xx are transient.
   if (res.status >= 400) {
     return { kind: "transient_error", status: res.status };
   }
@@ -147,9 +150,7 @@ async function probeSession(client: SessionProbeClient, logger: Logger): Promise
         );
         return { kind: "stale" };
       }
-    } catch {
-      // If we can't read the body, assume ok (server responded with real content)
-    }
+    } catch {}
     logger.info(
       { event: "walkthrough.auth_probe_ok", context: "walkthrough", url: PROBE_URL },
       "session probe: session is valid",
@@ -157,7 +158,6 @@ async function probeSession(client: SessionProbeClient, logger: Logger): Promise
     return { kind: "ok" };
   }
 
-  // 3xx redirects — treat as ok (client follows redirects or server is live)
   logger.info(
     { event: "walkthrough.auth_probe_ok", context: "walkthrough", url: PROBE_URL },
     "session probe: session is valid",
@@ -240,14 +240,25 @@ async function tryCaptureViaBrowser(
   }
 }
 
-/** Prompt cURL paste loop — returns a parsed AuthSession or throws WalkthroughError. */
+/** Parses a pasted cURL command, returning null (instead of throwing) on invalid input. */
+function tryParseCurl(paste: string): ReturnType<typeof parseCurl> | null {
+  try {
+    return parseCurl(paste);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Prompt cURL paste loop — returns a parsed AuthSession or throws WalkthroughError.
+ * @param fetchFn Defaults to globalThis.fetch; the candidate-probe path
+ * (buildCandidateProbeClient) deliberately re-implements the 403->CloudflareError
+ * contract so probeSession's stale-detection applies to the not-yet-persisted
+ * extracted session (parallel to fallback-http's CF layer, by design).
+ */
 async function promptAndParseSession(
   logger: Logger,
   browserCapture?: BrowserCaptureDeps,
-  // Defaults to globalThis.fetch; the candidate-probe path (buildCandidateProbeClient)
-  // deliberately re-implements the 403->CloudflareError contract so probeSession's
-  // stale-detection applies to the not-yet-persisted extracted session (parallel to
-  // fallback-http's CF layer, by design).
   fetchFn: (url: string, init?: RequestInit) => Promise<Response> = (...args) =>
     globalThis.fetch(...args),
 ): Promise<AuthSession> {
@@ -261,12 +272,7 @@ async function promptAndParseSession(
       message: "No valid session found. Paste a cURL command with cookie headers (opens editor):",
     });
 
-    let parsed: ReturnType<typeof parseCurl> | null = null;
-    try {
-      parsed = parseCurl(paste);
-    } catch {
-      // parseCurl throws AuthError on bad input — treat as invalid
-    }
+    const parsed = tryParseCurl(paste);
 
     if (parsed !== null && Object.keys(parsed.cookies).length > 0) {
       return {
@@ -306,13 +312,15 @@ export interface RefreshSessionOptions {
 /**
  * Shared refresh flow used by both auth-check (stale branch) and withSessionRetry.
  * Deletes stale auth.json, prompts for a fresh cURL paste, persists it, and re-probes once.
+ * No upfront unlink — persistSession overwrites atomically, so a Ctrl+C mid-paste can't
+ * lose credentials. The re-probe (after persisting) uses a fresh client so it reads the
+ * new auth.json.
  * Returns { ok: true, refreshed: true } on success.
  * Throws WalkthroughError if the second probe still fails.
  */
 export async function refreshSession(opts: RefreshSessionOptions): Promise<AuthResult> {
   const { authPath, probeClientFactory, logger } = opts;
 
-  // No upfront unlink — persistSession overwrites atomically, so a Ctrl+C mid-paste can't lose credentials.
   const session = opts.fetch
     ? await promptAndParseSession(logger, opts.browserCapture, opts.fetch)
     : await promptAndParseSession(logger, opts.browserCapture);
@@ -322,7 +330,6 @@ export async function refreshSession(opts: RefreshSessionOptions): Promise<AuthR
     "stale session replaced — new auth saved",
   );
 
-  // Re-probe once with a fresh client (reads new auth.json)
   const freshClient = await probeClientFactory();
   const retry = await probeSession(freshClient, logger);
   if (retry.kind === "ok") {
@@ -351,7 +358,14 @@ async function checkAuthFilePresenceOnly(
   return { ok: true, skipped: false, justAuthenticated: true };
 }
 
-/** Probes an existing session file, or prompts for a fresh cURL paste and probes that instead. */
+/**
+ * Probes an existing session file, or prompts for a fresh cURL paste and probes that
+ * instead. The single capture attempt on a stale session lives in refreshSession
+ * (via promptAndParseSession -> tryCaptureViaBrowser) — must not be duplicated here,
+ * or the browser would launch and prompt the human to solve Cloudflare twice on one
+ * stale probe. Transient 4xx/5xx statuses are surfaced to the caller without deleting
+ * auth.json.
+ */
 async function checkAuthWithProbe(
   opts: AuthCheckOptions & { probeClientFactory: SessionProbeClientFactory },
   authPath: string,
@@ -368,14 +382,11 @@ async function checkAuthWithProbe(
     }
 
     if (outcome.kind === "stale") {
-      // Single capture attempt lives inside refreshSession -> promptAndParseSession ->
-      // tryCaptureViaBrowser. Do NOT duplicate the capture here — that would launch
-      // the browser and prompt the human to solve Cloudflare twice on one stale probe.
       return refreshSession({
         authPath,
         probeClientFactory: opts.probeClientFactory,
         logger,
-        browserCapture: opts.browserCapture, // NEW: pass down
+        browserCapture: opts.browserCapture,
         fetch: opts.fetch,
       });
     }
@@ -386,7 +397,6 @@ async function checkAuthWithProbe(
       );
     }
 
-    // transient 4xx/5xx — surface to caller, don't delete auth.json
     throw new WalkthroughError(
       `Mangakakalot returned an unexpected status (${outcome.status}) during session probe. Try again later.`,
     );
@@ -401,7 +411,6 @@ async function checkAuthWithProbe(
     "auth session saved",
   );
 
-  // Re-reads the file we just wrote.
   const freshClient = await opts.probeClientFactory();
   const outcome = await probeSession(freshClient, logger);
   if (outcome.kind === "ok") {

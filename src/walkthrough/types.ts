@@ -50,7 +50,7 @@ export interface BundleItem {
 }
 
 export interface BrowserCaptureDeps {
-  // Minimal launcher seam (patchright in production, mocked in tests)
+  /** Minimal launcher seam (patchright in production, mocked in tests). */
   launcherDeps: BrowserLauncherDeps;
 }
 
