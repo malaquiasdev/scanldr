@@ -51,6 +51,8 @@ describe("loadConfig — discovery", () => {
       db_path: DEFAULT_CONFIG.db_path,
       image_concurrency: 8,
       chapter_delay_ms: 250,
+      search_cache_ttl_days: DEFAULT_CONFIG.search_cache_ttl_days,
+      chapter_cache_ttl_days: DEFAULT_CONFIG.chapter_cache_ttl_days,
     });
   });
 
@@ -236,6 +238,26 @@ describe("validateAndMerge — field validations", () => {
   test("accepts zero chapter_delay_ms", () => {
     const cfg = validateAndMerge({ chapter_delay_ms: 0 });
     expect(cfg.chapter_delay_ms).toBe(0);
+  });
+
+  test("accepts custom search_cache_ttl_days", () => {
+    const cfg = validateAndMerge({ search_cache_ttl_days: 30 });
+    expect(cfg.search_cache_ttl_days).toBe(30);
+  });
+
+  test("rejects negative search_cache_ttl_days", () => {
+    expect(() => validateAndMerge({ search_cache_ttl_days: -1 })).toThrow(/search_cache_ttl_days/);
+  });
+
+  test("accepts custom chapter_cache_ttl_days", () => {
+    const cfg = validateAndMerge({ chapter_cache_ttl_days: 7 });
+    expect(cfg.chapter_cache_ttl_days).toBe(7);
+  });
+
+  test("rejects negative chapter_cache_ttl_days", () => {
+    expect(() => validateAndMerge({ chapter_cache_ttl_days: -1 })).toThrow(
+      /chapter_cache_ttl_days/,
+    );
   });
 
   test("rejects unknown default_format", () => {

@@ -466,6 +466,8 @@ describe("runWalkthrough — config threading to adapter factory", () => {
       db_path: "",
       image_concurrency: 4,
       chapter_delay_ms: 500,
+      search_cache_ttl_days: 15,
+      chapter_cache_ttl_days: 15,
     };
 
     interface CapturedFactoryCall {

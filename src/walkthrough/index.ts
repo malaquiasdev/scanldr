@@ -1,6 +1,8 @@
 import { createFallbackHttp } from "../integrations/fallback-http/index.ts";
 import type { Config } from "../plugins/config/index.ts";
+import type { Db } from "../plugins/db/index.ts";
 import type { Logger } from "../plugins/logger/index.ts";
+import { wrapAdapterWithCache } from "../sources/adapters/cached-adapter.ts";
 import type { SourceAdapter } from "../sources/adapters/index.ts";
 import { getAdapter } from "../sources/adapters/index.ts";
 import type { SourceDescriptor } from "../sources/types.ts";
@@ -44,6 +46,13 @@ export interface RunWalkthroughOptions extends WalkthroughInput {
   outDir?: string;
   /** User config — threaded into the adapter factory. */
   config?: Config;
+  /**
+   * Already-open DB instance — enables the search/chapter-list SQLite cache (#164).
+   * When omitted, the adapter runs uncached (e.g. direct test calls).
+   */
+  db?: Db;
+  /** Bypasses the cache for this run's search + chapter-list fetches; still refreshes it. */
+  forceRefresh?: boolean;
   /** Override the XDG data home used to resolve the auth.json path (tests inject a tmp dir). */
   dataHome?: string;
   /** Override adapter factory (tests inject fakes). */
@@ -231,7 +240,16 @@ export async function runWalkthrough(
 
     const doRefresh = buildRefreshFn(opts, probeClientFactory, browserCapture);
 
-    const adapter = resolveAdapter(source.id, { logger: opts.logger, config: opts.config });
+    const adapter = wrapAdapterWithCache(
+      resolveAdapter(source.id, { logger: opts.logger, config: opts.config }),
+      {
+        db: opts.db,
+        config: opts.config,
+        source: source.id,
+        logger: opts.logger,
+        forceRefresh: opts.forceRefresh,
+      },
+    );
 
     const flowBase: Omit<DownloadFlowOptions, "title" | "hit" | "cache"> = {
       adapter,
