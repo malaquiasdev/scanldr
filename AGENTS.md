@@ -23,7 +23,7 @@ This is a **Bun** project.
 
 - ❌ Interface or type declared in `index.ts` or `service.ts` — always `types.ts`.
 - ❌ Re-declaring or copy-pasting `AuthSession`, `isValidAuthSession`, or cookie-header serialization — import from the single owner module, don't shadow it.
-- ❌ A second implementation of Cloudflare-challenge markers — `walkthrough/steps/cloudflare-markers.ts` is the single source of `isCfChallengeHtml`; never re-implement it elsewhere.
+- ❌ A second implementation of Cloudflare-challenge markers — `integrations/_shared/cloudflare.ts` is the single source of `hasCloudflareChallengeMarkers`; never re-implement it elsewhere.
 - ❌ A function > ~50 LOC fusing I/O + business logic + retry — extract a seam. This is what bloated `executeWalkthrough` and fallback-http `dispatch`; don't repeat it.
 - ❌ Atomic-write (`.tmp` → rename → unlink-on-fail) copy-pasted across modules — factor to a shared helper.
 - ❌ jest/vitest, `node:*` where a Bun-native API exists, or a `class` outside the sanctioned `Error` subclasses.
