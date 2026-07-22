@@ -4,6 +4,15 @@ export interface CoverImage {
   ext: string;
 }
 
+export type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+export interface FetchCoverOptions {
+  /** Override fetch (for testing). */
+  fetch?: FetchFn;
+  /** Override auth.json path (for testing). */
+  authPath?: string;
+}
+
 export interface PackedChapter {
   /** The chapter number token (e.g. "103", "18.5") */
   num: string;

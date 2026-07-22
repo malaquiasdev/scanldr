@@ -1,10 +1,9 @@
 import { readFile } from "node:fs/promises";
+import type { AuthSession } from "@integrations/mangakakalot/auth/types.ts";
 import { resolveAuthPath } from "@plugins/auth-path/index.ts";
-import type { CoverImage } from "./types.ts";
+import type { CoverImage, FetchCoverOptions } from "./types.ts";
 
 export type { CoverImage };
-
-type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export const MAX_COVER_BYTES = 50 * 1024 * 1024;
 
@@ -18,19 +17,6 @@ const MIME_TO_EXT: Record<string, string> = {
   "image/webp": ".webp",
   "image/gif": ".gif",
 };
-
-export interface FetchCoverOptions {
-  /** Override fetch (for testing). */
-  fetch?: FetchFn;
-  /** Override auth.json path (for testing). */
-  authPath?: string;
-}
-
-interface AuthSession {
-  cookies: Record<string, string>;
-  userAgent: string;
-  savedAt: number;
-}
 
 function isValidAuthSession(v: unknown): v is AuthSession {
   if (!v || typeof v !== "object") return false;
