@@ -26,6 +26,7 @@ Flags:
   --human         Human-readable log output (default)
   --quiet, -q     Suppress info logs
   --progress      Force the stderr progress bar even when not a TTY
+  --refresh       Bypass the search/chapter-list cache and refetch (#164)
 `;
 
 /** Resolves whether the stderr progress bar should be shown. */
@@ -84,6 +85,7 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<void> {
       json: { type: "boolean" },
       human: { type: "boolean" },
       progress: { type: "boolean" },
+      refresh: { type: "boolean" },
     },
   });
 
@@ -117,6 +119,8 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<void> {
     logger,
     outDir: config.default_out,
     config,
+    db,
+    forceRefresh: values.refresh === true,
     progressEnabled,
     barWrite: stderrController.barWrite,
     endBar: stderrController.endBar,

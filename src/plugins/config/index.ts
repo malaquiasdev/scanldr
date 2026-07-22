@@ -14,6 +14,8 @@ export const DEFAULT_CONFIG: Config = {
   db_path: join(homedir(), ".local", "share", "scanldr", "scanldr.db"),
   image_concurrency: 4,
   chapter_delay_ms: 1000,
+  search_cache_ttl_days: 15,
+  chapter_cache_ttl_days: 15,
 };
 
 async function resolveConfigPath(opts: LoadConfigOptions): Promise<string | null> {
@@ -101,6 +103,24 @@ export function validateAndMerge(parsed: unknown, source?: string): Config {
       new ConfigError("chapter_delay_ms must be a number >= 0", source),
     );
     merged.chapter_delay_ms = v;
+  }
+
+  if ("search_cache_ttl_days" in p) {
+    const v = p.search_cache_ttl_days;
+    check(
+      typeof v === "number" && Number.isFinite(v) && v >= 0,
+      new ConfigError("search_cache_ttl_days must be a number >= 0", source),
+    );
+    merged.search_cache_ttl_days = v;
+  }
+
+  if ("chapter_cache_ttl_days" in p) {
+    const v = p.chapter_cache_ttl_days;
+    check(
+      typeof v === "number" && Number.isFinite(v) && v >= 0,
+      new ConfigError("chapter_cache_ttl_days must be a number >= 0", source),
+    );
+    merged.chapter_cache_ttl_days = v;
   }
 
   return merged;
