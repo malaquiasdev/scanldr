@@ -2,10 +2,10 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { hasCloudflareChallengeMarkers } from "@integrations/_shared/cloudflare.ts";
 import patchright from "patchright";
 import type { BrowserLauncherDeps } from "../../integrations/mangakakalot/auth/browser-capture/index.ts";
 import type { BrowserCaptureDeps } from "../types.ts";
-import { hasCloudflareChallengeMarkers } from "./cloudflare-markers.ts";
 
 /**
  * Standard macOS Chrome install path. patchright's stealth patches target the real

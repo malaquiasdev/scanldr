@@ -1558,6 +1558,47 @@ test("caller-supplied headers cannot override cookie/user-agent", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Regression #236: "Just a moment" marker (previously missing from fallback-http's
+// own drifted CF-detection copy) is now detected via the shared canonical source.
+// ---------------------------------------------------------------------------
+
+test("200 body containing ONLY the 'Just a moment' marker is detected as a CF challenge", async () => {
+  const { logger, calls } = makeLogger();
+  const path = await writeAuth(tmpDir, VALID_SESSION);
+
+  // Deliberately excludes cf-browser-verification/challenge-platform/jschl-answer —
+  // isolates the "Just a moment" marker that the old fallback-http copy was missing.
+  const JUST_A_MOMENT_BODY =
+    "<!DOCTYPE html><html><head><title>Just a moment...</title></head></html>";
+
+  let fetchCount = 0;
+  const fakeFetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response> =
+    async () => {
+      fetchCount++;
+      return new Response(JUST_A_MOMENT_BODY, {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    };
+
+  const client = await createFallbackHttp({
+    authPath: path,
+    logger,
+    fetch: fakeFetch,
+    sleep: async () => {},
+    now: () => 0,
+  });
+
+  await expect(client.get("https://example.com/page")).rejects.toBeInstanceOf(CloudflareError);
+  expect(fetchCount).toBe(1);
+
+  const warnCall = calls.find(
+    (c) => c.level === "warn" && c.fields.event === "fallback_http.cloudflare_rejected",
+  );
+  expect(warnCall).toBeDefined();
+});
+
+// ---------------------------------------------------------------------------
 // P2 #4: Explicit dedupe log assertion on anonymous lane short-circuit
 // ---------------------------------------------------------------------------
 

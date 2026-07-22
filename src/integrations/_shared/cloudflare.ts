@@ -1,7 +1,8 @@
 /**
- * Shared Cloudflare challenge-page detection, used by both the HTTP probe
- * (auth-check.ts probeSession) and the live-browser poll (browser-capture-deps.ts
- * waitForChallengeCleared) so the two heuristics can't drift apart.
+ * Shared Cloudflare challenge-page detection. Single source of truth for both
+ * `walkthrough` (auth-check.ts probeSession, browser-capture-deps.ts
+ * waitForChallengeCleared) and `integrations/fallback-http` (dispatch's
+ * in-body CF detection) so the heuristics can't drift apart.
  */
 export function hasCloudflareChallengeMarkers(text: string): boolean {
   return (
