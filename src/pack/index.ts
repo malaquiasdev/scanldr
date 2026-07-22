@@ -3,6 +3,7 @@ export { fetchCover } from "./cover.ts";
 export { buildVolumeFilename, packVolumeReplacingSources } from "./pack.ts";
 export type {
   CoverImage,
+  FetchCoverOptions,
   PackedChapter,
   PackVolumeInput,
   PackVolumeReplacingSourcesResult,
