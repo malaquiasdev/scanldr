@@ -49,7 +49,21 @@ export function createCachedAdapter(opts: CreateCachedAdapterOptions): SourceAda
       }
     }
     const results = await adapter.search(query);
-    cache.set("search", source, key, results);
+    try {
+      cache.set("search", source, key, results);
+    } catch (err) {
+      logger.warn(
+        {
+          event: "source_cache.write_failed",
+          context: "source-cache",
+          type: "search",
+          source,
+          key,
+          err,
+        },
+        "search cache write failed, continuing with fetched results",
+      );
+    }
     return results;
   }
 
@@ -71,7 +85,21 @@ export function createCachedAdapter(opts: CreateCachedAdapterOptions): SourceAda
       }
     }
     const chapters = await adapter.listChapters(hitId);
-    cache.set("chapter-list", source, hitId, chapters);
+    try {
+      cache.set("chapter-list", source, hitId, chapters);
+    } catch (err) {
+      logger.warn(
+        {
+          event: "source_cache.write_failed",
+          context: "source-cache",
+          type: "chapter-list",
+          source,
+          key: hitId,
+          err,
+        },
+        "chapter list cache write failed, continuing with fetched results",
+      );
+    }
     return chapters;
   }
 

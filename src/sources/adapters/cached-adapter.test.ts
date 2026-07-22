@@ -134,6 +134,25 @@ describe("createCachedAdapter — search", () => {
     expect(searchFn).toHaveBeenCalledTimes(2);
   });
 
+  test("cache write failure does not break the search — fetched results still returned", async () => {
+    const cache = createSourceCache({ db });
+    cache.set = mock(() => {
+      throw new Error("disk full");
+    });
+    const { adapter, searchFn } = makeFakeAdapter();
+    const cached = createCachedAdapter({
+      adapter,
+      cache,
+      source: "mangakakalot",
+      logger: noopLogger,
+    });
+
+    const result = await cached.search("One Piece");
+
+    expect(result).toEqual(searchHits);
+    expect(searchFn).toHaveBeenCalledTimes(1);
+  });
+
   test("normalizes the query for the cache key (case/whitespace-insensitive hit)", async () => {
     const now = new Date("2026-01-01T00:00:00.000Z");
     const cache = createSourceCache({ db, now: () => now });

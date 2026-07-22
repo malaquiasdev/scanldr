@@ -57,6 +57,16 @@ describe("createSourceCache", () => {
     expect(hit?.fetchedAt.toISOString()).toBe(now.toISOString());
   });
 
+  test("corrupt payload_json returns null instead of throwing", () => {
+    const cache = createSourceCache({ db });
+    db.exec(
+      `INSERT INTO source_cache (source, payload_type, key, payload_json, fetched_at)
+       VALUES ('mangakakalot', 'search', 'one piece', '{not valid json', '2026-01-01T00:00:00.000Z')`,
+    );
+
+    expect(cache.get("search", "mangakakalot", "one piece")).toBeNull();
+  });
+
   test("payload types are isolated — same key, different type, no collision", () => {
     const cache = createSourceCache({ db });
     cache.set("search", "mangakakalot", "abc", ["search-payload"]);
