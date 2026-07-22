@@ -3,21 +3,13 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { ConfigError } from "@plugins/errors/index.ts";
+import { DEFAULT_CONFIG } from "./constants.ts";
 import { validateAndMerge } from "./service.ts";
-import type { Config, LoadConfigOptions, LoadConfigResult } from "./types.ts";
+import type { LoadConfigOptions, LoadConfigResult } from "./types.ts";
 
+export { DEFAULT_CONFIG } from "./constants.ts";
 export { validateAndMerge } from "./service.ts";
 export type { Config, LoadConfigOptions, LoadConfigResult } from "./types.ts";
-
-export const DEFAULT_CONFIG: Config = {
-  default_format: "cbz",
-  default_out: "./download",
-  db_path: join(homedir(), ".local", "share", "scanldr", "scanldr.db"),
-  image_concurrency: 4,
-  chapter_delay_ms: 1000,
-  search_cache_ttl_days: 15,
-  chapter_cache_ttl_days: 15,
-};
 
 async function resolveConfigPath(opts: LoadConfigOptions): Promise<string | null> {
   const env = opts.env ?? process.env;

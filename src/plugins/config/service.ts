@@ -1,6 +1,6 @@
 import { ConfigError } from "@plugins/errors/index.ts";
 import { check, isPlainObject } from "@plugins/guards/index.ts";
-import { DEFAULT_CONFIG } from "./index.ts";
+import { DEFAULT_CONFIG } from "./constants.ts";
 import type { Config } from "./types.ts";
 
 export function validateAndMerge(parsed: unknown, source?: string): Config {
