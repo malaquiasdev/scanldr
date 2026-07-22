@@ -5,32 +5,18 @@
  * fetchChapterInput is never cached: image bytes/pages are explicitly out of scope.
  */
 
-import type { Config } from "@plugins/config/index.ts";
-import type { Db } from "@plugins/db/index.ts";
-import type { Logger } from "@plugins/logger/index.ts";
-import type { SourceCacheStore } from "@plugins/source-cache/index.ts";
 import { createSourceCache, isExpired, normalizeQuery } from "@plugins/source-cache/index.ts";
-import type { ChapterListing, SearchHit, SourceAdapter } from "./types.ts";
-
-export interface CachedAdapterTtlDays {
-  search: number;
-  chapterList: number;
-}
+import type {
+  CachedAdapterTtlDays,
+  ChapterListing,
+  CreateCachedAdapterOptions,
+  SearchHit,
+  SourceAdapter,
+  WrapAdapterWithCacheOptions,
+} from "./types.ts";
 
 /** Default 15d TTL for both payload types (2026-07-21 refinement — see issue #164). */
 export const DEFAULT_CACHE_TTL_DAYS: CachedAdapterTtlDays = { search: 15, chapterList: 15 };
-
-export interface CreateCachedAdapterOptions {
-  adapter: SourceAdapter;
-  cache: SourceCacheStore;
-  source: string;
-  logger: Logger;
-  ttlDays?: Partial<CachedAdapterTtlDays>;
-  /** Bypasses cache reads; the fresh result still overwrites the cache. */
-  forceRefresh?: boolean;
-  /** Clock injection for deterministic TTL tests. */
-  now?: () => Date;
-}
 
 export function createCachedAdapter(opts: CreateCachedAdapterOptions): SourceAdapter {
   const { adapter, cache, source, logger, forceRefresh = false, now = () => new Date() } = opts;
@@ -104,15 +90,6 @@ export function createCachedAdapter(opts: CreateCachedAdapterOptions): SourceAda
   }
 
   return { search, listChapters, fetchChapterInput: adapter.fetchChapterInput };
-}
-
-export interface WrapAdapterWithCacheOptions {
-  db?: Db;
-  config?: Config;
-  source: string;
-  logger: Logger;
-  forceRefresh?: boolean;
-  now?: () => Date;
 }
 
 /**

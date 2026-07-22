@@ -11,17 +11,8 @@ import type {
   MangakakalotClient,
 } from "@integrations/mangakakalot/client/index.ts";
 import { createMangakakalotClient } from "@integrations/mangakakalot/client/index.ts";
-import type { Logger } from "@plugins/logger/index.ts";
 import type { ChapterListing, SearchHit } from "../../walkthrough/types.ts";
-import type { SourceAdapter } from "./types.ts";
-
-export interface MangakakalotAdapterOptions {
-  logger: Logger;
-  /** Injected client — used in tests. Production omits this and builds the real one. */
-  client?: MangakakalotClient;
-  /** Injected HTTP client — used in tests. Production omits this. */
-  http?: FallbackHttpClient;
-}
+import type { MangakakalotAdapterOptions, SourceAdapter } from "./types.ts";
 
 function buildChapterLabel(ref: FallbackChapterRef): string {
   const num = ref.chapter !== null ? ref.chapter : "none";

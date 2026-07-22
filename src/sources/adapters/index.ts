@@ -1,18 +1,10 @@
 // Source adapter registry — maps source id to a SourceAdapter factory.
 
-import type { Config } from "@plugins/config/index.ts";
-import type { Logger } from "@plugins/logger/index.ts";
 import type { SourceId } from "../types.ts";
 import { createMangakakalotAdapter } from "./mangakakalot.ts";
-import type { SourceAdapter } from "./types.ts";
+import type { GetAdapterOptions, SourceAdapter } from "./types.ts";
 
-export type { SourceAdapter } from "./types.ts";
-
-export interface GetAdapterOptions {
-  logger: Logger;
-  /** User config — unused by the sole remaining (mangakakalot) adapter, kept for API stability. */
-  config?: Config;
-}
+export type { GetAdapterOptions, SourceAdapter } from "./types.ts";
 
 /**
  * Returns the SourceAdapter for the given source id.
