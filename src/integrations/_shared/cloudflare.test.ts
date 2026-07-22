@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { hasCloudflareChallengeMarkers } from "./cloudflare-markers.ts";
+import { hasCloudflareChallengeMarkers } from "./cloudflare.ts";
 
 describe("hasCloudflareChallengeMarkers", () => {
   test("detects cf-browser-verification marker", () => {

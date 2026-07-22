@@ -45,6 +45,13 @@ export interface FallbackHttpOptions {
   now?: () => number;
 }
 
+/** Cached auth credentials, keyed by file mtime to detect changes. */
+export interface AuthCache {
+  mtimeMs: number;
+  cookieHeader: string | undefined;
+  userAgent: string;
+}
+
 export interface FallbackHttpClient {
   /**
    * GET request with cookie replay + UA from the auth session.

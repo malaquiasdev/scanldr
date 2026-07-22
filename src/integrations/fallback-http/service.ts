@@ -1,7 +1,9 @@
 import { readFile, stat } from "node:fs/promises";
+import { hasCloudflareChallengeMarkers } from "@integrations/_shared/cloudflare.ts";
 import type { AuthSession } from "@integrations/mangakakalot/auth/types.ts";
 import { resolveAuthPath } from "@plugins/auth-path/index.ts";
-import type { FallbackHttpClient, FallbackHttpOptions, FetchFn } from "./types.ts";
+import type { Logger } from "@plugins/logger/index.ts";
+import type { AuthCache, FallbackHttpClient, FallbackHttpOptions, FetchFn } from "./types.ts";
 import { CloudflareError, CrossOriginCloudflareError, MissingAuthError } from "./types.ts";
 
 /** 1 initial + 3 retries */
@@ -23,13 +25,6 @@ function isValidAuthSession(v: unknown): v is AuthSession {
     typeof obj.userAgent === "string" &&
     typeof obj.savedAt === "number"
   );
-}
-
-/** Cached auth credentials, keyed by file mtime to detect changes. */
-interface AuthCache {
-  mtimeMs: number;
-  cookieHeader: string | undefined;
-  userAgent: string;
 }
 
 /**
@@ -112,6 +107,101 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
     }
   }
 
+  /** Throws the lane-appropriate CF error if the latch is currently short-circuiting. */
+  async function guardShortCircuit(
+    latch: ReturnType<typeof createCfLatch>,
+    url: string,
+    withCookie: boolean,
+  ): Promise<void> {
+    if (await latch.shouldShortCircuit(path)) {
+      throw withCookie ? new CloudflareError(url) : new CrossOriginCloudflareError(url);
+    }
+  }
+
+  /** Performs a single fetch attempt with auth headers merged in. Never throws on network error. */
+  async function attemptFetch(
+    url: string,
+    extraHeaders: Record<string, string> | undefined,
+    withCookie: boolean,
+  ): Promise<{ res: Response | undefined; fetchError: unknown }> {
+    try {
+      const { cookieHeader, userAgent } = await resolveAuth();
+
+      const baseHeaders: Record<string, string> = { "user-agent": userAgent };
+      if (withCookie && cookieHeader !== undefined) baseHeaders.cookie = cookieHeader;
+      const headers = mergeHeadersPreservingAuth(baseHeaders, extraHeaders);
+      const res = await fetchFn(url, { headers });
+      return { res, fetchError: undefined };
+    } catch (err) {
+      return { res: undefined, fetchError: err };
+    }
+  }
+
+  /** Logs + records the CF latch, then throws the lane-appropriate CF error. */
+  async function rejectAsCloudflare(
+    latch: ReturnType<typeof createCfLatch>,
+    url: string,
+    withCookie: boolean,
+    message: string,
+  ): Promise<never> {
+    logger.warn(
+      {
+        event: "fallback_http.cloudflare_rejected",
+        context: "fallback-http",
+        url,
+        lane: withCookie ? "site" : "anonymous",
+      },
+      message,
+    );
+    await latch.record(path);
+    throw withCookie ? new CloudflareError(url) : new CrossOriginCloudflareError(url);
+  }
+
+  /**
+   * Inspects a 2xx response for a disguised CF challenge body. Returns the response
+   * to hand back to the caller (rebuilt if the body was peeked), or throws a CF error.
+   */
+  async function handleSuccessResponse(
+    res: Response,
+    latch: ReturnType<typeof createCfLatch>,
+    url: string,
+    withCookie: boolean,
+  ): Promise<Response> {
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!isTextualContentType(contentType)) {
+      return res;
+    }
+    const body = await peekCfBody(res);
+    if (body !== null && hasCloudflareChallengeMarkers(body)) {
+      return rejectAsCloudflare(
+        latch,
+        url,
+        withCookie,
+        "Cloudflare challenge in 200 body — session is stale",
+      );
+    }
+    return rebuildResponse(res, body);
+  }
+
+  /** Sleeps for the exponential-backoff duration and logs the retry, given the failed attempt. */
+  async function waitForRetry(attempt: number, status: number, url: string): Promise<void> {
+    const waitMs = BASE_BACKOFF_MS * 2 ** attempt + Math.floor(Math.random() * JITTER_MS);
+
+    logger.warn(
+      {
+        event: "fallback_http.retry",
+        context: "fallback-http",
+        attempt: attempt + 1,
+        status,
+        url,
+        waitMs,
+      },
+      `retrying after ${waitMs}ms`,
+    );
+
+    await sleep(waitMs);
+  }
+
   /**
    * Dispatches an HTTP request with retries and throttling.
    * `lastRequestAt` is marked per-attempt so retries stay throttle-conservative.
@@ -127,63 +217,21 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
     withCookie: boolean,
   ): Promise<Response> {
     const latch = withCookie ? siteLatch : anonLatch;
-    if (await latch.shouldShortCircuit(path)) {
-      throw withCookie ? new CloudflareError(url) : new CrossOriginCloudflareError(url);
-    }
+    await guardShortCircuit(latch, url, withCookie);
 
     await throttle();
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       lastRequestAt = now();
 
-      let res: Response | undefined;
-      let fetchError: unknown;
-
-      try {
-        const { cookieHeader, userAgent } = await resolveAuth();
-
-        const baseHeaders: Record<string, string> = { "user-agent": userAgent };
-        if (withCookie && cookieHeader !== undefined) baseHeaders.cookie = cookieHeader;
-        const headers = mergeHeadersPreservingAuth(baseHeaders, extraHeaders);
-        res = await fetchFn(url, { headers });
-      } catch (err) {
-        fetchError = err;
-      }
+      const { res, fetchError } = await attemptFetch(url, extraHeaders, withCookie);
 
       if (res && res.status === 403) {
-        logger.warn(
-          {
-            event: "fallback_http.cloudflare_rejected",
-            context: "fallback-http",
-            url,
-            lane: withCookie ? "site" : "anonymous",
-          },
-          "Cloudflare rejected the request",
-        );
-        await latch.record(path);
-        throw withCookie ? new CloudflareError(url) : new CrossOriginCloudflareError(url);
+        return rejectAsCloudflare(latch, url, withCookie, "Cloudflare rejected the request");
       }
 
       if (res && res.status >= 200 && res.status < 300) {
-        const contentType = res.headers.get("content-type") ?? "";
-        if (!isTextualContentType(contentType)) {
-          return res;
-        }
-        const body = await peekCfBody(res);
-        if (body !== null && isCfChallengeHtml(body)) {
-          logger.warn(
-            {
-              event: "fallback_http.cloudflare_rejected",
-              context: "fallback-http",
-              url,
-              lane: withCookie ? "site" : "anonymous",
-            },
-            "Cloudflare challenge in 200 body — session is stale",
-          );
-          await latch.record(path);
-          throw withCookie ? new CloudflareError(url) : new CrossOriginCloudflareError(url);
-        }
-        return rebuildResponse(res, body);
+        return handleSuccessResponse(res, latch, url, withCookie);
       }
 
       if (res && res.status < 500) {
@@ -200,22 +248,7 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
         throw new Error(`Fallback HTTP ${res?.status}: ${url}`);
       }
 
-      const status = res ? res.status : 0;
-      const waitMs = BASE_BACKOFF_MS * 2 ** attempt + Math.floor(Math.random() * JITTER_MS);
-
-      logger.warn(
-        {
-          event: "fallback_http.retry",
-          context: "fallback-http",
-          attempt: attempt + 1,
-          status,
-          url,
-          waitMs,
-        },
-        `retrying after ${waitMs}ms`,
-      );
-
-      await sleep(waitMs);
+      await waitForRetry(attempt, res ? res.status : 0, url);
     }
 
     throw new Error("invariant: retry loop exited without returning or throwing — unreachable");
@@ -290,10 +323,7 @@ async function statMtime(filePath: string): Promise<number> {
   }
 }
 
-async function loadAuth(
-  path: string,
-  logger: { warn: (fields: Record<string, unknown>, msg: string) => void },
-): Promise<AuthSession> {
+async function loadAuth(path: string, logger: Logger): Promise<AuthSession> {
   let raw: string;
   try {
     raw = await readFile(path, "utf8");
@@ -318,20 +348,6 @@ async function loadAuth(
     );
     throw new MissingAuthError(path);
   }
-}
-
-/**
- * Returns the CF challenge body markers we look for.
- * Must be kept in sync with auth-check.ts probeSession().
- */
-function isCfChallengeHtml(body: string): boolean {
-  return (
-    body.includes("cf-browser-verification") ||
-    body.includes("challenge-platform") ||
-    body.includes("cdn-cgi/challenge-platform") ||
-    body.includes("jschl-answer") ||
-    (body.includes("cloudflare") && body.includes("cf_clearance") && body.length < 20000)
-  );
 }
 
 /**

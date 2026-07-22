@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { hasCloudflareChallengeMarkers } from "@integrations/_shared/cloudflare.ts";
 import { CloudflareError } from "../../integrations/fallback-http/types.ts";
 import { captureSessionViaBrowser } from "../../integrations/mangakakalot/auth/browser-capture/index.ts";
 import { parseCurl } from "../../integrations/mangakakalot/auth/curl-parser.ts";
@@ -15,7 +16,6 @@ import type {
   SessionProbeClientFactory,
 } from "../types.ts";
 import { WalkthroughError } from "../types.ts";
-import { hasCloudflareChallengeMarkers } from "./cloudflare-markers.ts";
 
 export interface AuthCheckOptions {
   requiresAuth: boolean;
