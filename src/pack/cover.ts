@@ -1,5 +1,3 @@
-// Cover image fetcher for pack-as-volume; reuses auth.json cookies+UA, falls back to bare UA (mirrors FallbackHttpClient).
-
 import { readFile } from "node:fs/promises";
 import { resolveAuthPath } from "@plugins/auth-path/index.ts";
 import type { CoverImage } from "./types.ts";
@@ -8,7 +6,7 @@ export type { CoverImage };
 
 type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
-export const MAX_COVER_BYTES = 50 * 1024 * 1024; // 50 MB
+export const MAX_COVER_BYTES = 50 * 1024 * 1024;
 
 const DEFAULT_UA =
   "Mozilla/5.0 (compatible; scanldr/1.0; +https://github.com/malaquiasdev/scanldr)";
@@ -46,6 +44,10 @@ function isValidAuthSession(v: unknown): v is AuthSession {
   );
 }
 
+/**
+ * Load auth headers. If auth.json is missing or corrupt, falls back to bare UA,
+ * no failure.
+ */
 async function loadAuthHeaders(authPath: string): Promise<Record<string, string>> {
   try {
     const raw = await readFile(authPath, "utf8");
@@ -61,12 +63,14 @@ async function loadAuthHeaders(authPath: string): Promise<Record<string, string>
     if (cookieHeader !== undefined) headers.cookie = cookieHeader;
     return headers;
   } catch {
-    // auth.json missing or corrupt — fall back to bare UA, no failure
     return { "user-agent": DEFAULT_UA };
   }
 }
 
 /**
+ * Cover image fetcher for pack-as-volume; reuses auth.json cookies+UA, falls back
+ * to bare UA (mirrors FallbackHttpClient).
+ *
  * Fetch a cover image from a URL.
  *
  * Validates:

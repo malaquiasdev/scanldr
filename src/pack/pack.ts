@@ -93,6 +93,9 @@ function sortEntryNamesByPageNumber(names: string[]): string[] {
 /**
  * Pack multiple chapter cbz files into a single volume cbz.
  * Atomic write: write to .tmp first, then rename.
+ *
+ * If a cover is provided, "00_cover" sorts before "chapter-" so readers using the
+ * first zip entry as thumbnail get the cover.
  */
 export async function packVolume(input: PackVolumeInput): Promise<PackVolumeResult> {
   const { slug, outDir, chapters, customName, logger } = input;
@@ -125,7 +128,6 @@ export async function packVolume(input: PackVolumeInput): Promise<PackVolumeResu
 
   const allEntries: Record<string, Uint8Array> = {};
 
-  // "00_cover" sorts before "chapter-" so readers using the first zip entry as thumbnail get the cover.
   if (input.cover) {
     const coverName = `00_cover${input.cover.ext}`;
     allEntries[coverName] = input.cover.bytes;
@@ -165,7 +167,6 @@ export async function packVolume(input: PackVolumeInput): Promise<PackVolumeResu
     await writeFile(tempPath, zipped, { mode: 0o644 });
     await rename(tempPath, finalPath);
   } catch (err) {
-    // Clean up the temp file so it doesn't litter disk on partial writes.
     await unlink(tempPath).catch(() => undefined);
     throw err;
   }
@@ -190,7 +191,6 @@ export async function packVolumeReplacingSources(
   input: PackVolumeInput,
 ): Promise<PackVolumeReplacingSourcesResult> {
   const volume = await packVolume(input);
-  // Best-effort: deletion failures are logged and never fail the run (see deleteIndividualFiles).
   const deleted = await deleteIndividualFiles(input.chapters, input.logger);
   return { volume, deleted };
 }
