@@ -3,9 +3,10 @@ import {
   CrossOriginCloudflareError,
 } from "../integrations/fallback-http/types.ts";
 import type { Logger } from "../plugins/logger/index.ts";
+import type { RefreshSession } from "./types.ts";
 import { WalkthroughError } from "./types.ts";
 
-export type RefreshSession = () => Promise<void>;
+export type { RefreshSession } from "./types.ts";
 
 /**
  * Wraps an adapter call with a single-retry on Cloudflare rejection.

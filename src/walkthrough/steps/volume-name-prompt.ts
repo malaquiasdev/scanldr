@@ -1,15 +1,13 @@
-import type { Logger } from "../../plugins/logger/index.ts";
 import { input } from "../prompts.ts";
+import type { VolumeNamePromptOptions } from "../types.ts";
+
+export type { VolumeNamePromptOptions } from "../types.ts";
 
 const MAX_RETRIES = 2;
 
 function isUnsafeName(value: string): boolean {
   if (value.includes("/") || value.includes("\\")) return true;
   return value.split(/[\\/]/).some((s) => s === "..");
-}
-
-export interface VolumeNamePromptOptions {
-  logger: Logger;
 }
 
 /**
