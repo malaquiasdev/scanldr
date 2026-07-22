@@ -1,16 +1,16 @@
-// Trace store — persists structured log rows to SQLite with TTL purge.
-// Each store instance tracks a single run_id (UUID v4) for the lifetime of the process.
-
 import { redact } from "@plugins/logger/redact.ts";
 import type { CreateTraceStoreOpts, TraceRow, TraceStore } from "./types.ts";
 
 export type { CreateTraceStoreOpts, TraceRow, TraceStore } from "./types.ts";
 
+/**
+ * Trace store — persists structured log rows to SQLite with TTL purge.
+ * Each store instance tracks a single run_id (UUID v4) for the lifetime of the process.
+ */
 export function createTraceStore(opts: CreateTraceStoreOpts): TraceStore {
   const { db } = opts;
   const runId = crypto.randomUUID();
 
-  // Purge stale rows eagerly on instantiation (3-day default).
   purge(3);
 
   const insertStmt = db.prepare<
@@ -18,6 +18,9 @@ export function createTraceStore(opts: CreateTraceStoreOpts): TraceStore {
     [string, string, string | null, string, string | null, string]
   >("INSERT INTO traces (ts, level, event, msg, fields_json, run_id) VALUES (?, ?, ?, ?, ?, ?)");
 
+  /**
+   * Purges stale trace rows eagerly on instantiation (3-day default maximum age).
+   */
   function purge(maxAgeDays: number): void {
     db.exec(`DELETE FROM traces WHERE ts < datetime('now', '-${maxAgeDays} days')`);
   }

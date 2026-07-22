@@ -32,6 +32,12 @@ export function createStderrController(options: StderrControllerOptions): Stderr
   }
 
   return {
+    /**
+     * Writes a log line. If the progress bar is active, clears the bar's current line,
+     * writes the log (which is newline-terminated), then re-renders the bar in place.
+     * No additional clear is needed before re-rendering since the cursor is already on
+     * a fresh empty line.
+     */
     logWrite(line: string): void {
       if (!barActive) {
         write(line);
@@ -39,15 +45,13 @@ export function createStderrController(options: StderrControllerOptions): Stderr
       }
       write(CLEAR_LINE);
       write(line);
-      // No clear needed before this redraw: `line` is always newline-terminated
-      // (the logger appends `\n`), so the cursor is already on a fresh empty
-      // line when the bar is re-rendered here.
       write(`\r${lastBarLine}`);
     },
+    /**
+     * Writes a bar chunk. Every chunk (including a bare newline) is a normal bar render/passthrough.
+     * Finish-state is no longer inferred by sniffing bytes — callers signal teardown explicitly via endBar().
+     */
     barWrite(chunk: string): void {
-      // Every chunk (including a bare "\n") is a normal bar render/passthrough.
-      // Finish-state is no longer inferred by sniffing bytes here — callers
-      // signal teardown explicitly via `endBar()`.
       lastBarLine = chunk.startsWith("\r") ? chunk.slice(1) : chunk;
       barActive = true;
       write(chunk);
