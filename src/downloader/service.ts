@@ -40,6 +40,10 @@ async function fetchChapterPages(
   return Promise.all(tasks);
 }
 
+/**
+ * emittedPageCount tracks the post-merge page count (not the fetched-tile count), so
+ * zip filenames stay contiguous even when CDN-tiled pages get merged into fewer pages.
+ */
 export async function downloadBundle(input: DownloadBundleInput): Promise<DownloadBundleResult> {
   const {
     outDir,
@@ -83,7 +87,6 @@ export async function downloadBundle(input: DownloadBundleInput): Promise<Downlo
 
   const sem = createSemaphore(imageConcurrency);
   const zipEntries: Record<string, Uint8Array> = {};
-  // emittedPageCount: post-merge page count, not fetched-tile count — keeps filenames contiguous.
   let emittedPageCount = 0;
   const totalPages = sorted.reduce((sum, c) => sum + c.pages.length, 0);
 
