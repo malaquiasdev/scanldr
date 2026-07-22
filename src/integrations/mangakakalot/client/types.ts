@@ -3,6 +3,8 @@
 
 import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 import type { ImageRef } from "@integrations/_shared/media.ts";
+import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
+import type { Logger } from "@plugins/logger/index.ts";
 
 /** A chapter reference on the fallback site (used for chapter labeling). */
 export interface FallbackChapterRef {
@@ -10,6 +12,15 @@ export interface FallbackChapterRef {
   chapter: string | null;
   /** Composite id "<mangaSlug>/<chapter-slug>" matching getChapterImages() convention. */
   id: string;
+}
+
+// ---------------------------------------------------------------------------
+// Client options
+// ---------------------------------------------------------------------------
+
+export interface CreateClientOptions {
+  http: FallbackHttpClient;
+  logger: Logger;
 }
 
 // ---------------------------------------------------------------------------

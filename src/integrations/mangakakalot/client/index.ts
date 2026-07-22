@@ -1,14 +1,12 @@
 import type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 import type { ImageRef } from "@integrations/_shared/media.ts";
-import type { FallbackHttpClient } from "@integrations/fallback-http/types.ts";
-import type { Logger } from "@plugins/logger/index.ts";
 import { parseChapterImages, parseChapterListFromApi, parseSearchResults } from "./parser.ts";
-import type { MangakakalotClient } from "./types.ts";
+import type { CreateClientOptions, MangakakalotClient } from "./types.ts";
 import { MangakakalotParseError } from "./types.ts";
 
 export type { ChapterRef, MangaCandidate } from "@integrations/_shared/manga.ts";
 export type { ImageRef } from "@integrations/_shared/media.ts";
-export type { FallbackChapterRef, MangakakalotClient } from "./types.ts";
+export type { CreateClientOptions, FallbackChapterRef, MangakakalotClient } from "./types.ts";
 export { MangakakalotParseError } from "./types.ts";
 
 const SITE_ROOT = "https://www.mangakakalot.gg";
@@ -19,10 +17,7 @@ const CHAPTERS_API_URL = (slug: string, offset = 0) =>
 /** Guard against runaway pagination (e.g. malformed has_more loop). */
 const MAX_API_PAGES = 20;
 
-export function createMangakakalotClient(opts: {
-  http: FallbackHttpClient;
-  logger: Logger;
-}): MangakakalotClient {
+export function createMangakakalotClient(opts: CreateClientOptions): MangakakalotClient {
   const { http, logger } = opts;
 
   async function fetchHtml(url: string, extraHeaders?: Record<string, string>): Promise<string> {
