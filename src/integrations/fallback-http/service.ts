@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { hasCloudflareChallengeMarkers } from "@integrations/_shared/cloudflare.ts";
 import type { AuthSession } from "@integrations/mangakakalot/auth/types.ts";
 import { resolveAuthPath } from "@plugins/auth-path/index.ts";
+import { isValidAuthSession, toCookieHeader } from "@plugins/auth-session/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import type { AuthCache, FallbackHttpClient, FallbackHttpOptions, FetchFn } from "./types.ts";
 import { CloudflareError, CrossOriginCloudflareError, MissingAuthError } from "./types.ts";
@@ -13,18 +14,6 @@ const JITTER_MS = 200;
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-function isValidAuthSession(v: unknown): v is AuthSession {
-  if (!v || typeof v !== "object") return false;
-  const obj = v as Record<string, unknown>;
-  return (
-    obj.cookies !== null &&
-    typeof obj.cookies === "object" &&
-    !Array.isArray(obj.cookies) &&
-    typeof obj.userAgent === "string" &&
-    typeof obj.savedAt === "number"
-  );
 }
 
 /**
@@ -69,11 +58,7 @@ export async function createFallbackHttp(opts: FallbackHttpOptions): Promise<Fal
 
     const session = await loadAuth(path, logger);
     const cookieHeader =
-      Object.keys(session.cookies).length > 0
-        ? Object.entries(session.cookies)
-            .map(([k, v]) => `${k}=${v}`)
-            .join("; ")
-        : undefined;
+      Object.keys(session.cookies).length > 0 ? toCookieHeader(session.cookies) : undefined;
     authCache = { mtimeMs, cookieHeader, userAgent: session.userAgent };
     return { cookieHeader, userAgent: session.userAgent };
   }

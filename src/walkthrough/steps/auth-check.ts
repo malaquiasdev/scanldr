@@ -7,6 +7,7 @@ import { captureSessionViaBrowser } from "../../integrations/mangakakalot/auth/b
 import { parseCurl } from "../../integrations/mangakakalot/auth/curl-parser.ts";
 import type { AuthSession } from "../../integrations/mangakakalot/auth/types.ts";
 import { resolveAuthPath } from "../../plugins/auth-path/index.ts";
+import { toCookieHeader } from "../../plugins/auth-session/index.ts";
 import type { Logger } from "../../plugins/logger/index.ts";
 import { editor } from "../prompts.ts";
 import type {
@@ -146,9 +147,7 @@ function buildCandidateProbeClient(
   session: AuthSession,
   fetchFn: (url: string, init?: RequestInit) => Promise<Response>,
 ): SessionProbeClient {
-  const cookieHeader = Object.entries(session.cookies)
-    .map(([name, value]) => `${name}=${value}`)
-    .join("; ");
+  const cookieHeader = toCookieHeader(session.cookies);
   return {
     get: async (url: string) => {
       const res = await fetchFn(url, {
