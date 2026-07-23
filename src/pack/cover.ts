@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
-import type { AuthSession } from "@integrations/mangakakalot/auth/types.ts";
 import { resolveAuthPath } from "@plugins/auth-path/index.ts";
+import { isValidAuthSession, toCookieHeader } from "@plugins/auth-session/index.ts";
 import type { CoverImage, FetchCoverOptions } from "./types.ts";
 
 export type { CoverImage };
@@ -18,18 +18,6 @@ const MIME_TO_EXT: Record<string, string> = {
   "image/gif": ".gif",
 };
 
-function isValidAuthSession(v: unknown): v is AuthSession {
-  if (!v || typeof v !== "object") return false;
-  const obj = v as Record<string, unknown>;
-  return (
-    obj.cookies !== null &&
-    typeof obj.cookies === "object" &&
-    !Array.isArray(obj.cookies) &&
-    typeof obj.userAgent === "string" &&
-    typeof obj.savedAt === "number"
-  );
-}
-
 /**
  * Load auth headers. If auth.json is missing or corrupt, falls back to bare UA,
  * no failure.
@@ -40,11 +28,7 @@ async function loadAuthHeaders(authPath: string): Promise<Record<string, string>
     const parsed: unknown = JSON.parse(raw);
     if (!isValidAuthSession(parsed)) return { "user-agent": DEFAULT_UA };
     const cookieHeader =
-      Object.keys(parsed.cookies).length > 0
-        ? Object.entries(parsed.cookies)
-            .map(([k, v]) => `${k}=${v}`)
-            .join("; ")
-        : undefined;
+      Object.keys(parsed.cookies).length > 0 ? toCookieHeader(parsed.cookies) : undefined;
     const headers: Record<string, string> = { "user-agent": parsed.userAgent };
     if (cookieHeader !== undefined) headers.cookie = cookieHeader;
     return headers;
