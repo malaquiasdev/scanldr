@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Logger } from "@plugins/logger/index.ts";
@@ -39,18 +39,18 @@ const VALID_SESSION = {
 
 let tmpDir: string;
 
+// Root cause of #253: this dir used to be a fixed literal, so concurrent
+// `bun test` OS processes under CPU contention shared it — one process's
+// afterEach `rm -rf` could race another's auth.json mid-test. `mkdtemp`
+// guarantees an OS-atomic unique directory per test, matching the hermetic
+// pattern used in downloader/service.test.ts (see issue #247).
 beforeEach(async () => {
-  tmpDir = await makeTempDir(join(tmpdir(), "fallback-http-test-"));
+  tmpDir = await mkdtemp(join(tmpdir(), "scanldr-fallback-http-"));
 });
 
 afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true });
 });
-
-async function makeTempDir(path: string): Promise<string> {
-  await mkdir(path, { recursive: true });
-  return path;
-}
 
 async function writeAuth(dir: string, content: unknown): Promise<string> {
   const path = join(dir, "auth.json");
