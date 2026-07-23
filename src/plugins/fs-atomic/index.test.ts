@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { atomicWrite } from "./index.ts";
@@ -67,5 +67,28 @@ describe("atomicWrite", () => {
     await expect(atomicWrite(target, "data")).rejects.toBeTruthy();
 
     expect(existsSync(`${target}.tmp`)).toBe(false);
+  });
+
+  test("applies mode 0o600 exactly to the resulting file (auth/credentials guarantee)", async () => {
+    const dir = await makeTmpDir();
+    const target = join(dir, "credentials.json");
+
+    await atomicWrite(target, JSON.stringify({ token: "secret" }), { mode: 0o600 });
+
+    const { mode } = await stat(target);
+    expect(mode & 0o777).toBe(0o600);
+  });
+
+  test("cleans up the tmp file when rename fails even with a restrictive mode", async () => {
+    const dir = await makeTmpDir();
+    // A directory as the destination guarantees rename() fails (EISDIR/ENOTEMPTY),
+    // while writeFile() to the tmp path still succeeds.
+    const target = join(dir, "collides-restrictive");
+    await mkdir(target);
+
+    await expect(atomicWrite(target, "secret", { mode: 0o600 })).rejects.toBeTruthy();
+
+    expect(existsSync(`${target}.tmp`)).toBe(false);
+    expect(existsSync(target)).toBe(true);
   });
 });
