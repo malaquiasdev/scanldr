@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.0](https://github.com/malaquiasdev/scanldr/compare/v1.2.0...v1.3.0) (2026-07-23)
+
+
+### Features
+
+* **cache:** persist search results + chapter lists with TTL ([#164](https://github.com/malaquiasdev/scanldr/issues/164)) ([#231](https://github.com/malaquiasdev/scanldr/issues/231)) ([2aa1479](https://github.com/malaquiasdev/scanldr/commit/2aa1479998331c45edb9d3352cbfdbc66c857197))
+
+
+### Bug Fixes
+
+* **fallback-http:** unify Cloudflare markers (live drift) + type placement + split dispatch ([#241](https://github.com/malaquiasdev/scanldr/issues/241)) ([0e95530](https://github.com/malaquiasdev/scanldr/commit/0e955305797c2ea2540daf83778328dc194a6887))
+* read version from package.json at runtime ([#214](https://github.com/malaquiasdev/scanldr/issues/214)) ([3cef51a](https://github.com/malaquiasdev/scanldr/commit/3cef51a6163212722ddc370be926875529bf4657))
+
 ## [1.2.0](https://github.com/malaquiasdev/scanldr/compare/v1.1.0...v1.2.0) (2026-07-17)
 
 
