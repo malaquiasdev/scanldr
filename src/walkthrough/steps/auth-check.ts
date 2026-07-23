@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { hasCloudflareChallengeMarkers } from "@integrations/_shared/cloudflare.ts";
+import { atomicWrite } from "@plugins/fs-atomic/index.ts";
 import { CloudflareError } from "../../integrations/fallback-http/types.ts";
 import { captureSessionViaBrowser } from "../../integrations/mangakakalot/auth/browser-capture/index.ts";
 import { parseCurl } from "../../integrations/mangakakalot/auth/curl-parser.ts";
@@ -51,18 +52,10 @@ function isValidAuthFile(path: string): boolean {
 /** Write session atomically (write .tmp → rename). On rename failure, cleans up .tmp. */
 async function persistSession(session: AuthSession, authPath: string): Promise<void> {
   await mkdir(dirname(authPath), { recursive: true, mode: 0o700 });
-  const tmpPath = `${authPath}.tmp`;
-  await writeFile(tmpPath, JSON.stringify(session, null, 2), { encoding: "utf8", mode: 0o600 });
-  try {
-    await rename(tmpPath, authPath);
-  } catch (renameErr) {
-    try {
-      await unlink(tmpPath);
-    } catch {
-      // Best-effort cleanup, ignore unlink errors.
-    }
-    throw renameErr;
-  }
+  await atomicWrite(authPath, JSON.stringify(session, null, 2), {
+    encoding: "utf8",
+    mode: 0o600,
+  });
 }
 
 /**

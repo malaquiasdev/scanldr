@@ -1,6 +1,7 @@
-import { mkdir, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { ChapterInput, ImageRef } from "@integrations/_shared/media.ts";
+import { atomicWrite } from "@plugins/fs-atomic/index.ts";
 import { zipSync } from "fflate";
 import { detectExtFromBytes, pad, padBundleNumber } from "./helpers.ts";
 import { reassembleChapterPages } from "./reassemble.ts";
@@ -64,7 +65,6 @@ export async function downloadBundle(input: DownloadBundleInput): Promise<Downlo
   const filename = `${slug}-${kind}-${padded}.${ext}`;
   const bundleDir = join(outDir, slug);
   const finalPath = join(bundleDir, filename);
-  const tempPath = `${finalPath}.temp`;
   const chapterIds = chapters.map((c) => c.id);
   const sorted = [...chapters].sort((a, b) => a.num - b.num);
 
@@ -131,12 +131,11 @@ export async function downloadBundle(input: DownloadBundleInput): Promise<Downlo
   }
 
   logger.info(
-    { event: "downloader.pack_start", context: "downloader", tempPath },
+    { event: "downloader.pack_start", context: "downloader", tempPath: `${finalPath}.temp` },
     "packing archive",
   );
   const zipped = zipSync(zipEntries);
-  await writeFile(tempPath, zipped);
-  await rename(tempPath, finalPath);
+  await atomicWrite(finalPath, zipped, { tmpSuffix: ".temp" });
   logger.info(
     { event: "downloader.pack_done", context: "downloader", outputPath: finalPath },
     "archive ready",

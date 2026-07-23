@@ -1,6 +1,7 @@
-import { rename, stat, unlink, writeFile } from "node:fs/promises";
+import { stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { CliError } from "@plugins/errors/index.ts";
+import { atomicWrite } from "@plugins/fs-atomic/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";
 import { unzipSync, zipSync } from "fflate";
 import { isNoneToken, padBundleNumber } from "../downloader/helpers.ts";
@@ -113,7 +114,6 @@ export async function packVolume(input: PackVolumeInput): Promise<PackVolumeResu
   const finalName = stem.endsWith(".cbz") ? stem : `${stem}.cbz`;
   const bundleDir = join(outDir, slug);
   const finalPath = join(bundleDir, finalName);
-  const tempPath = `${finalPath}.tmp`;
 
   logger.info(
     {
@@ -163,13 +163,7 @@ export async function packVolume(input: PackVolumeInput): Promise<PackVolumeResu
   }
 
   const zipped = zipSync(allEntries);
-  try {
-    await writeFile(tempPath, zipped, { mode: 0o644 });
-    await rename(tempPath, finalPath);
-  } catch (err) {
-    await unlink(tempPath).catch(() => undefined);
-    throw err;
-  }
+  await atomicWrite(finalPath, zipped, { mode: 0o644 });
 
   const { size } = await stat(finalPath);
 
