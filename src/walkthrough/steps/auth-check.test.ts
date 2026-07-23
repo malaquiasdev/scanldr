@@ -1,5 +1,6 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CloudflareError } from "../../integrations/fallback-http/types.ts";
@@ -12,6 +13,20 @@ import type {
 
 const noop = () => {};
 const logger = createLogger({ level: "info", format: "human", write: noop });
+
+// Each test gets its own OS-guaranteed-unique directory via mkdtemp (matches the
+// hermetic pattern used in downloader/service.test.ts). The previous
+// `join(tmpdir(), \`scanldr-*-${Date.now()}\`)` construction was NOT guaranteed unique
+// across concurrent `bun test` processes — see issue #255.
+let dir: string;
+
+beforeEach(async () => {
+  dir = await mkdtemp(join(tmpdir(), "scanldr-auth-check-"));
+});
+
+afterEach(async () => {
+  await rm(dir, { recursive: true, force: true });
+});
 
 /** Build a fake probe client from a sequence of response factories. */
 function fakeProbeSequence(responses: Array<() => Promise<Response>>): SessionProbeClientFactory {
@@ -77,7 +92,6 @@ describe("checkAuth", () => {
   });
 
   test("requiresAuth: true with existing valid auth → returns { ok: true, skipped: false } without prompting (no probe)", async () => {
-    const dir = join(tmpdir(), `scanldr-test-${Date.now()}`);
     const authDir = join(dir, "scanldr");
     mkdirSync(authDir, { recursive: true });
     writeFileSync(join(authDir, "auth.json"), JSON.stringify({ token: "abc" }));
@@ -101,7 +115,6 @@ describe("checkAuth", () => {
   });
 
   test("requiresAuth: true, no auth file, valid cURL paste → returns { ok: true, skipped: false, justAuthenticated: true }", async () => {
-    const tmpDir = join(tmpdir(), `scanldr-auth-test-${Date.now()}`);
     mock.module("../prompts.ts", () => ({
       editor: async () => VALID_CURL,
       input: async () => "",
@@ -111,7 +124,7 @@ describe("checkAuth", () => {
     }));
 
     const { checkAuth } = await import("./auth-check.ts");
-    const result = await checkAuth({ requiresAuth: true, logger, dataHome: tmpDir });
+    const result = await checkAuth({ requiresAuth: true, logger, dataHome: dir });
     expect(result.ok).toBe(true);
     expect(result.skipped).toBe(false);
     expect(result.justAuthenticated).toBe(true);
@@ -140,7 +153,6 @@ describe("checkAuth", () => {
   // --- Probe tests ---
 
   test("probe success: valid session → returns { ok: true, skipped: false }; NO cURL prompt shown", async () => {
-    const dir = join(tmpdir(), `scanldr-probe-ok-${Date.now()}`);
     const authDir = join(dir, "scanldr");
     mkdirSync(authDir, { recursive: true });
     writeFileSync(
@@ -173,7 +185,6 @@ describe("checkAuth", () => {
   });
 
   test("probe stale → re-prompt → persist → re-probe ok → returns { ok: true, refreshed: true }", async () => {
-    const dir = join(tmpdir(), `scanldr-probe-stale-${Date.now()}`);
     const authDir = join(dir, "scanldr");
     mkdirSync(authDir, { recursive: true });
     const authJsonPath = join(authDir, "auth.json");
@@ -216,7 +227,6 @@ describe("checkAuth", () => {
   });
 
   test("refresh does not delete auth.json before a successful paste", async () => {
-    const dir = join(tmpdir(), `scanldr-refresh-no-upfront-unlink-${Date.now()}`);
     const authDir = join(dir, "scanldr");
     mkdirSync(authDir, { recursive: true });
     const authJsonPath = join(authDir, "auth.json");
@@ -255,7 +265,6 @@ describe("checkAuth", () => {
   });
 
   test("probe stale → re-prompt → re-probe stale again → throws WalkthroughError", async () => {
-    const dir = join(tmpdir(), `scanldr-probe-stale-twice-${Date.now()}`);
     const authDir = join(dir, "scanldr");
     mkdirSync(authDir, { recursive: true });
     writeFileSync(
@@ -280,7 +289,6 @@ describe("checkAuth", () => {
   });
 
   test("probe network error → throws WalkthroughError; auth.json is NOT deleted", async () => {
-    const dir = join(tmpdir(), `scanldr-probe-net-${Date.now()}`);
     const authDir = join(dir, "scanldr");
     mkdirSync(authDir, { recursive: true });
     const authJsonPath = join(authDir, "auth.json");
@@ -309,7 +317,6 @@ describe("checkAuth", () => {
   });
 
   test("probe 5xx → throws WalkthroughError; auth.json is NOT deleted", async () => {
-    const dir = join(tmpdir(), `scanldr-probe-5xx-${Date.now()}`);
     const authDir = join(dir, "scanldr");
     mkdirSync(authDir, { recursive: true });
     const authJsonPath = join(authDir, "auth.json");
@@ -337,8 +344,6 @@ describe("checkAuth", () => {
   });
 
   test("first-run (no auth.json): paste → persist → probe ok → returns { ok: true, justAuthenticated: true }", async () => {
-    const dir = join(tmpdir(), `scanldr-fresh-probe-${Date.now()}`);
-
     mock.module("../prompts.ts", () => ({
       editor: async () => VALID_CURL,
       input: async () => "",
@@ -361,7 +366,6 @@ describe("checkAuth", () => {
   });
 
   test("probe URL contains /search/story/ (representative CF detection — not the homepage)", async () => {
-    const dir = join(tmpdir(), `scanldr-probe-url-${Date.now()}`);
     const authDir = join(dir, "scanldr");
     mkdirSync(authDir, { recursive: true });
     writeFileSync(
@@ -417,7 +421,6 @@ describe("checkAuth", () => {
     }
 
     test("browser capture succeeds and probe validates → persists WITHOUT prompting for manual paste", async () => {
-      const dir = join(tmpdir(), `scanldr-capture-ok-${Date.now()}`);
       let editorCalled = false;
       mock.module("../prompts.ts", () => ({
         editor: async () => {
@@ -467,7 +470,6 @@ describe("checkAuth", () => {
     });
 
     test("browser capture's inner probe rejects the captured session → falls back to manual paste WITHOUT launching the browser a second time", async () => {
-      const dir = join(tmpdir(), `scanldr-capture-single-solve-${Date.now()}`);
       let editorCalled = false;
       mock.module("../prompts.ts", () => ({
         editor: async () => {
@@ -513,7 +515,6 @@ describe("checkAuth", () => {
     });
 
     test("browser capture fails or probe fails → falls back to manual paste", async () => {
-      const dir = join(tmpdir(), `scanldr-capture-fail-${Date.now()}`);
       let editorCalled = false;
       mock.module("../prompts.ts", () => ({
         editor: async () => {
