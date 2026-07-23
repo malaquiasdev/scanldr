@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { readFile, rm } from "node:fs/promises";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChapterInput, ImageRef } from "@integrations/_shared/media.ts";
@@ -11,6 +11,21 @@ import type { DownloadBundleInput } from "./types.ts";
 
 const noop = () => {};
 const logger = createLogger({ level: "info", format: "human", write: noop });
+
+// Each test gets its own OS-guaranteed-unique directory via mkdtemp (matches the
+// hermetic pattern already used in downloader.test.ts). The previous
+// `join(tmpdir(), \`downloader-test-${Date.now()}-${Math.random()}\`)` construction was
+// NOT guaranteed unique (no atomic directory creation, no collision check) and is the
+// shared-resource risk this test file was built on — see issue #247.
+let outDir: string;
+
+beforeEach(async () => {
+  outDir = await mkdtemp(join(tmpdir(), "scanldr-downloader-svc-"));
+});
+
+afterEach(async () => {
+  await rm(outDir, { recursive: true, force: true });
+});
 
 function makeChapter(id: string, num: number, pageCount: number, delaysMs: number[]): ChapterInput {
   const pages: ImageRef[] = Array.from({ length: pageCount }, (_, i) => ({
@@ -33,8 +48,6 @@ function makeChapter(id: string, num: number, pageCount: number, delaysMs: numbe
 
 describe("downloadBundle — onPageCompleted under concurrent fetches", () => {
   test("progress callback fires once per completion under out-of-order resolution", async () => {
-    const outDir = join(tmpdir(), `downloader-test-${Date.now()}-${Math.random()}`);
-
     // Chapter A: page 1 is slow, page 2/3 are fast -> pages 2/3 complete BEFORE page 1.
     // This is the exact shape that breaks a naive "currentPage = dispatch index" model:
     // the low-index page resolving last must not cause the progress consumer to regress.
@@ -63,25 +76,20 @@ describe("downloadBundle — onPageCompleted under concurrent fetches", () => {
       },
     };
 
-    try {
-      await downloadBundle(input);
+    await downloadBundle(input);
 
-      // Exactly one callback per page across both chapters.
-      expect(completionCount).toBe(5);
+    // Exactly one callback per page across both chapters.
+    expect(completionCount).toBe(5);
 
-      // The completion counter must be strictly monotonic (1,2,3,4,5) regardless of the
-      // underlying dispatch-order resolution — no backward steps, no gaps, no dupes.
-      expect(completionCounts).toEqual([1, 2, 3, 4, 5]);
+    // The completion counter must be strictly monotonic (1,2,3,4,5) regardless of the
+    // underlying dispatch-order resolution — no backward steps, no gaps, no dupes.
+    expect(completionCounts).toEqual([1, 2, 3, 4, 5]);
 
-      // The final callback must report the true total (100% equivalent).
-      expect(completionCounts[completionCounts.length - 1]).toBe(5);
-    } finally {
-      await rm(outDir, { recursive: true, force: true });
-    }
+    // The final callback must report the true total (100% equivalent).
+    expect(completionCounts[completionCounts.length - 1]).toBe(5);
   });
 
   test("onPageCompleted is optional — downloadBundle works fine without it", async () => {
-    const outDir = join(tmpdir(), `downloader-test-${Date.now()}-${Math.random()}`);
     const chapter = makeChapter("c", 1, 2, [0, 0]);
 
     const input: DownloadBundleInput = {
@@ -97,19 +105,13 @@ describe("downloadBundle — onPageCompleted under concurrent fetches", () => {
       logger,
     };
 
-    try {
-      const result = await downloadBundle(input);
-      expect(result.chapterIds).toEqual(["c"]);
-    } finally {
-      await rm(outDir, { recursive: true, force: true });
-    }
+    const result = await downloadBundle(input);
+    expect(result.chapterIds).toEqual(["c"]);
   });
 });
 
 describe("downloadBundle — filename numbering across chapters with CDN-tiled pages", () => {
   test("a later chapter's filenames shift down by the earlier chapter's collapsed tile count, with no gap/overlap", async () => {
-    const outDir = join(tmpdir(), `downloader-test-${Date.now()}-${Math.random()}`);
-
     // Chapter A: a tiled pair (2 fetched tiles -> 1 emitted page) + a standalone page.
     // 3 fetched tiles collapse to 2 emitted pages.
     const tileTop = await sharp({
@@ -170,24 +172,18 @@ describe("downloadBundle — filename numbering across chapters with CDN-tiled p
       logger,
     };
 
-    try {
-      const result = await downloadBundle(input);
-      const bytes = await readFile(result.outputPath);
-      const entries = unzipSync(bytes);
-      const names = Object.keys(entries).sort();
+    const result = await downloadBundle(input);
+    const bytes = await readFile(result.outputPath);
+    const entries = unzipSync(bytes);
+    const names = Object.keys(entries).sort();
 
-      // Chapter A: 3 fetched tiles collapse to 2 emitted pages -> 0001, 0002.
-      // Chapter B: 3 non-tiled pages continue contiguously -> 0003, 0004, 0005.
-      // No gap (e.g. missing 0003 from naive fetch-count offset) and no overlap.
-      expect(names).toEqual(["0001.webp", "0002.webp", "0003.webp", "0004.webp", "0005.webp"]);
-    } finally {
-      await rm(outDir, { recursive: true, force: true });
-    }
+    // Chapter A: 3 fetched tiles collapse to 2 emitted pages -> 0001, 0002.
+    // Chapter B: 3 non-tiled pages continue contiguously -> 0003, 0004, 0005.
+    // No gap (e.g. missing 0003 from naive fetch-count offset) and no overlap.
+    expect(names).toEqual(["0001.webp", "0002.webp", "0003.webp", "0004.webp", "0005.webp"]);
   });
 
   test("a tiled chapter yields contiguous NNNN filenames (no gap left by collapsed tiles)", async () => {
-    const outDir = join(tmpdir(), `downloader-test-${Date.now()}-${Math.random()}`);
-
     // Single chapter: tiled pair (2 fetched tiles -> 1 emitted page) followed by two
     // standalone pages -> 4 fetched tiles collapse to 3 emitted pages total.
     const tileTop = await sharp({
@@ -235,16 +231,12 @@ describe("downloadBundle — filename numbering across chapters with CDN-tiled p
       logger,
     };
 
-    try {
-      const result = await downloadBundle(input);
-      const bytes = await readFile(result.outputPath);
-      const entries = unzipSync(bytes);
-      const names = Object.keys(entries).sort();
+    const result = await downloadBundle(input);
+    const bytes = await readFile(result.outputPath);
+    const entries = unzipSync(bytes);
+    const names = Object.keys(entries).sort();
 
-      // 4 fetched tiles collapse to 3 emitted pages -> 0001, 0002, 0003; contiguous, no gap.
-      expect(names).toEqual(["0001.webp", "0002.webp", "0003.webp"]);
-    } finally {
-      await rm(outDir, { recursive: true, force: true });
-    }
+    // 4 fetched tiles collapse to 3 emitted pages -> 0001, 0002, 0003; contiguous, no gap.
+    expect(names).toEqual(["0001.webp", "0002.webp", "0003.webp"]);
   });
 });
