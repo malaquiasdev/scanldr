@@ -8,9 +8,7 @@
 // would either add logging pack never had, or make fallback-http swallow the failure
 // it depends on to enforce MissingAuthError callers can catch. See AGENTS.md / #239.
 
-import type { AuthSession } from "@integrations/mangakakalot/auth/types.ts";
-
-export type { AuthSession } from "@integrations/mangakakalot/auth/types.ts";
+import type { AuthSession } from "./types.ts";
 
 /** Structural validity check for a parsed auth.json payload. */
 export function isValidAuthSession(v: unknown): v is AuthSession {
