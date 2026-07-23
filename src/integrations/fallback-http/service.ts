@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
+import type { AuthSession } from "@integrations/_shared/auth-session.ts";
 import { hasCloudflareChallengeMarkers } from "@integrations/_shared/cloudflare.ts";
-import type { AuthSession } from "@integrations/mangakakalot/auth/types.ts";
 import { resolveAuthPath } from "@plugins/auth-path/index.ts";
 import { isValidAuthSession, toCookieHeader } from "@plugins/auth-session/index.ts";
 import type { Logger } from "@plugins/logger/index.ts";

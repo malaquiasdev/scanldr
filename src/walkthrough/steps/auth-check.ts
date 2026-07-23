@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
+import type { AuthSession } from "@integrations/_shared/auth-session.ts";
 import { hasCloudflareChallengeMarkers } from "@integrations/_shared/cloudflare.ts";
 import { atomicWrite } from "@plugins/fs-atomic/index.ts";
 import { CloudflareError } from "../../integrations/fallback-http/types.ts";
 import { captureSessionViaBrowser } from "../../integrations/mangakakalot/auth/browser-capture/index.ts";
 import { parseCurl } from "../../integrations/mangakakalot/auth/curl-parser.ts";
-import type { AuthSession } from "../../integrations/mangakakalot/auth/types.ts";
 import { resolveAuthPath } from "../../plugins/auth-path/index.ts";
 import { toCookieHeader } from "../../plugins/auth-session/index.ts";
 import type { Logger } from "../../plugins/logger/index.ts";
