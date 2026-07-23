@@ -40,7 +40,16 @@ const VALID_SESSION = {
 let tmpDir: string;
 
 beforeEach(async () => {
-  tmpDir = await makeTempDir(join(tmpdir(), "fallback-http-test-"));
+  // Root cause of #253: this path used to be a fixed literal (no per-run
+  // suffix), so concurrent `bun test` OS processes under CPU contention would
+  // share the same directory — one process's afterEach `rm -rf` could delete
+  // (or its beforeEach could overwrite) another's auth.json mid-test, producing
+  // symptoms that looked like retry/backoff timing flakes but were actually a
+  // cross-process fixture race. `process.pid` + a random suffix guarantees
+  // isolation even when two processes start within the same millisecond.
+  tmpDir = await makeTempDir(
+    join(tmpdir(), `fallback-http-test-${process.pid}-${Math.random().toString(36).slice(2)}`),
+  );
 });
 
 afterEach(async () => {
