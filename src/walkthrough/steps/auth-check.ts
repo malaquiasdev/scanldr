@@ -10,36 +10,17 @@ import { resolveAuthPath } from "../../plugins/auth-path/index.ts";
 import type { Logger } from "../../plugins/logger/index.ts";
 import { editor } from "../prompts.ts";
 import type {
+  AuthCheckOptions,
   AuthResult,
   BrowserCaptureDeps,
+  ProbeOutcome,
+  RefreshSessionOptions,
   SessionProbeClient,
   SessionProbeClientFactory,
 } from "../types.ts";
 import { WalkthroughError } from "../types.ts";
 
-export interface AuthCheckOptions {
-  requiresAuth: boolean;
-  logger: Logger;
-  /** Injected in tests to override the default XDG auth path. */
-  dataHome?: string;
-  /**
-   * Factory that creates the probe client on demand (after auth.json is written).
-   * When omitted, no network probe is performed (file-presence check only).
-   * Injected in tests; production callers provide via runWalkthrough options.
-   */
-  probeClientFactory?: SessionProbeClientFactory;
-  /**
-   * Browser capture seam (patchright-based undetected browser, issue #208).
-   * When present and the probe detects a stale session, offered as the primary
-   * re-auth path (fetch fresh cf_clearance from the live browser); falls back
-   * to manual cURL paste on any failure (browser not found, capture error, or
-   * probe validation failure). Injected in tests; production callers provide
-   * via runWalkthrough options.
-   */
-  browserCapture?: BrowserCaptureDeps;
-  /** Override fetch used to validate an auto-extracted session. Tests only. */
-  fetch?: (url: string, init?: RequestInit) => Promise<Response>;
-}
+export type { AuthCheckOptions } from "../types.ts";
 
 const MAX_PASTE_RETRIES = 2;
 /** Search endpoint, not homepage — see ADR-002. */
@@ -83,12 +64,6 @@ async function persistSession(session: AuthSession, authPath: string): Promise<v
   }
 }
 
-type ProbeOutcome =
-  | { kind: "ok" }
-  | { kind: "stale" }
-  | { kind: "network_error"; message: string }
-  | { kind: "transient_error"; status: number };
-
 /**
  * Probes the session against PROBE_URL with a 5s timeout.
  * Treats 403/503 with Cloudflare markers, and 200 with CF challenge HTML, as stale.
@@ -130,10 +105,6 @@ async function probeSession(client: SessionProbeClient, logger: Logger): Promise
       "session probe: network error",
     );
     return { kind: "network_error", message };
-  }
-
-  if (res.status >= 500) {
-    return { kind: "transient_error", status: res.status };
   }
 
   if (res.status >= 400) {
@@ -301,12 +272,20 @@ async function promptAndParseSession(
   );
 }
 
-export interface RefreshSessionOptions {
-  authPath: string;
-  probeClientFactory: SessionProbeClientFactory;
-  logger: Logger;
-  browserCapture?: BrowserCaptureDeps;
-  fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+export type { RefreshSessionOptions } from "../types.ts";
+
+/**
+ * Creates a fresh probe client via `probeClientFactory` and probes it — the common
+ * "re-verify right after persisting a new session" step shared by refreshSession and
+ * checkAuthWithProbe. Each caller still owns its own outcome->result/throw mapping,
+ * since they diverge on messages and returned AuthResult shape.
+ */
+async function probeFreshClient(
+  probeClientFactory: SessionProbeClientFactory,
+  logger: Logger,
+): Promise<ProbeOutcome> {
+  const freshClient = await probeClientFactory();
+  return probeSession(freshClient, logger);
 }
 
 /**
@@ -330,8 +309,7 @@ export async function refreshSession(opts: RefreshSessionOptions): Promise<AuthR
     "stale session replaced — new auth saved",
   );
 
-  const freshClient = await probeClientFactory();
-  const retry = await probeSession(freshClient, logger);
+  const retry = await probeFreshClient(probeClientFactory, logger);
   if (retry.kind === "ok") {
     return { ok: true, skipped: false, refreshed: true };
   }
@@ -411,8 +389,7 @@ async function checkAuthWithProbe(
     "auth session saved",
   );
 
-  const freshClient = await opts.probeClientFactory();
-  const outcome = await probeSession(freshClient, logger);
+  const outcome = await probeFreshClient(opts.probeClientFactory, logger);
   if (outcome.kind === "ok") {
     return { ok: true, skipped: false, justAuthenticated: true };
   }

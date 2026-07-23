@@ -1,6 +1,10 @@
 import type { BrowserLauncherDeps } from "@integrations/mangakakalot/auth/browser-capture/index.ts";
 import type { DownloadBundleInput, DownloadBundleResult } from "../downloader/types.ts";
 import type { PackVolumeInput, PackVolumeReplacingSourcesResult } from "../pack/types.ts";
+import type { Config } from "../plugins/config/index.ts";
+import type { Db } from "../plugins/db/index.ts";
+import type { Logger } from "../plugins/logger/index.ts";
+import type { SourceAdapter } from "../sources/adapters/index.ts";
 import type { SourceDescriptor } from "../sources/types.ts";
 
 /** Minimal surface of the downloader that executeWalkthrough needs. */
@@ -146,4 +150,209 @@ export interface ProgressHandle {
   updatePage(): void;
   /** Clears the line with a trailing newline. No-op when disabled. */
   finish(): void;
+}
+
+/** Deps wired into executeWalkthrough: production implementations or test fakes. */
+export interface ExecuteDeps {
+  downloader: Downloader;
+  packer: Packer;
+}
+
+export interface ExecuteWalkthroughInput {
+  source: SourceDescriptor;
+  hit: SearchHit;
+  selectedBundles: BundleItem[];
+  groupIntoVolume: boolean;
+  /** Optional user-supplied volume number/name; null = auto-derive from chapter range. */
+  volumeName?: string | null;
+  coverUrl: string | null;
+  outDir: string;
+  adapter: SourceAdapter;
+  logger: Logger;
+  /**
+   * Session refresh function threaded from the orchestrator.
+   * Used to auto-refresh when fetchChapterInput hits a CF rejection.
+   * When omitted, CF errors during execute are logged as bundle failures and skipped.
+   */
+  refreshFn?: RefreshSession;
+  /** Optional stderr progress renderer; no-op handle when disabled/omitted. */
+  progress?: ProgressHandle;
+  /**
+   * Whether the stderr progress bar is active (mirrors ProgressOptions.enabled).
+   * Gates the per-page `walkthrough.fetch_page` log: when the bar owns stderr,
+   * the per-page line is suppressed (bar is the feedback); when the bar is
+   * disabled (non-TTY / no --progress) or in JSON mode, the per-page log is
+   * the fallback feedback and stays on.
+   * Defaults to false (per-page log kept) when omitted.
+   */
+  progressEnabled?: boolean;
+}
+
+export interface ExecuteWalkthroughResult {
+  outputs: string[];
+  failed: number;
+}
+
+/** Signature of the session-refresh closure threaded through withSessionRetry. */
+export type RefreshSession = () => Promise<void>;
+
+export interface RangePickerOptions {
+  hit: SearchHit;
+  adapter: SourceAdapter;
+  /**
+   * Preloaded chapter listing for the "same manga" fast path — when provided, it is
+   * reused instead of calling adapter.listChapters again.
+   */
+  preloadedChapters?: ChapterListing[];
+}
+
+export interface RangePickerResult {
+  bundles: BundleItem[];
+  /** The raw listing actually used (fetched or preloaded) — cache this for later reuse. */
+  chapters?: ChapterListing[];
+}
+
+export interface SearchResultsPickerOptions {
+  query: string;
+  sourceLabel: string;
+  adapter: SourceAdapter;
+}
+
+export interface VolumeNamePromptOptions {
+  logger: Logger;
+}
+
+export interface CoverPromptOptions {
+  logger: Logger;
+}
+
+export type NextAction = "same-manga" | "new-manga" | "quit";
+
+export interface AuthCheckOptions {
+  requiresAuth: boolean;
+  logger: Logger;
+  /** Injected in tests to override the default XDG auth path. */
+  dataHome?: string;
+  /**
+   * Factory that creates the probe client on demand (after auth.json is written).
+   * When omitted, no network probe is performed (file-presence check only).
+   * Injected in tests; production callers provide via runWalkthrough options.
+   */
+  probeClientFactory?: SessionProbeClientFactory;
+  /**
+   * Browser capture seam (patchright-based undetected browser, issue #208).
+   * When present and the probe detects a stale session, offered as the primary
+   * re-auth path (fetch fresh cf_clearance from the live browser); falls back
+   * to manual cURL paste on any failure (browser not found, capture error, or
+   * probe validation failure). Injected in tests; production callers provide
+   * via runWalkthrough options.
+   */
+  browserCapture?: BrowserCaptureDeps;
+  /** Override fetch used to validate an auto-extracted session. Tests only. */
+  fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+}
+
+export type ProbeOutcome =
+  | { kind: "ok" }
+  | { kind: "stale" }
+  | { kind: "network_error"; message: string }
+  | { kind: "transient_error"; status: number };
+
+export interface RefreshSessionOptions {
+  authPath: string;
+  probeClientFactory: SessionProbeClientFactory;
+  logger: Logger;
+  browserCapture?: BrowserCaptureDeps;
+  fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+}
+
+export interface RunWalkthroughOptions extends WalkthroughInput {
+  logger: Logger;
+  /** Output directory for downloads. Defaults to current working directory. */
+  outDir?: string;
+  /** User config — threaded into the adapter factory. */
+  config?: Config;
+  /**
+   * Already-open DB instance — enables the search/chapter-list SQLite cache (#164).
+   * When omitted, the adapter runs uncached (e.g. direct test calls).
+   */
+  db?: Db;
+  /** Bypasses the cache for this run's search + chapter-list fetches; still refreshes it. */
+  forceRefresh?: boolean;
+  /** Override the XDG data home used to resolve the auth.json path (tests inject a tmp dir). */
+  dataHome?: string;
+  /** Override adapter factory (tests inject fakes). */
+  adapterFactory?: (sourceId: string, opts: { logger: Logger; config?: Config }) => SourceAdapter;
+  /** Override downloader deps (tests inject fakes). */
+  executeDeps?: ExecuteDeps;
+  /**
+   * Override the session probe client factory (tests inject fakes).
+   * Production default: real fallback-http client created lazily after auth.json is written.
+   * Pass null to disable probing (file-presence check only).
+   */
+  probeClientFactory?: SessionProbeClientFactory | null;
+  /**
+   * Override the browser capture seams (tests inject fakes).
+   * Production default: real patchright capture (issue #208).
+   * Pass null to disable the capture option entirely.
+   */
+  browserCapture?: BrowserCaptureDeps | null;
+  /**
+   * Override the refresh function for tests.
+   * When provided, this is used instead of the real refreshSession for retry logic.
+   */
+  refreshFn?: () => Promise<void>;
+  /**
+   * Enables the stderr progress bar. Resolved by the CLI entrypoint as
+   * `(process.stderr.isTTY || --progress) && !jsonMode`.
+   * Defaults to false — callers that don't opt in get the previous log-only behavior.
+   */
+  progressEnabled?: boolean;
+  /**
+   * Bar-write seam of the shared stderr controller (see @plugins/terminal).
+   * Threaded into `createProgress` so the bar and logger stay coordinated.
+   * Defaults to raw stderr passthrough when omitted (e.g. direct test calls).
+   */
+  barWrite?: (chunk: string) => void;
+  /**
+   * Explicit bar-teardown seam of the shared stderr controller (see
+   * @plugins/terminal). Threaded into `createProgress` so `finish()` resets
+   * controller bar-state explicitly instead of relying on byte-sniffing.
+   */
+  endBar?: () => void;
+}
+
+/** Returned when walkthrough errors out in a handled way (WalkthroughError). */
+export interface WalkthroughFailed {
+  ok: false;
+  reason: string;
+}
+
+/**
+ * In-memory cache of listings already fetched for the current manga (hit),
+ * so the "same manga" post-download branch never re-hits the adapter.
+ */
+export interface ChapterListingCache {
+  chapters: ChapterListing[] | null;
+}
+
+export interface NewMangaIterationResult {
+  hit: SearchHit;
+  cache: ChapterListingCache;
+  lastResult: WalkthroughResult;
+}
+
+export interface DownloadFlowOptions {
+  title: string;
+  hit: SearchHit;
+  cache: ChapterListingCache;
+  adapter: SourceAdapter;
+  source: SourceDescriptor;
+  outDir: string;
+  logger: Logger;
+  doRefresh: () => Promise<void>;
+  executeDeps?: ExecuteDeps;
+  progressEnabled: boolean;
+  barWrite?: (chunk: string) => void;
+  endBar?: () => void;
 }

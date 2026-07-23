@@ -1,13 +1,8 @@
-import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import { select } from "../prompts.ts";
-import type { SearchHit } from "../types.ts";
+import type { SearchHit, SearchResultsPickerOptions } from "../types.ts";
 import { WalkthroughError } from "../types.ts";
 
-export interface SearchResultsPickerOptions {
-  query: string;
-  sourceLabel: string;
-  adapter: SourceAdapter;
-}
+export type { SearchResultsPickerOptions } from "../types.ts";
 
 /** Step 4: search the source and let user pick a result. */
 export async function pickSearchResult(opts: SearchResultsPickerOptions): Promise<SearchHit> {

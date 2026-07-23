@@ -1,23 +1,8 @@
-import type { SourceAdapter } from "../../sources/adapters/index.ts";
 import { checkbox } from "../prompts.ts";
-import type { BundleItem, ChapterListing, SearchHit } from "../types.ts";
+import type { RangePickerOptions, RangePickerResult } from "../types.ts";
 import { WalkthroughError } from "../types.ts";
 
-export interface RangePickerOptions {
-  hit: SearchHit;
-  adapter: SourceAdapter;
-  /**
-   * Preloaded chapter listing for the "same manga" fast path — when provided, it is
-   * reused instead of calling adapter.listChapters again.
-   */
-  preloadedChapters?: ChapterListing[];
-}
-
-export interface RangePickerResult {
-  bundles: BundleItem[];
-  /** The raw listing actually used (fetched or preloaded) — cache this for later reuse. */
-  chapters?: ChapterListing[];
-}
+export type { RangePickerOptions, RangePickerResult } from "../types.ts";
 
 /** Step 6: multi-select available chapters. */
 export async function pickRange(opts: RangePickerOptions): Promise<RangePickerResult> {

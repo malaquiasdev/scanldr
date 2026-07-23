@@ -1,6 +1,7 @@
 import { select } from "../prompts.ts";
+import type { NextAction } from "../types.ts";
 
-export type NextAction = "same-manga" | "new-manga" | "quit";
+export type { NextAction } from "../types.ts";
 
 /** Post-download step: offer to keep going with the same manga, search a new one, or quit. */
 export async function promptNextAction(): Promise<NextAction> {

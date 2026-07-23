@@ -1,5 +1,7 @@
-import type { Logger } from "../../plugins/logger/index.ts";
 import { input } from "../prompts.ts";
+import type { CoverPromptOptions } from "../types.ts";
+
+export type { CoverPromptOptions } from "../types.ts";
 
 const MAX_URL_RETRIES = 2;
 
@@ -10,10 +12,6 @@ function isValidUrl(value: string): boolean {
   } catch {
     return false;
   }
-}
-
-export interface CoverPromptOptions {
-  logger: Logger;
 }
 
 /** Step 8 (when packing): optionally provide a cover image URL. Skips gracefully after max retries. */

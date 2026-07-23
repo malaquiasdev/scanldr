@@ -1,6 +1,4 @@
 import { createFallbackHttp } from "../integrations/fallback-http/index.ts";
-import type { Config } from "../plugins/config/index.ts";
-import type { Db } from "../plugins/db/index.ts";
 import type { Logger } from "../plugins/logger/index.ts";
 import { wrapAdapterWithCache } from "../sources/adapters/cached-adapter.ts";
 import type { SourceAdapter } from "../sources/adapters/index.ts";
@@ -11,7 +9,6 @@ import { checkAuth, refreshSession } from "./steps/auth-check.ts";
 import { buildBrowserCaptureDeps } from "./steps/browser-capture-deps.ts";
 import { withCaptureOnce } from "./steps/capture-once.ts";
 import { promptCoverUrl } from "./steps/cover-prompt.ts";
-import type { ExecuteDeps } from "./steps/execute.ts";
 import { executeWalkthrough } from "./steps/execute.ts";
 import { promptNextAction } from "./steps/next-action-prompt.ts";
 import { promptPack } from "./steps/pack-prompt.ts";
@@ -22,93 +19,28 @@ import { promptTitle } from "./steps/title-prompt.ts";
 import { promptVolumeName } from "./steps/volume-name-prompt.ts";
 import type {
   BrowserCaptureDeps,
-  ChapterListing,
+  ChapterListingCache,
+  DownloadFlowOptions,
+  NewMangaIterationResult,
+  RunWalkthroughOptions,
   SearchHit,
   SessionProbeClientFactory,
   WalkthroughCancelled,
-  WalkthroughInput,
+  WalkthroughFailed,
   WalkthroughResult,
 } from "./types.ts";
 import { WalkthroughError } from "./types.ts";
 import { isCloudflareError, withSessionRetry } from "./with-session-retry.ts";
 
 export type {
+  RunWalkthroughOptions,
   SessionProbeClientFactory,
   WalkthroughCancelled,
+  WalkthroughFailed,
   WalkthroughInput,
   WalkthroughResult,
 } from "./types.ts";
 export { WalkthroughError } from "./types.ts";
-
-export interface RunWalkthroughOptions extends WalkthroughInput {
-  logger: Logger;
-  /** Output directory for downloads. Defaults to current working directory. */
-  outDir?: string;
-  /** User config — threaded into the adapter factory. */
-  config?: Config;
-  /**
-   * Already-open DB instance — enables the search/chapter-list SQLite cache (#164).
-   * When omitted, the adapter runs uncached (e.g. direct test calls).
-   */
-  db?: Db;
-  /** Bypasses the cache for this run's search + chapter-list fetches; still refreshes it. */
-  forceRefresh?: boolean;
-  /** Override the XDG data home used to resolve the auth.json path (tests inject a tmp dir). */
-  dataHome?: string;
-  /** Override adapter factory (tests inject fakes). */
-  adapterFactory?: (sourceId: string, opts: { logger: Logger; config?: Config }) => SourceAdapter;
-  /** Override downloader deps (tests inject fakes). */
-  executeDeps?: ExecuteDeps;
-  /**
-   * Override the session probe client factory (tests inject fakes).
-   * Production default: real fallback-http client created lazily after auth.json is written.
-   * Pass null to disable probing (file-presence check only).
-   */
-  probeClientFactory?: SessionProbeClientFactory | null;
-  /**
-   * Override the browser capture seams (tests inject fakes).
-   * Production default: real patchright capture (issue #208).
-   * Pass null to disable the capture option entirely.
-   */
-  browserCapture?: BrowserCaptureDeps | null;
-  /**
-   * Override the refresh function for tests.
-   * When provided, this is used instead of the real refreshSession for retry logic.
-   */
-  refreshFn?: () => Promise<void>;
-  /**
-   * Enables the stderr progress bar. Resolved by the CLI entrypoint as
-   * `(process.stderr.isTTY || --progress) && !jsonMode`.
-   * Defaults to false — callers that don't opt in get the previous log-only behavior.
-   */
-  progressEnabled?: boolean;
-  /**
-   * Bar-write seam of the shared stderr controller (see @plugins/terminal).
-   * Threaded into `createProgress` so the bar and logger stay coordinated.
-   * Defaults to raw stderr passthrough when omitted (e.g. direct test calls).
-   */
-  barWrite?: (chunk: string) => void;
-  /**
-   * Explicit bar-teardown seam of the shared stderr controller (see
-   * @plugins/terminal). Threaded into `createProgress` so `finish()` resets
-   * controller bar-state explicitly instead of relying on byte-sniffing.
-   */
-  endBar?: () => void;
-}
-
-/** Returned when walkthrough errors out in a handled way (WalkthroughError). */
-export interface WalkthroughFailed {
-  ok: false;
-  reason: string;
-}
-
-/**
- * In-memory cache of listings already fetched for the current manga (hit),
- * so the "same manga" post-download branch never re-hits the adapter.
- */
-interface ChapterListingCache {
-  chapters: ChapterListing[] | null;
-}
 
 /**
  * Resolves the session-probe client factory: explicit override, opt-out (null), or the
@@ -167,12 +99,6 @@ function buildRefreshFn(
       browserCapture,
     });
   };
-}
-
-interface NewMangaIterationResult {
-  hit: SearchHit;
-  cache: ChapterListingCache;
-  lastResult: WalkthroughResult;
 }
 
 /** "New manga" entry point (also the first iteration): prompt title, search, then download. */
@@ -314,21 +240,6 @@ export async function runWalkthrough(
     }
     throw err;
   }
-}
-
-interface DownloadFlowOptions {
-  title: string;
-  hit: SearchHit;
-  cache: ChapterListingCache;
-  adapter: SourceAdapter;
-  source: SourceDescriptor;
-  outDir: string;
-  logger: Logger;
-  doRefresh: () => Promise<void>;
-  executeDeps?: ExecuteDeps;
-  progressEnabled: boolean;
-  barWrite?: (chunk: string) => void;
-  endBar?: () => void;
 }
 
 /**
